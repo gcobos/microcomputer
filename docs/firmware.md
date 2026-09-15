@@ -1,0 +1,237 @@
+# Firmware — detalles de implementación
+
+Notas de arquitectura. **La especificación completa y autoritativa está en
+[`../specs.txt`](../specs.txt)** — este documento solo resume la estructura del
+código. Para la electrónica, ver [`hardware.md`](hardware.md).
+
+---
+
+## 1. Estructura de archivos
+
+PlatformIO compila **`src/`** y usa **`include/`** como ruta de cabeceras.
+
+| Archivo | Contenido |
+|---|---|
+| `src/main.cpp` | pines, `setup()`, `loop()`, máquina de estados de la UI |
+| `src/cpu.cpp` / `include/cpu.h` | núcleo de la CPU emulada, sin hardware |
+| `include/isa.h` | opcodes, registros, flags (solo definiciones) |
+| `include/iomap.h` | mapa del espacio de puertos: gráficos + texto + encoders + LED + temporizadores + sonido |
+| `src/disasm.cpp` / `include/disasm.h` | desensamblador (byte → mnemónico) |
+| `src/editor.cpp` / `include/editor.h` | selector de mnemónico de EditMem (mnemónico → bytes), sin hardware |
+| `src/panel.cpp` / `include/panel.h` | lectura del panel (74HC165, encoders, pulsadores, switches) — solo hardware |
+| `include/ui.h` | `enum View`, `PrgAction`, `struct UiState` (solo definiciones) |
+| `src/display.cpp` / `include/display.h` | render en la OLED SH1106 (4 vistas) |
+| `src/spi_flash_storage.cpp` / `include/spi_flash_storage.h` | driver de la flash SPI |
+| `include/storage.h` | interfaz `IProgramStorage`; `PROGRAM_SIZE`, `MAX_PROGRAM_SLOTS` |
+
+En la raíz solo hay `platformio.ini`, `README.md` y `specs.txt`. Todo el
+código vive en `src/` e `include/`, dentro del namespace `compi`.
+
+---
+
+## 2. Modelo de memoria de la CPU
+
+- `compi::kMemSize = 65536`: RAM = todo el espacio de 16 bits.
+- `maskAddr(addr) = addr & (kMemSize - 1)` → identidad con 65536.
+- `pc_`, `sp_` son `uint16_t`; `reset()` deja `sp_ = 0xFFFF`, `pc_ = 0`, regs y
+  flags a 0. `reset()` **no** toca la memoria; para eso está `clearMemory()`.
+
+### ⚠️ No renombrar `kMemSize` a `MEM_SIZE`
+
+`lwIP` define `#define MEM_SIZE 1600` en `lwip/opt.h`, que entra por
+`Arduino.h` en los SoC con USB-CDC nativo (ESP32-C3) y rompe la compilación.
+
+---
+
+## 3. Lectura del panel
+
+`FrontPanel` es **solo lectura de hardware** (no guarda estado de UI). Todo
+multiplexado por un 74HC165:
+
+- 2 `RotaryEncoder` (cuadratura por sondeo; `takeDelta()` en detentes)
+- 2 `PushButton` (antirrebote; **solo pulsación corta** — sin pulsación larga)
+- 2 `ToggleSwitch` (nivel con antirrebote)
+
+`FrontPanel::update()` hace **una** lectura del 74HC165, reparte los bits y
+actualiza `dirPos_`/`datPos_` (contadores absolutos que leen los puertos IN).
+Lo llama un **`esp_timer`** (no `loop()`) a ritmo adaptativo — 2 ms con
+actividad, 20 ms con la pantalla encendida sin tocar, 100 ms en reposo — así el
+panel sigue respondiendo aunque `loop()` esté bloqueado en el volcado I2C de la
+OLED (~30 ms) o en un guardado de flash (~1 s). Un spinlock (`mux_`) protege los
+contadores frente a esa concurrencia; `update()` devuelve `true` si hubo
+actividad del usuario (lo usa el gestor de energía). Ver `specs.txt` §11 y §16.
+
+Expone: `ejecutar()`, `swAbajo()`, `takeDirDelta/DatDelta()`,
+`takeDirPress/DatPress()`, `dirPos/datPos()`, `dirDown/datDown()`.
+
+### Energía (batería)
+
+`main.cpp` atenúa la OLED a los 20 s de inactividad, la apaga a los 45 s
+(`oled.power/contrast`), y entra en **light sleep** a los 45 s si no hay
+programa ejecutando ni host USB-CDC conectado (`!Serial`). Light sleep conserva
+los 64 KiB de RAM emulada y despierta en <1 ms. La flash está en **deep
+power-down** (~1 µA) salvo al leer/escribir un slot. `-DCOMPI_NO_LIGHT_SLEEP`
+desactiva el sleep. Detalle y consumo: `specs.txt` §16.
+
+---
+
+## 4. Máquina de estados (en `loop()`, ver `specs.txt` §12)
+
+La **vista** es función pura de los dos interruptores — nada oculto:
+
+| SW_MODE | SW_STEP | Vista | Pantalla |
+|---|---|---|---|
+| EDIT | ▲ | `EditMem` | listado desensamblado + registros |
+| EDIT | ▼ | `EditPrg` | selector de slot + previsualización |
+| RUN | ▲ | `ExecPaso` | listado + registros, `*` en el PC |
+| RUN | ▼ | `ExecCont` | framebuffer del programa |
+
+| Vista | ADDR girar | ADDR pulsar | DATA girar | DATA pulsar |
+|---|---|---|---|---|
+| `EditMem` | cursor ±1 (navega) | retrocede un campo / dirección | cambia el campo activo (en vivo) | confirma campo → siguiente / avanza dirección |
+| `EditPrg` | slot 0–59 | — | LOAD ⇄ SAVE | ejecutar la acción |
+| `ExecPaso` | → programa (IN) | reset (PC=0) | → programa (IN) | 1 instrucción |
+| `ExecCont` | → programa (IN) | → programa (IN) | → programa (IN) | → programa (IN) |
+
+(El editor de instrucciones campo a campo se explica en `editor.cpp` más abajo
+y en `specs.txt` §12.)
+
+- Cualquier (re)inicio de ejecución — entrar en RUN, o entrar en ▼
+  CONTINUOUS, o RESET en STEP — hace `cpu.reset()` (PC=0) + `resetPositions()` +
+  borra el framebuffer y la capa de texto + `g_led=0` + `resetTimers()` +
+  `resetSound()`. Entrar en ▲ STEP solo congela (sin reset).
+- Volver a EDIT **no** resetea: se ve dónde quedó el PC.
+- `ExecCont`: la CPU corre por lotes (`EXEC_BATCH`) hasta HALT; el framebuffer
+  se vuelca cada `FB_FLUSH_MS` (con aviso "HALT" si procede).
+- `EditPrg`: al cambiar de slot se releen `PREVIEW_BYTES` de la flash para la
+  previsualización.
+- Un programa = imagen completa de 64 KiB. Guardar (`flash.saveProgram(slot,
+  cpu.ram())`) bloquea ~1 s y muestra "SAVING slot NN". Cargar
+  (`flash.loadProgram(slot, cpu.ram())`) sobrescribe toda la RAM + `cpu.reset()`.
+  60 slots en la flash de 4 MiB.
+
+**No hay edición directa de registros**: se cargan ejecutando `MOV reg,#imm`
+(opcode `OP_LDI`). Un valor de 16 bits se teclea en dos bytes.
+
+---
+
+## 4b. E/S del programa: espacio de puertos (`iomap.h`)
+
+`IN`/`OUT` usan un **puerto de 16 bits** (operando de 3 bytes). Espacio de
+65536 puertos, aparte de la RAM.
+
+La pantalla (gráficos + texto) ocupa `0x0000..0x04FF`; el resto de periféricos
+va en `0x05xx`.
+
+- **Gráficos** (framebuffer): puertos `0x0000..0x03FF` (1024 B, lectura y
+  escritura). 1 puerto = 8 px horizontales, bit 7 = izquierda, 1 = encendido.
+  El buffer vive en `g_fb` (main.cpp), no en la RAM de la CPU.
+- **Texto**: puertos `0x0400..0x04FF`. Rejilla monospace `TEXT_COLS`×`TEXT_ROWS`
+  = 21×8 (fuente 6×8 de GFX). Puerto = `0x0400 + fila*TEXT_STRIDE + col`
+  (`TEXT_STRIDE` = 32; `textIndex()` valida y mapea a `g_text[fila*21+col]`).
+  El byte es el código de carácter: `0` = celda transparente, `0x20` = blanco,
+  resto = glifo opaco. `renderFramebuffer(g_fb, g_text, halted)` compone: blit
+  del framebuffer + `drawChar` opaco por celda no nula + overlay "HALT".
+- **Encoders** (solo `IN`): `PORT_DIR_POS` 0x0500 / `PORT_DAT_POS` 0x0502 =
+  posición absoluta (0–255, envuelve); `PORT_DIR_BTN` 0x0501 / `PORT_DAT_BTN`
+  0x0503 = bit 0 = pulsador.
+- **LED de a bordo** (`OUT`/`IN`): `PORT_LED` 0x0510, bit 0 controla el LED
+  azul del SuperMini (GPIO8). Se apaga al (re)iniciar una ejecución.
+- **Temporizadores** (`OUT`/`IN`): `PORT_TIMER_BASE` 0x0520..0x0527, 8 cuentas
+  atrás. `OUT` arma con 0–255; decrecen solas de 1 en 1 hasta 0. El timer `i`
+  baja 1 cada `TIMER_BASE_MS << i` ms (1, 2, 4, 8, 16, 32, 64, 128 ms). `IN`
+  lee el valor actual. `tickTimers()` corre una vez por vuelta de `loop()` solo
+  en `ExecCont`; en `ExecPaso` están congelados. `resetTimers()` los pone a 0
+  al (re)iniciar una ejecución. `IN` **no** toca flags: para un bucle de espera
+  hay que `CMP reg,#0` antes del `JMPNZ`.
+- **Sonido** (`OUT`/`IN`): `PORT_SND_BASE` 0x0530..0x0533, zumbador piezo pasivo
+  en `PIN_BUZZER` (GPIO3). `0x0530`/`0x0531` = frecuencia de 16 bits (LO
+  engancha, HI aplica `Hz=hi<<8|lo`); `0x0532` = nota MIDI 0–127 (`noteToHz()`,
+  `440·2^((n-69)/12)`); `0x0533` = auto-apagado `valor·10 ms` (pegajoso). El
+  tono lo genera `tone()` (LEDC), no gasta CPU. `sndApply(hz)` centraliza
+  `tone`/`noTone` y (re)arma `g_sndOffAt`. `tickSound()` aplica el auto-apagado
+  en `ExecCont`; `resetSound()` calla y pone los 4 registros a 0. Se silencia
+  también al salir de `ExecCont` y al `HALT` (`if (g_sndHz) sndApply(0)`).
+- `main` fija `cpu.setPortRead(portRead)` y `cpu.setPortWrite(portWrite)`.
+  Los contadores de posición viven en `FrontPanel`.
+
+---
+
+## 5. Desensamblador (`disasm.cpp`)
+
+Trabaja sobre un buffer plano `(mem, memLen)`; direcciones `>= memLen` leen 0.
+
+- `disassemble(mem, memLen, addr, out, n)` → mnemónico + longitud (1–3).
+- `instrLen(mem, memLen, addr)` → longitud sin formatear.
+- `listBase(mem, memLen, anchor)` → inicio de instrucción anterior al que
+  contiene `anchor` (recorriendo desde 0), para dar una línea de contexto.
+- Para la RAM: `(cpu.ram(), 65536)`. Para la previsualización de un slot:
+  `(g_preview, PREVIEW_BYTES)`.
+- Las 7 ops de la ALU (`MOV ADD SUB CMP AND OR XOR`) tienen forma `reg,src`
+  (`OP_EXT`, `0xF8+op`) y `reg,#imm` (`OP_ALUI`, `0xA0+op`); las que además
+  operan con memoria son familias 5–9. `MOV reg,#imm` es `OP_LDI` (más corto).
+  Familias reservadas → `DB 0xXX`. Detalle en [`isa.md`](isa.md).
+
+---
+
+## 5b. Selector de mnemónico (`editor.cpp`)
+
+El "desensamblador al revés" de la vista `EditMem`: compone una instrucción
+campo a campo (verbo → forma → operandos) en vez de teclear el byte crudo.
+Trabaja sobre un buffer plano, igual que `disasm.cpp`, y vive en `ui.compose`.
+
+- `ComposeState`: `verb, forma, reg, dst, src, cond, imm, addr16, step`.
+- `fieldAt(verb, forma, step)` → qué campo toca ahora (`Verb/Forma/Cond/Reg/
+  Dst/Src/Imm/Lo/Hi/Done`); `lastStep(verb, forma)` → último paso con campo
+  real (pulsar DATA ahí avanza la dirección en vez de pasar de campo).
+- `applyDelta(st, delta)` → gira DATA: cambia el campo activo, con wrap.
+  Cambiar el verbo reinicia los demás campos a 0.
+- `assemble(mem, memLen, addr, st)` → escribe en el sitio (nunca desplaza),
+  devuelve la longitud. Se llama en cada giro (edición en vivo).
+- `decodeAt(mem, memLen, addr)` → reconstruye el estado a partir de lo que ya
+  hay en memoria; se llama al entrar en la vista, al mover el cursor y tras
+  cargar un programa (`loadSlot`, provisioning).
+
+Detalle de la interacción: `specs.txt` §12, [`isa.md`](isa.md) §1.
+
+---
+
+## 6. Pantalla (`display.cpp`)
+
+128×64, fuente 6×8 (21 columnas × 8 filas). `render(cpu, ui)` elige la vista:
+
+- **`EditMem` / `ExecPaso`**: cabecera + 5 líneas de listado + 2 de estado.
+  Marcas `>` cursor (solo EditMem) y `*` PC. Estado: los 6 registros
+  (AX BX CX DX PC SP) y los flags siempre visibles.
+- **`EditPrg`**: `PRG slot NN [prog/----]`, la acción `LOAD`/`SAVE` en
+  vídeo inverso, y una previsualización desensamblada del slot.
+- **`ExecCont`**: `renderFramebuffer(g_fb, g_text, halted)` — vuelca el
+  framebuffer, compone la capa de texto y superpone "HALT" si procede.
+
+`render()` es sin estado: recalcula todo cada frame.
+
+---
+
+## 7. Compilar y flashear
+
+```sh
+pio run -t upload             # por el USB-C del SuperMini (USB nativo)
+pio device monitor -b 115200
+```
+
+> El CLI de `pio` del entorno de desarrollo actual está roto (versión de
+> `click`); no es un problema del proyecto. El código no-Arduino
+> (`cpu.cpp`, `disasm.cpp`, `editor.cpp`, `panel.cpp`) compila con
+> `g++ -std=c++17`.
+
+---
+
+## 8. Cabos sueltos
+
+- El listado se alinea siempre desde 0x0000; una zona de datos puede verse
+  "torcida" (no hay mejor referencia).
+- En `ExecPaso` el listado sigue al PC; no hay scroll manual.
+- La previsualización del slot (`EditPrg`) lee solo `PREVIEW_BYTES` bytes de la
+  flash; puede cortar la última instrucción mostrada.
+- LED de fallo: el LED de a bordo del SuperMini (GPIO8, activo bajo).
+- En el SuperMini el USB nativo ocupa GPIO18/19; el I2C va en GPIO20/21.

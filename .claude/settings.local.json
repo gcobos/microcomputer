@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pio --version)",
+      "Bash(sed -n '235,260p' \".pio/libdeps/esp32-c3-devkitm-1/Adafruit GFX Library/Adafruit_GrayOLED.cpp\"; echo \"=== I2CDevice begin ===\"; grep -rn \"begin\" \".pio/libdeps/esp32-c3-devkitm-1/Adafruit BusIO/Adafruit_I2CDevice.cpp\" | head; echo \"...\"; sed -n '/bool Adafruit_I2CDevice::begin/,/^}/p' \".pio/libdeps/esp32-c3-devkitm-1/Adafruit BusIO/Adafruit_I2CDevice.cpp\")",
+      "Bash(python3 -c \"import cairosvg\")",
+      "Bash(inkscape wiring.svg -o /tmp/crop.png --export-area=180:180:520:680 -w 1400)",
+      "Bash(perl -i -pe 's/>GPIO\\(\\\\d+\\)</>IO$1</g' wiring.svg)",
+      "Bash(inkscape wiring.svg -o wiring.png -w 2200)",
+      "Bash(inkscape /home/drone/src/platformio/microcomputer/firmware/elf8_panel/docs/wiring.svg -o /home/drone/src/platformio/microcomputer/firmware/elf8_panel/docs/wiring.png -w 2200)",
+      "Bash(git -C /home/drone/src/platformio/microcomputer/firmware/elf8_panel diff --stat)"
+    ],
+    "additionalDirectories": [
+      "/home/drone/src/platformio/microcomputer/firmware/elf8_panel/.pio/libdeps/esp32-c3-devkitm-1/Adafruit BusIO"
+    ]
+  }
+}
