@@ -91,8 +91,8 @@
     203  0101  10 3E             MOV AL,#62
     204  0103  20 05 FE          STA [tmp0],AL
     205  0106  90 91 08          CALL hline_full
-    206  0109  12 46             MOV BL,#lo(h_gfx)
-    207  010B  13 F2             MOV BH,#hi(h_gfx)
+    206  0109  12 6B             MOV BL,#lo(h_gfx)
+    207  010B  13 0C             MOV BH,#hi(h_gfx)
     208  010D  14 07             MOV CL,#7
     209  010F  15 00             MOV CH,#0
     210  0111  90 62 07          CALL puts
@@ -162,9 +162,9 @@
     289  01BC  10 00             MOV AL,#0
     290  01BE  20 1C FE          STA [tw_col],AL
     291  01C1  20 1D FE          STA [tw_row],AL
-    292  01C4  10 84             MOV AL,#lo(txt_msg)
+    292  01C4  10 A9             MOV AL,#lo(txt_msg)
     293  01C6  20 1E FE          STA [tw_p],AL
-    294  01C9  10 F2             MOV AL,#hi(txt_msg)
+    294  01C9  10 0C             MOV AL,#hi(txt_msg)
     295  01CB  20 1F FE          STA [tw_p+1],AL
     297  01CE  90 24 0A          CALL poll_exit
     298  01D1  18 04 FE          LDA AL,[g_exit]
@@ -277,8 +277,8 @@
     424  02E9  20 04 FE          STA [g_exit],AL
     425  02EC  90 1C 08          CALL clsg
     426  02EF  90 43 08          CALL clst
-    427  02F2  12 4F             MOV BL,#lo(h_snd)
-    428  02F4  13 F2             MOV BH,#hi(h_snd)
+    427  02F2  12 74             MOV BL,#lo(h_snd)
+    428  02F4  13 0C             MOV BH,#hi(h_snd)
     429  02F6  14 07             MOV CL,#7
     430  02F8  15 00             MOV CH,#0
     431  02FA  90 62 07          CALL puts
@@ -290,14 +290,14 @@
     439  030B  8A A5 03          JMPNZ ds_x
     440  030E  18 23 FE          LDA AL,[ds_i]
     441  0311  20 15 03          STA [dsr_n+1],AL
-    443  0314  18 00 F1          LDA AL,[0xF100]
+    443  0314  18 00 0C          LDA AL,[melody]
     444  0317  A3 00 FF          CMP AL,#0xFF
     445  031A  89 FD 02          JMPZ ds_rs
     446  031D  20 24 FE          STA [ds_note],AL
     447  0320  18 23 FE          LDA AL,[ds_i]
     448  0323  A1 00 01          ADD AL,#1
     449  0326  20 2A 03          STA [dsr_d+1],AL
-    451  0329  18 00 F1          LDA AL,[0xF100]
+    451  0329  18 00 0C          LDA AL,[melody]
     452  032C  20 25 FE          STA [ds_dur],AL
     453  032F  18 23 FE          LDA AL,[ds_i]
     454  0332  A1 00 02          ADD AL,#2
@@ -366,7 +366,7 @@
     528  03DA  F9 02             ADD AL,BL
     529  03DC  A4 00 3F          AND AL,#0x3F
     530  03DF  20 E3 03          STA [dax_rd+1],AL
-    532  03E2  18 00 F0          LDA AL,[0xF000]
+    532  03E2  18 00 0B          LDA AL,[sine]
     533  03E5  60                SHL AL
     534  03E6  20 08 FE          STA [px_x],AL
     535  03E9  18 26 FE          LDA AL,[an_t]
@@ -374,7 +374,7 @@
     537  03EE  A1 00 10          ADD AL,#16
     538  03F1  A4 00 3F          AND AL,#0x3F
     539  03F4  20 F8 03          STA [day_rd+1],AL
-    541  03F7  18 00 F0          LDA AL,[0xF000]
+    541  03F7  18 00 0B          LDA AL,[sine]
     542  03FA  20 09 FE          STA [px_y],AL
     543  03FD  90 82 09          CALL plot
     544  0400  18 26 FE          LDA AL,[an_t]
@@ -394,8 +394,8 @@
     559  0428  88 C7 03          JMP da_l
     561  042B  90 33 0A          CALL wait_dir_release
     562  042E  98                RET
-    565  042F  12 56             MOV BL,#lo(h_anim)
-    566  0431  13 F2             MOV BH,#hi(h_anim)
+    565  042F  12 7B             MOV BL,#lo(h_anim)
+    566  0431  13 0C             MOV BH,#hi(h_anim)
     567  0433  14 06             MOV CL,#6
     568  0435  15 00             MOV CH,#0
     569  0437  90 62 07          CALL puts
@@ -431,8 +431,8 @@
     607  048C  20 0E FE          STA [hs_val],AL
     608  048F  90 54 08          CALL hspan
     609  0492  90 43 08          CALL clst
-    610  0495  12 60             MOV BL,#lo(h_light)
-    611  0497  13 F2             MOV BH,#hi(h_light)
+    610  0495  12 85             MOV BL,#lo(h_light)
+    611  0497  13 0C             MOV BH,#hi(h_light)
     612  0499  14 08             MOV CL,#8
     613  049B  15 03             MOV CH,#3
     614  049D  90 62 07          CALL puts
@@ -591,8 +591,8 @@
     794  0631  20 2D FE          STA [ob_i],AL
     795  0634  90 50 06          CALL draw_ob
     796  0637  90 43 08          CALL clst
-    797  063A  12 66             MOV BL,#lo(h_game)
-    798  063C  13 F2             MOV BH,#hi(h_game)
+    797  063A  12 8B             MOV BL,#lo(h_game)
+    798  063C  13 0C             MOV BH,#hi(h_game)
     799  063E  14 00             MOV CL,#0
     800  0640  15 00             MOV CH,#0
     801  0642  90 62 07          CALL puts
@@ -656,13 +656,13 @@
     867  06CD  70 32 05          OUT (P_SND_N),AL
     868  06D0  90 1C 08          CALL clsg
     869  06D3  90 43 08          CALL clst
-    870  06D6  12 72             MOV BL,#lo(str_over)
-    871  06D8  13 F2             MOV BH,#hi(str_over)
+    870  06D6  12 97             MOV BL,#lo(str_over)
+    871  06D8  13 0C             MOV BH,#hi(str_over)
     872  06DA  14 06             MOV CL,#6
     873  06DC  15 03             MOV CH,#3
     874  06DE  90 62 07          CALL puts
-    875  06E1  12 7C             MOV BL,#lo(str_score)
-    876  06E3  13 F2             MOV BH,#hi(str_score)
+    875  06E1  12 A1             MOV BL,#lo(str_score)
+    876  06E3  13 0C             MOV BH,#hi(str_score)
     877  06E5  14 05             MOV CL,#5
     878  06E7  15 05             MOV CH,#5
     879  06E9  90 62 07          CALL puts
@@ -674,46 +674,46 @@
     885  06F8  90 FD 09          CALL hold
     886  06FB  98                RET
     894  06FC  90 43 08          CALL clst
-    895  06FF  12 00             MOV BL,#lo(h_title)
-    896  0701  13 F2             MOV BH,#hi(h_title)
+    895  06FF  12 25             MOV BL,#lo(h_title)
+    896  0701  13 0C             MOV BH,#hi(h_title)
     897  0703  14 05             MOV CL,#5
     898  0705  15 00             MOV CH,#0
     899  0707  90 62 07          CALL puts
-    900  070A  12 0C             MOV BL,#lo(m_i1)
-    901  070C  13 F2             MOV BH,#hi(m_i1)
+    900  070A  12 31             MOV BL,#lo(m_i1)
+    901  070C  13 0C             MOV BH,#hi(m_i1)
     902  070E  14 04             MOV CL,#4
     903  0710  15 02             MOV CH,#2
     904  0712  90 62 07          CALL puts
-    905  0715  12 17             MOV BL,#lo(m_i2)
-    906  0717  13 F2             MOV BH,#hi(m_i2)
+    905  0715  12 3C             MOV BL,#lo(m_i2)
+    906  0717  13 0C             MOV BH,#hi(m_i2)
     907  0719  14 04             MOV CL,#4
     908  071B  15 03             MOV CH,#3
     909  071D  90 62 07          CALL puts
-    910  0720  12 1F             MOV BL,#lo(m_i3)
-    911  0722  13 F2             MOV BH,#hi(m_i3)
+    910  0720  12 44             MOV BL,#lo(m_i3)
+    911  0722  13 0C             MOV BH,#hi(m_i3)
     912  0724  14 04             MOV CL,#4
     913  0726  15 04             MOV CH,#4
     914  0728  90 62 07          CALL puts
-    915  072B  12 28             MOV BL,#lo(m_i4)
-    916  072D  13 F2             MOV BH,#hi(m_i4)
+    915  072B  12 4D             MOV BL,#lo(m_i4)
+    916  072D  13 0C             MOV BH,#hi(m_i4)
     917  072F  14 04             MOV CL,#4
     918  0731  15 05             MOV CH,#5
     919  0733  90 62 07          CALL puts
-    920  0736  12 34             MOV BL,#lo(m_i5)
-    921  0738  13 F2             MOV BH,#hi(m_i5)
+    920  0736  12 59             MOV BL,#lo(m_i5)
+    921  0738  13 0C             MOV BH,#hi(m_i5)
     922  073A  14 04             MOV CL,#4
     923  073C  15 06             MOV CH,#6
     924  073E  90 62 07          CALL puts
-    925  0741  12 3C             MOV BL,#lo(m_i6)
-    926  0743  13 F2             MOV BH,#hi(m_i6)
+    925  0741  12 61             MOV BL,#lo(m_i6)
+    926  0743  13 0C             MOV BH,#hi(m_i6)
     927  0745  14 04             MOV CL,#4
     928  0747  15 07             MOV CH,#7
     929  0749  90 62 07          CALL puts
     930  074C  18 01 FE          LDA AL,[sel]
     931  074F  A1 00 02          ADD AL,#2
     932  0752  20 05 FE          STA [tmp0],AL
-    933  0755  12 44             MOV BL,#lo(m_mark)
-    934  0757  13 F2             MOV BH,#hi(m_mark)
+    933  0755  12 69             MOV BL,#lo(m_mark)
+    934  0757  13 0C             MOV BH,#hi(m_mark)
     935  0759  14 02             MOV CL,#2
     936  075B  1D 05 FE          LDA CH,[tmp0]
     937  075E  90 62 07          CALL puts
@@ -1028,37 +1028,37 @@
    1336  0A3E  90 D5 09          CALL frame_wait
    1337  0A41  88 33 0A          JMP wait_dir_release
    1339  0A44  98                RET
-   1346  F000  20 23 26 29 2B 2E 31 33 35 37 39 3A 3C 3D 3D 3E  .DB 32, 35, 38, 41, 43, 46, 49, 51, 53, 55, 57, 58, 60, 61, 61, 62
-   1347  F010  3E 3E 3D 3D 3C 3A 39 37 35 33 31 2E 2B 29 26 23  .DB 62, 62, 61, 61, 60, 58, 57, 55, 53, 51, 49, 46, 43, 41, 38, 35
-   1348  F020  20 1D 1A 17 15 12 0F 0D 0B 09 07 06 04 03 03 02  .DB 32, 29, 26, 23, 21, 18, 15, 13, 11, 9, 7, 6, 4, 3, 3, 2
-   1349  F030  02 02 03 03 04 06 07 09 0B 0D 0F 12 15 17 1A 1D  .DB 2, 2, 3, 3, 4, 6, 7, 9, 11, 13, 15, 18, 21, 23, 26, 29
-   1353  F100  3C 06 3E 06 40 06 41 06 43 06 45 06 47 06 48 0C  .DB 60,6, 62,6, 64,6, 65,6, 67,6, 69,6, 71,6, 72,12
-   1354  F110  00 03             .DB 0,3
-   1355  F112  48 06 47 06 45 06 43 06 41 06 40 06 3E 06 3C 0C  .DB 72,6, 71,6, 69,6, 67,6, 65,6, 64,6, 62,6, 60,12
-   1356  F122  00 06             .DB 0,6
-   1357  F124  FF                .DB 0xFF
-   1360  F200  43 4F 4D 50 49 20 20 44 45 4D 4F 00  .ASCIIZ "COMPI  DEMO"
-   1361  F20C  31 20 47 52 41 46 49 43 4F 53 00  .ASCIIZ "1 GRAFICOS"
-   1362  F217  32 20 54 45 58 54 4F 00  .ASCIIZ "2 TEXTO"
-   1363  F21F  33 20 53 4F 4E 49 44 4F 00  .ASCIIZ "3 SONIDO"
-   1364  F228  34 20 41 4E 49 4D 41 43 49 4F 4E 00  .ASCIIZ "4 ANIMACION"
-   1365  F234  35 20 4C 55 43 45 53 00  .ASCIIZ "5 LUCES"
-   1366  F23C  36 20 4A 55 45 47 4F 00  .ASCIIZ "6 JUEGO"
-   1367  F244  3E 00             .ASCIIZ ">"
-   1368  F246  47 52 41 46 49 43 4F 53 00  .ASCIIZ "GRAFICOS"
-   1369  F24F  53 4F 4E 49 44 4F 00  .ASCIIZ "SONIDO"
-   1370  F256  41 4E 49 4D 41 43 49 4F 4E 00  .ASCIIZ "ANIMACION"
-   1371  F260  4C 55 43 45 53 00  .ASCIIZ "LUCES"
-   1372  F266  45 53 51 55 49 56 41 20 20 53 3A 00  .ASCIIZ "ESQUIVA  S:"
-   1373  F272  47 41 4D 45 20 4F 56 45 52 00  .ASCIIZ "GAME OVER"
-   1374  F27C  50 55 4E 54 4F 53 3A 00  .ASCIIZ "PUNTOS:"
-   1376  F284  43 4F 4D 50 49 20 45 53 20 55 4E 20 4D 49 43 52 4F 0A  .DB "COMPI ES UN MICRO", 10
-   1377  F296  44 45 20 38 20 42 49 54 53 20 43 4F 4E 20 49 53 41 0A  .DB "DE 8 BITS CON ISA", 10
-   1378  F2A8  50 52 4F 50 49 41 2E 20 36 34 20 4B 42 20 44 45 0A  .DB "PROPIA. 64 KB DE", 10
-   1379  F2B9  52 41 4D 2C 20 4F 4C 45 44 20 31 32 38 58 36 34 0A  .DB "RAM, OLED 128X64", 10
-   1380  F2CA  59 20 53 4F 4E 49 44 4F 20 50 49 45 5A 4F 2E 0A  .DB "Y SONIDO PIEZO.", 10
-   1381  F2DA  0A                .DB 10
-   1382  F2DB  48 45 43 48 4F 20 45 4E 20 45 4E 53 41 4D 42 4C 41 44 4F 52 00  .DB "HECHO EN ENSAMBLADOR", 0
+   1364  0B00  20 23 26 29 2B 2E 31 33 35 37 39 3A 3C 3D 3D 3E  .DB 32, 35, 38, 41, 43, 46, 49, 51, 53, 55, 57, 58, 60, 61, 61, 62
+   1365  0B10  3E 3E 3D 3D 3C 3A 39 37 35 33 31 2E 2B 29 26 23  .DB 62, 62, 61, 61, 60, 58, 57, 55, 53, 51, 49, 46, 43, 41, 38, 35
+   1366  0B20  20 1D 1A 17 15 12 0F 0D 0B 09 07 06 04 03 03 02  .DB 32, 29, 26, 23, 21, 18, 15, 13, 11, 9, 7, 6, 4, 3, 3, 2
+   1367  0B30  02 02 03 03 04 06 07 09 0B 0D 0F 12 15 17 1A 1D  .DB 2, 2, 3, 3, 4, 6, 7, 9, 11, 13, 15, 18, 21, 23, 26, 29
+   1371  0C00  3C 06 3E 06 40 06 41 06 43 06 45 06 47 06 48 0C  .DB 60,6, 62,6, 64,6, 65,6, 67,6, 69,6, 71,6, 72,12
+   1372  0C10  00 03             .DB 0,3
+   1373  0C12  48 06 47 06 45 06 43 06 41 06 40 06 3E 06 3C 0C  .DB 72,6, 71,6, 69,6, 67,6, 65,6, 64,6, 62,6, 60,12
+   1374  0C22  00 06             .DB 0,6
+   1375  0C24  FF                .DB 0xFF
+   1379  0C25  43 4F 4D 50 49 20 20 44 45 4D 4F 00  .ASCIIZ "COMPI  DEMO"
+   1380  0C31  31 20 47 52 41 46 49 43 4F 53 00  .ASCIIZ "1 GRAFICOS"
+   1381  0C3C  32 20 54 45 58 54 4F 00  .ASCIIZ "2 TEXTO"
+   1382  0C44  33 20 53 4F 4E 49 44 4F 00  .ASCIIZ "3 SONIDO"
+   1383  0C4D  34 20 41 4E 49 4D 41 43 49 4F 4E 00  .ASCIIZ "4 ANIMACION"
+   1384  0C59  35 20 4C 55 43 45 53 00  .ASCIIZ "5 LUCES"
+   1385  0C61  36 20 4A 55 45 47 4F 00  .ASCIIZ "6 JUEGO"
+   1386  0C69  3E 00             .ASCIIZ ">"
+   1387  0C6B  47 52 41 46 49 43 4F 53 00  .ASCIIZ "GRAFICOS"
+   1388  0C74  53 4F 4E 49 44 4F 00  .ASCIIZ "SONIDO"
+   1389  0C7B  41 4E 49 4D 41 43 49 4F 4E 00  .ASCIIZ "ANIMACION"
+   1390  0C85  4C 55 43 45 53 00  .ASCIIZ "LUCES"
+   1391  0C8B  45 53 51 55 49 56 41 20 20 53 3A 00  .ASCIIZ "ESQUIVA  S:"
+   1392  0C97  47 41 4D 45 20 4F 56 45 52 00  .ASCIIZ "GAME OVER"
+   1393  0CA1  50 55 4E 54 4F 53 3A 00  .ASCIIZ "PUNTOS:"
+   1395  0CA9  43 4F 4D 50 49 20 45 53 20 55 4E 20 4D 49 43 52 4F 0A  .DB "COMPI ES UN MICRO", 10
+   1396  0CBB  44 45 20 38 20 42 49 54 53 20 43 4F 4E 20 49 53 41 0A  .DB "DE 8 BITS CON ISA", 10
+   1397  0CCD  50 52 4F 50 49 41 2E 20 36 34 20 4B 42 20 44 45 0A  .DB "PROPIA. 64 KB DE", 10
+   1398  0CDE  52 41 4D 2C 20 4F 4C 45 44 20 31 32 38 58 36 34 0A  .DB "RAM, OLED 128X64", 10
+   1399  0CEF  59 20 53 4F 4E 49 44 4F 20 50 49 45 5A 4F 2E 0A  .DB "Y SONIDO PIEZO.", 10
+   1400  0CFF  0A                .DB 10
+   1401  0D00  48 45 43 48 4F 20 45 4E 20 45 4E 53 41 4D 42 4C 41 44 4F 52 00  .DB "HECHO EN ENSAMBLADOR", 0
 
   simbolos:
     start                = 0x0000  (0)
@@ -1210,24 +1210,24 @@
     pe_d                 = 0x0A32  (2610)
     wait_dir_release     = 0x0A33  (2611)
     wdr_d                = 0x0A44  (2628)
-    sine                 = 0xF000  (61440)
-    melody               = 0xF100  (61696)
-    h_title              = 0xF200  (61952)
-    m_i1                 = 0xF20C  (61964)
-    m_i2                 = 0xF217  (61975)
-    m_i3                 = 0xF21F  (61983)
-    m_i4                 = 0xF228  (61992)
-    m_i5                 = 0xF234  (62004)
-    m_i6                 = 0xF23C  (62012)
-    m_mark               = 0xF244  (62020)
-    h_gfx                = 0xF246  (62022)
-    h_snd                = 0xF24F  (62031)
-    h_anim               = 0xF256  (62038)
-    h_light              = 0xF260  (62048)
-    h_game               = 0xF266  (62054)
-    str_over             = 0xF272  (62066)
-    str_score            = 0xF27C  (62076)
-    txt_msg              = 0xF284  (62084)
+    sine                 = 0x0B00  (2816)
+    melody               = 0x0C00  (3072)
+    h_title              = 0x0C25  (3109)
+    m_i1                 = 0x0C31  (3121)
+    m_i2                 = 0x0C3C  (3132)
+    m_i3                 = 0x0C44  (3140)
+    m_i4                 = 0x0C4D  (3149)
+    m_i5                 = 0x0C59  (3161)
+    m_i6                 = 0x0C61  (3169)
+    m_mark               = 0x0C69  (3177)
+    h_gfx                = 0x0C6B  (3179)
+    h_snd                = 0x0C74  (3188)
+    h_anim               = 0x0C7B  (3195)
+    h_light              = 0x0C85  (3205)
+    h_game               = 0x0C8B  (3211)
+    str_over             = 0x0C97  (3223)
+    str_score            = 0x0CA1  (3233)
+    txt_msg              = 0x0CA9  (3241)
     obarr                = 0xF300  (62208)
     seed                 = 0xFE00  (65024)
     sel                  = 0xFE01  (65025)

@@ -8,6 +8,10 @@ Tambien puede ensamblar sobre la marcha si le pasas un .asm:
 
     python3 tools/compi_send.py --port /dev/ttyACM0 --slot 4 programs/demo.asm
 
+Si no se indica --slot y el origen es un .asm con directiva ".slot N", se usa
+ese slot (el mismo que casm.py anota como "slot de destino sugerido"). Un
+.bin no lleva esa informacion, asi que ahi --slot es obligatorio.
+
 Solo se manda por el cable el tamano real del fichero (casm.py ya lo recorta
 tras el ultimo byte usado): el protocolo "COMPI LOAD <slot> <len>" acepta
 len < 65536 y el aparato rellena el resto de la RAM con ceros al recibirlo
@@ -19,23 +23,34 @@ Necesita pyserial  (pip install pyserial).
 """
 import argparse
 import os
-import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import casm  # noqa: E402 - necesita el sys.path.insert de arriba
 
 IMAGE_SIZE = 65536
 COMPI_CHUNK = 1024  # debe coincidir con COMPI_CHUNK en src/main.cpp
 
 
 def build_if_needed(path):
+    """Devuelve (bytes, slot). slot es None si no se puede deducir (.bin)."""
     if not path.endswith(".asm"):
         with open(path, "rb") as f:
-            return f.read()
+            return f.read(), None
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    asm = casm.Assembler()
+    try:
+        image = asm.assemble(text)
+    except casm.AsmError as e:
+        print(f"compi_send: error ensamblando: {e}", file=sys.stderr)
+        sys.exit(1)
+    used = max(1, asm.max_addr)
     out = path[:-4] + ".bin"
-    casm = os.path.join(os.path.dirname(os.path.abspath(__file__)), "casm.py")
-    subprocess.run([sys.executable, casm, path, "-o", out], check=True)
-    with open(out, "rb") as f:
-        return f.read()
+    with open(out, "wb") as f:
+        f.write(image[:used])
+    return image[:used], asm.slot
 
 
 def main(argv=None):
@@ -43,7 +58,9 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("image", help="fichero .bin o .asm")
     ap.add_argument("--port", required=True, help="p. ej. /dev/ttyACM0 o COM5")
-    ap.add_argument("--slot", type=int, required=True, help="slot de flash 0..59")
+    ap.add_argument("--slot", type=int,
+                     help="slot de flash 0..59 (si se omite, se deduce de la "
+                          "directiva .slot del .asm; un .bin lo exige)")
     ap.add_argument("--baud", type=int, default=115200)
     args = ap.parse_args(argv)
 
@@ -53,11 +70,25 @@ def main(argv=None):
         print("compi_send: falta pyserial  ->  pip install pyserial", file=sys.stderr)
         return 2
 
-    if not (0 <= args.slot < 60):
+    data, deduced_slot = build_if_needed(args.image)
+
+    if args.slot is not None:
+        slot = args.slot
+        if deduced_slot is not None and deduced_slot != slot:
+            print(f"compi_send: aviso: --slot {slot} no coincide con la "
+                  f".slot {deduced_slot} del fichero; se usa {slot}", file=sys.stderr)
+    elif deduced_slot is not None:
+        slot = deduced_slot
+        print(f"compi_send: slot deducido de la directiva .slot: {slot}")
+    else:
+        print("compi_send: falta --slot (el .bin no lleva esa informacion)",
+              file=sys.stderr)
+        return 2
+
+    if not (0 <= slot < 60):
         print("compi_send: slot fuera de rango (0..59)", file=sys.stderr)
         return 2
 
-    data = build_if_needed(args.image)
     if len(data) > IMAGE_SIZE:
         print(f"compi_send: la imagen ({len(data)} B) pasa de {IMAGE_SIZE}", file=sys.stderr)
         return 2
@@ -69,7 +100,7 @@ def main(argv=None):
     with serial.Serial(args.port, args.baud, timeout=8) as ser:
         time.sleep(0.3)
         ser.reset_input_buffer()
-        header = f"COMPI LOAD {args.slot} {len(data)}\n".encode()
+        header = f"COMPI LOAD {slot} {len(data)}\n".encode()
         ser.write(header)
         ser.flush()
 
@@ -116,7 +147,7 @@ def main(argv=None):
     if reply.startswith("COMPI OK"):
         got = int(reply.split()[2])
         ok = "  (checksum OK)" if got == checksum else f"  (!! checksum {got} != {checksum})"
-        print(f"compi_send: grabado en el slot {args.slot}{ok}")
+        print(f"compi_send: grabado en el slot {slot}{ok}")
         return 0 if got == checksum else 1
     print(f"compi_send: fallo: {reply!r}", file=sys.stderr)
     return 1

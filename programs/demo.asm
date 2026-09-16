@@ -440,7 +440,7 @@ ds_nx:
     LDA AL,[ds_i]
     STA [dsr_n+1],AL
 dsr_n:
-    LDA AL,[0xF100]          ; nota (operando parcheado, pagina 0xF1)
+    LDA AL,[melody]          ; nota (byte bajo parcheado arriba con ds_i)
     CMP AL,#0xFF
     JMPZ ds_rs
     STA [ds_note],AL
@@ -448,7 +448,7 @@ dsr_n:
     ADD AL,#1
     STA [dsr_d+1],AL
 dsr_d:
-    LDA AL,[0xF100]          ; duracion
+    LDA AL,[melody]          ; duracion
     STA [ds_dur],AL
     LDA AL,[ds_i]
     ADD AL,#2
@@ -529,7 +529,7 @@ da_l:
     AND AL,#0x3F
     STA [dax_rd+1],AL
 dax_rd:
-    LDA AL,[0xF000]          ; seno (pagina 0xF0)
+    LDA AL,[sine]            ; seno (byte bajo parcheado arriba)
     SHL AL                   ; x = seno * 2  (0..124)
     STA [px_x],AL
     LDA AL,[an_t]            ; indice y = (t*2 + 16) & 63
@@ -538,7 +538,7 @@ dax_rd:
     AND AL,#0x3F
     STA [day_rd+1],AL
 day_rd:
-    LDA AL,[0xF000]
+    LDA AL,[sine]
     STA [px_y],AL
     CALL plot
     LDA AL,[an_t]
@@ -1340,15 +1340,33 @@ wdr_d:
 
 ; ============================================================================
 ;  DATOS
+;
+;  sine/melody van justo despues del codigo (que hoy acaba en 0x0A45), no en
+;  0xF000/0xF100: casm.py recorta el .bin tras el ultimo byte usado, y dejar
+;  ese hueco de por medio lo unico que hacia era inflar el fichero (ver
+;  "Tamano del .bin" en programs/README.md). Cada tabla SIGUE necesitando
+;  empezar en un multiplo de 0x100 (byte bajo = 0): el codigo la indexa
+;  parcheando solo el byte bajo de la instruccion (p. ej. `STA
+;  [dax_rd+1],AL`), sin tocar la pagina alta, asi que si no empezara en
+;  byte-bajo 0 apuntaria al sitio equivocado.
+;  Si este fichero crece y el codigo llega a pisar 0x0B00, hay que subir esa
+;  direccion (y la de melody, siempre 0x100 por encima) al siguiente multiplo
+;  de 0x100 libre -- casm.py no avisa de un solape, simplemente escribiria
+;  sine/melody encima de las ultimas instrucciones.
+;
+;  obarr se queda en 0xF300 sin tocar: al ser un `.space` sin datos reales,
+;  no le cuesta ni un byte al fichero este donde este (y a esta lo lejos que
+;  esta no le afecta el recorte, que solo mira hasta el ultimo byte con
+;  datos de verdad).
 ; ============================================================================
-    .org 0xF000
+    .org 0x0B00
 sine:
     .db 32, 35, 38, 41, 43, 46, 49, 51, 53, 55, 57, 58, 60, 61, 61, 62
     .db 62, 62, 61, 61, 60, 58, 57, 55, 53, 51, 49, 46, 43, 41, 38, 35
     .db 32, 29, 26, 23, 21, 18, 15, 13, 11, 9, 7, 6, 4, 3, 3, 2
     .db 2, 2, 3, 3, 4, 6, 7, 9, 11, 13, 15, 18, 21, 23, 26, 29
 
-    .org 0xF100
+    .org 0x0C00
 melody:
     .db 60,6, 62,6, 64,6, 65,6, 67,6, 69,6, 71,6, 72,12
     .db 0,3
@@ -1356,7 +1374,8 @@ melody:
     .db 0,6
     .db 0xFF
 
-    .org 0xF200
+; las cadenas si pueden ir pegadas justo aqui, sin .org ni alineacion: se
+; leen por etiqueta (puts/put_num), no por byte bajo parcheado.
 h_title:   .asciiz "COMPI  DEMO"
 m_i1:      .asciiz "1 GRAFICOS"
 m_i2:      .asciiz "2 TEXTO"

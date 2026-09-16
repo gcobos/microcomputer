@@ -8,6 +8,9 @@ Programas para compi escritos en ensamblador. Se ensamblan con
 |---|---|---|
 | [`demo.asm`](demo.asm) | 4 | Menú principal que llama a rutinas de demostración: gráficos (caja rebotando), texto (máquina de escribir + juego de caracteres), sonido (escala + LED), animación (curva de Lissajous), luces (LED estroboscópico + destellos) y un juego, **ESQUIVA**, que usa todo junto. |
 | [`estrellas.asm`](estrellas.asm) | 5 | Cielo estrellado: 16 estrellas en posiciones al azar que titilan (aparecen, crecen a una cruz de 5 píxeles y se apagan) de forma asíncrona. El LED azul se enciende junto con la pantalla cuando alguna estrella está en su brillo máximo. |
+| [`cubo.asm`](cubo.asm) | 3 | Cubo de wireframe en 3D girando sobre el eje Y, en proyección ortográfica. Implementa desde cero multiplicación con signo (8×8→16 bits, la CPU no tiene `MUL`) y una línea de Bresenham de propósito general, ya que ninguna existía en el repo. |
+| [`reloj.asm`](reloj.asm) | 1 | Reloj analógico de agujas con hora real (latido de 1 s por el temporizador T2, no un contador de fotogramas) y números romanos trazados como líneas. Encoder izquierdo (DIRECCION) ajusta la hora, encoder derecho (DATOS) ajusta los minutos. Reutiliza `smul64`/`line_draw` de `cubo.asm`. |
+| [`pong.asm`](pong.asm) | 2 | Pong de dos jugadores: cada encoder mueve la paleta de su lado, y su pulsador saca la pelota (con ángulo según la posición y el sentido de giro de la paleta en ese momento) cuando no hay pelota en juego. Quien gana el punto saca en la ronda siguiente. Marcador en la capa de texto, independiente del framebuffer gráfico. Doble buffer por software igual que `cubo.asm`. |
 
 ## Flujo de trabajo
 
@@ -22,12 +25,15 @@ python3 ../tools/sim.py demo.bin --steps 2000000
 #    con entradas: un guion de eventos "<instr> <accion>"
 python3 ../tools/sim.py demo.bin --steps 3000000 --script mi_guion.txt
 
-# 3. grabar en el aparato (slot 4)
-python3 ../tools/compi_send.py --port /dev/ttyACM0 --slot 4 demo.asm
+# 3. grabar en el aparato (el slot se deduce de la ".slot 4" del propio .asm)
+python3 ../tools/compi_send.py --port /dev/ttyACM0 demo.asm
 ```
 
 `compi_send.py` acepta directamente un `.asm` (lo ensambla al vuelo) o un
-`.bin` ya montado.
+`.bin` ya montado. Con un `.asm`, `--slot` es opcional: si no se indica, se usa
+el de su directiva `.slot`; con un `.bin` (que no lleva esa directiva) hay que
+darlo explícitamente. Un `--slot` explícito siempre gana, aunque no coincida
+con el del fichero (avisa por si acaso, pero lo respeta).
 
 ## La sintaxis en 30 segundos
 
