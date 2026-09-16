@@ -11,6 +11,8 @@ Programas para compi escritos en ensamblador. Se ensamblan con
 | [`cubo.asm`](cubo.asm) | 3 | Cubo de wireframe en 3D girando sobre el eje Y, en proyección ortográfica. Implementa desde cero multiplicación con signo (8×8→16 bits, la CPU no tiene `MUL`) y una línea de Bresenham de propósito general, ya que ninguna existía en el repo. |
 | [`reloj.asm`](reloj.asm) | 1 | Reloj analógico de agujas con hora real (latido de 1 s por el temporizador T2, no un contador de fotogramas) y números romanos trazados como líneas. Encoder izquierdo (DIRECCION) ajusta la hora, encoder derecho (DATOS) ajusta los minutos. Reutiliza `smul64`/`line_draw` de `cubo.asm`. |
 | [`pong.asm`](pong.asm) | 2 | Pong de dos jugadores: cada encoder mueve la paleta de su lado, y su pulsador saca la pelota (con ángulo según la posición y el sentido de giro de la paleta en ese momento) cuando no hay pelota en juego. Quien gana el punto saca en la ronda siguiente. Marcador en la capa de texto, independiente del framebuffer gráfico. Doble buffer por software igual que `cubo.asm`. |
+| [`atributos.asm`](atributos.asm) | 6 | Muestra estática de los atributos de texto (`0x0500`–`0x05FF`, banco pegado a la rejilla de texto): una fila por atributo — inverso, parpadeo, subrayado, tachado, subíndice/superíndice (`H₂O`, `X²`) y las 4 rotaciones del glifo (0°/90°/180°/270°). Dibuja una vez y hace `HALT`; el parpadeo lo sigue animando el firmware sin ayuda de la CPU. |
+| [`benchmark.asm`](benchmark.asm) | 57 | Mide la velocidad real del intérprete: cuenta vueltas de un bucle de 16 bits durante una ventana de 32,000 s exactos (temporizador T7 armado a 250 pasos de 128 ms) y muestra el resultado en hexadecimal (`N=0x....`). El propio fichero explica en la cabecera cómo pasar ese número a instrucciones/segundo. |
 
 ## Flujo de trabajo
 
@@ -52,7 +54,7 @@ start:
     LDA CL,[dato]           ; reg <- memoria
     STA [dato+1],CL
     OUT (0x0400),AL         ; puerto de 16 bits
-    IN  AL,(0x0503)
+    IN  AL,(0x0603)
     LDA CL,[DX]             ; indirecto: dirección en un registro de 16 bits
     STA [DX],CL             ; (AX/BX/CX/DX; ver docs/isa.md §4b) en vez de
     OUT (DX),AL             ; addr16/port16 inmediato -- 2 bytes en vez de 3

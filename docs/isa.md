@@ -231,40 +231,62 @@ Flags: iguales que en la sección 6 (aritméticos para ADD/SUB/CMP, lógicos par
 Espacio de 65536 puertos, **aparte de la memoria**. `IN` de un puerto no
 mapeado devuelve 0; `OUT` a uno no mapeado no hace nada.
 
-La pantalla (gráficos + texto) va en `0x0000`–`0x04FF`; el resto de periféricos
-en `0x05xx`.
+La pantalla (gráficos + texto + atributos) va en `0x0000`–`0x05FF`; el resto
+de periféricos en `0x06xx`.
 
 | Puerto | Dir. | Qué es |
 |---|---|---|
 | `0x0000` … `0x03FF` | E/S | **Gráficos** (framebuffer) 128×64. 1 puerto = 8 píxeles horizontales, bit 7 = izquierda, 1 = encendido. Puerto de `(xbyte, y)` = `y × 16 + xbyte` (xbyte 0–15, y 0–63). |
 | `0x0400` … `0x04FF` | E/S | **Texto**. 1 puerto = 1 celda 6×8, superpuesta al gráfico. Puerto de `(col, fila)` = `0x0400 + fila × 32 + col` (fila 0–7, col 0–20). El byte es el código ASCII: `0` = celda transparente, `0x20` = celda en blanco, resto = glifo opaco. |
-| `0x0500` | IN | Encoder **ADDR**: posición (contador 0–255 que envuelve). |
-| `0x0501` | IN | Encoder ADDR: bit 0 = pulsado. |
-| `0x0502` | IN | Encoder **DATA**: posición. |
-| `0x0503` | IN | Encoder DATA: bit 0 = pulsado. |
-| `0x0510` | E/S | **LED** azul de a bordo: `OUT` bit 0 = 1 lo enciende. `IN` = eco. |
-| `0x0520` … `0x0527` | E/S | **Temporizadores** t0…t7. `OUT` arma con 0–255; decrece solo hasta 0. `IN` lee el valor actual. |
-| `0x0530` | E/S | **Sonido** – frecuencia, byte bajo (solo se engancha). |
-| `0x0531` | E/S | **Sonido** – frecuencia, byte alto; al escribirlo suena `Hz = alto·256 + bajo` (0 = silencio). |
-| `0x0532` | E/S | **Sonido** – nota MIDI 0–127 (0 = silencio). 69 = LA4 = 440 Hz, +12 = octava. La forma fácil. |
-| `0x0533` | E/S | **Sonido** – duración automática = valor × 10 ms (0 = sostenida). "Pegajosa": cada nota la re-arma. |
+| `0x0500` … `0x05FF` | E/S | **Atributos de texto**. 1 puerto = atributos de la celda de texto correspondiente (misma fórmula que el texto: `0x0500 + fila × 32 + col`). Ver más abajo. |
+| `0x0600` | IN | Encoder **ADDR**: posición (contador 0–255 que envuelve). |
+| `0x0601` | IN | Encoder ADDR: bit 0 = pulsado. |
+| `0x0602` | IN | Encoder **DATA**: posición. |
+| `0x0603` | IN | Encoder DATA: bit 0 = pulsado. |
+| `0x0610` | E/S | **LED** azul de a bordo: `OUT` bit 0 = 1 lo enciende. `IN` = eco. |
+| `0x0620` … `0x0627` | E/S | **Temporizadores** t0…t7. `OUT` arma con 0–255; decrece solo hasta 0. `IN` lee el valor actual. |
+| `0x0630` | E/S | **Sonido** – frecuencia, byte bajo (solo se engancha). |
+| `0x0631` | E/S | **Sonido** – frecuencia, byte alto; al escribirlo suena `Hz = alto·256 + bajo` (0 = silencio). |
+| `0x0632` | E/S | **Sonido** – nota MIDI 0–127 (0 = silencio). 69 = LA4 = 440 Hz, +12 = octava. La forma fácil. |
+| `0x0633` | E/S | **Sonido** – duración automática = valor × 10 ms (0 = sostenida). "Pegajosa": cada nota la re-arma. |
 
-Gráficos, texto, encoders, LED, temporizadores y sonido se ponen a 0 cada vez
-que arranca una ejecución. En CONTINUOUS la pantalla es el gráfico + el texto
-(refresco cada 50 ms).
+Gráficos, texto, atributos de texto, encoders, LED, temporizadores y sonido
+se ponen a 0 cada vez que arranca una ejecución. En CONTINUOUS la pantalla es
+el gráfico + el texto (refresco cada 50 ms).
 
 **Texto** (`0x0400`–`0x04FF`): fuente monospace de 6×8 (5×7 de Adafruit GFX),
 21 columnas × 8 filas. Para escribir una cadena, `OUT` carácter a carácter
 incrementando el puerto (col + 1); no hay salto de línea automático. `IN`
 devuelve el último carácter escrito en esa celda.
 
-**Sonido** (`0x0530`–`0x0533`): zumbador piezo pasivo en GPIO3. Solo suena en
-**CONTINUOUS**; se calla en paso a paso, al volver a EDIT y al `HALT`. Lo genera
-el hardware, no gasta tiempo de CPU. Lo más simple: `OUT (0x0532),reg` con una
-nota MIDI. Para efectos (sirenas, barridos) usa la frecuencia de 16 bits
-(`0x0530` bajo, luego `0x0531` alto).
+**Atributos de texto** (`0x0500`–`0x05FF`): un byte por celda, en la misma
+disposición fila×32+col que el propio texto, justo a continuación de
+`0x0400`–`0x04FF` (encoders/LED/temporizadores/sonido se desplazaron a
+`0x0600`+ para dejarle el hueco pegado al texto). Se aplican al dibujar el
+carácter de esa celda; una celda con carácter `0` (transparente) no dibuja
+nada aunque tenga atributos puestos.
 
-**Temporizadores** (`0x0520`–`0x0527`): 8 cuentas atrás. Cada `t_i` baja 1
+| Bit | Atributo | Efecto |
+|---|---|---|
+| 0 | inverso | intercambia fondo y trazo del carácter |
+| 1 | parpadeo | deja de dibujarse la mitad de cada ciclo (~500 ms encendido, ~500 ms apagado) |
+| 2 | subrayado | raya bajo el carácter |
+| 3 | tachado | raya a media altura |
+| 4 | subíndice | el carácter se desplaza 1 px hacia abajo dentro de la celda |
+| 5 | superíndice | el carácter se desplaza 1 px hacia arriba (si se ponen 4 y 5 a la vez, gana subíndice) |
+| 6–7 | rotación | `00`=0°, `01`=90°, `10`=180°, `11`=270°, sentido horario |
+
+A esta resolución (glifos de 5×7 en una celda de 8 px de alto) no hay margen
+para además encoger el carácter en subíndice/superíndice y que se siga
+leyendo, así que solo se desplaza, a tamaño normal.
+
+**Sonido** (`0x0630`–`0x0633`): zumbador piezo pasivo en GPIO3. Solo suena en
+**CONTINUOUS**; se calla en paso a paso, al volver a EDIT y al `HALT`. Lo genera
+el hardware, no gasta tiempo de CPU. Lo más simple: `OUT (0x0632),reg` con una
+nota MIDI. Para efectos (sirenas, barridos) usa la frecuencia de 16 bits
+(`0x0630` bajo, luego `0x0631` alto).
+
+**Temporizadores** (`0x0620`–`0x0627`): 8 cuentas atrás. Cada `t_i` baja 1
 cada `1 << i` ms → t0 = 1 ms/paso, t1 = 2, t2 = 4, t3 = 8, t4 = 16, t5 = 32,
 t6 = 64, t7 = 128 ms (t7: 255 → 0 en ~33 s). Solo corren en **CONTINUOUS**; en
 paso a paso están congelados. `IN` **no** cambia los flags: para esperar a que
@@ -279,8 +301,8 @@ Teclea los bytes desde `0x0000`. Para ejecutar: `SW_MODE` = RUN.
 ### El LED sigue al pulsador DATA  *(RUN ▼ continuo)*
 ```
 Dir  Bytes        Instrucción
-0000 68 03 05     IN  AL,(0x0503)     ; lee el pulsador del encoder DATA
-0003 70 10 05     OUT (0x0510),AL     ; lo manda al LED
+0000 68 03 06     IN  AL,(0x0603)     ; lee el pulsador del encoder DATA
+0003 70 10 06     OUT (0x0610),AL     ; lo manda al LED
 0006 88 00 00     JMP 0x0000          ; repetir para siempre
 ```
 Pulsa el eje del encoder DATA → el LED se enciende. (Vuelve a EDIT para parar.)
@@ -335,31 +357,31 @@ hacía falta guardar el `1` en memoria; ahora `SUB AL,#1` lo hace directo.)
 ```
 Dir  Bytes        Instrucción
 0000 10 0A        MOV AL,#0x0A        ; 10 pasos de t5 (32 ms) ≈ 320 ms
-0002 70 25 05     OUT (0x0525),AL     ; arma el temporizador 5
-0005 68 25 05     IN  AL,(0x0525)     ; lee el temporizador
+0002 70 25 06     OUT (0x0625),AL     ; arma el temporizador 5
+0005 68 25 06     IN  AL,(0x0625)     ; lee el temporizador
 0008 A3 00 00     CMP AL,#0x00        ; IN no toca flags: hay que comparar
 000B 8A 05 00     JMPNZ 0x0005        ; sigue esperando mientras != 0
 000E 10 01        MOV AL,#0x01
-0010 70 10 05     OUT (0x0510),AL     ; enciende el LED
+0010 70 10 06     OUT (0x0610),AL     ; enciende el LED
 0013 08           HALT
 ```
-Cambia el temporizador (`0x0520`–`0x0527`) o el valor inicial para ajustar el
+Cambia el temporizador (`0x0620`–`0x0627`) o el valor inicial para ajustar el
 retardo. Recuerda: en paso a paso los temporizadores no avanzan.
 
 ### Dos notas: DO4 y luego SOL4  *(RUN ▼ continuo)*
 ```
 Dir  Bytes        Instrucción
 0000 10 0F        MOV AL,#0x0F        ; 15 × 10 ms = 150 ms por nota
-0002 70 33 05     OUT (0x0533),AL     ; PORT_SND_DUR (se queda armado)
+0002 70 33 06     OUT (0x0633),AL     ; PORT_SND_DUR (se queda armado)
 0005 10 3C        MOV AL,#0x3C        ; 60 = DO4 (~262 Hz)
-0007 70 32 05     OUT (0x0532),AL     ; suena; se calla sola a los 150 ms
+0007 70 32 06     OUT (0x0632),AL     ; suena; se calla sola a los 150 ms
 000A 10 14        MOV AL,#0x14        ; espera con t3 (8 ms): 20 pasos ≈ 160 ms
-000C 70 23 05     OUT (0x0523),AL
-000F 68 23 05     IN  AL,(0x0523)     ; ← espera
+000C 70 23 06     OUT (0x0623),AL
+000F 68 23 06     IN  AL,(0x0623)     ; ← espera
 0012 A3 00 00     CMP AL,#0x00
 0015 8A 0F 00     JMPNZ 0x000F
 0018 10 43        MOV AL,#0x43        ; 67 = SOL4 (~392 Hz)
-001A 70 32 05     OUT (0x0532),AL
+001A 70 32 06     OUT (0x0632),AL
 001D 08           HALT
 ```
 Nota MIDI: 60 = DO4, 62 = RE, 64 = MI, 65 = FA, 67 = SOL, 69 = LA (440 Hz),

@@ -16,10 +16,10 @@ def asm(src):
 CASES = [
     # docs/isa.md §9
     ("LED sigue al pulsador", """
-        IN  AL,(0x0503)
-        OUT (0x0510),AL
+        IN  AL,(0x0603)
+        OUT (0x0610),AL
         JMP 0x0000
-    """, "68 03 05 70 10 05 88 00 00"),
+    """, "68 03 06 70 10 06 88 00 00"),
     ("HOLA", """
         MOV AL,#0x48
         OUT (0x0400),AL
@@ -58,15 +58,15 @@ CASES = [
     """, "10 03 A2 00 01 8A 02 00 08"),
     ("espera con temporizador", """
             MOV AL,#0x0A
-            OUT (0x0525),AL
+            OUT (0x0625),AL
         espera:
-            IN  AL,(0x0525)
+            IN  AL,(0x0625)
             CMP AL,#0x00
             JMPNZ espera
             MOV AL,#0x01
-            OUT (0x0510),AL
+            OUT (0x0610),AL
             HALT
-    """, "10 0A 70 25 05 68 25 05 A3 00 00 8A 05 00 10 01 70 10 05 08"),
+    """, "10 0A 70 25 06 68 25 06 A3 00 00 8A 05 00 10 01 70 10 06 08"),
     ("EXT variados", """
         MOV CL,AL
         ADD AL,BL

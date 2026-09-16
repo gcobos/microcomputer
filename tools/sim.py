@@ -34,6 +34,7 @@ class Ports:
     def __init__(self, instr_ns=20_000):
         self.fb = bytearray(1024)
         self.text = bytearray(21 * 8)
+        self.attr = bytearray(21 * 8)  # atributos de texto (puertos 0x0500+)
         self.timer = [0] * 8
         self.timer_set_ns = [0] * 8
         self.led = 0
@@ -66,25 +67,28 @@ class Ports:
         ti = self._text_index(port)
         if ti is not None:
             return self.text[ti]
-        if 0x0520 <= port < 0x0528:
-            return self.timer[port - 0x0520]
-        if port == 0x0530:
+        ai = self._attr_index(port)
+        if ai is not None:
+            return self.attr[ai]
+        if 0x0620 <= port < 0x0628:
+            return self.timer[port - 0x0620]
+        if port == 0x0630:
             return self.snd_lo
-        if port == 0x0531:
+        if port == 0x0631:
             return self.snd_hi
-        if port == 0x0532:
+        if port == 0x0632:
             return self.snd_note
-        if port == 0x0533:
+        if port == 0x0633:
             return self.snd_dur
-        if port == 0x0500:
+        if port == 0x0600:
             return self.dir_pos
-        if port == 0x0501:
+        if port == 0x0601:
             return self.dir_btn
-        if port == 0x0502:
+        if port == 0x0602:
             return self.dat_pos
-        if port == 0x0503:
+        if port == 0x0603:
             return self.dat_btn
-        if port == 0x0510:
+        if port == 0x0610:
             return self.led
         return 0
 
@@ -97,26 +101,30 @@ class Ports:
         if ti is not None:
             self.text[ti] = val
             return
-        if 0x0520 <= port < 0x0528:
-            i = port - 0x0520
+        ai = self._attr_index(port)
+        if ai is not None:
+            self.attr[ai] = val
+            return
+        if 0x0620 <= port < 0x0628:
+            i = port - 0x0620
             self.timer[i] = val
             self.timer_set_ns[i] = self.now_ns
             return
-        if port == 0x0530:
+        if port == 0x0630:
             self.snd_lo = val
             return
-        if port == 0x0531:
+        if port == 0x0631:
             self.snd_hi = val
             self._snd((val << 8) | self.snd_lo)
             return
-        if port == 0x0532:
+        if port == 0x0632:
             self.snd_note = val
             self._snd(_note_hz(val))
             return
-        if port == 0x0533:
+        if port == 0x0633:
             self.snd_dur = val
             return
-        if port == 0x0510:
+        if port == 0x0610:
             self.led = val & 1
 
     def _snd(self, hz):
@@ -129,6 +137,19 @@ class Ports:
         if not (0x0400 <= port < 0x0500):
             return None
         off = port - 0x0400
+        row, col = off >> 5, off & 31
+        if row >= 8 or col >= 21:
+            return None
+        return row * 21 + col
+
+    @staticmethod
+    def _attr_index(port):
+        # atributos de texto (0x0500..0x05FF): misma disposicion que el
+        # texto (fila*32+col), banco de puertos contiguo justo despues de
+        # TEXT_PORT_BASE (0x0400..0x04FF).
+        if not (0x0500 <= port < 0x0600):
+            return None
+        off = port - 0x0500
         row, col = off >> 5, off & 31
         if row >= 8 or col >= 21:
             return None

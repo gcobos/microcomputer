@@ -7,7 +7,7 @@
 ;  Como el framebuffer es 1 bit por pixel (sin niveles de gris), "brillar mas
 ;  fuerte" se simula agrandando la estrella en vez de aclararla.
 ;
-;  El LED azul de a bordo (puerto 0x0510) tambien es todo/nada (sin PWM), asi
+;  El LED azul de a bordo (puerto 0x0610) tambien es todo/nada (sin PWM), asi
 ;  que hace "lo mismo que la pantalla" del modo que puede: se enciende siempre
 ;  que al menos una estrella esta en su fase de brillo maximo, y se apaga si
 ;  ninguna lo esta -> parpadea al ritmo del cielo.
@@ -36,10 +36,10 @@ NSTARS   = 16
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
 P_FB      = 0x0000      ; framebuffer
 P_TEXT    = 0x0400      ; rejilla de texto
-P_DAT_POS = 0x0502      ; encoder DATOS: posicion (solo para sembrar el LFSR)
-P_DIR_BTN = 0x0501      ; encoder DIRECCION: pulsado
-P_LED     = 0x0510      ; LED azul de a bordo
-P_T3      = 0x0523      ; temporizador 3 (8 ms/paso)
+P_DAT_POS = 0x0602      ; encoder DATOS: posicion (solo para sembrar el LFSR)
+P_DIR_BTN = 0x0601      ; encoder DIRECCION: pulsado
+P_LED     = 0x0610      ; LED azul de a bordo
+P_T3      = 0x0623      ; temporizador 3 (8 ms/paso)
 
 ; ============================================================================
 ;  ARRANQUE

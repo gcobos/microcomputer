@@ -20,8 +20,10 @@ public:
 
     // Vista del programa (ExecCont): vuelca el framebuffer y compone encima la
     // rejilla de texto (TEXT_CELLS celdas, fila*TEXT_COLS + col; 0 = celda
-    // transparente). Si 'halted', superpone un aviso "HALT" en una esquina.
-    void renderFramebuffer(const uint8_t* fb, const uint8_t* text, bool halted);
+    // transparente), con sus atributos (mismo índice, banco 0x0500+ -- ver
+    // iomap.h ATTR_*; puede ser nullptr, equivale a "todo a 0"). Si 'halted',
+    // superpone un aviso "HALT" en una esquina.
+    void renderFramebuffer(const uint8_t* fb, const uint8_t* text, const uint8_t* attr, bool halted);
 
     // Mensaje a pantalla completa (p. ej. "GUARDANDO..." antes de bloquear).
     void message(const char* text);

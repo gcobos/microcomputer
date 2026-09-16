@@ -347,21 +347,25 @@ NO es la RAM. IN lee un puerto, OUT lo escribe (ambos operan sobre 1 byte).
 Puertos no mapeados: IN devuelve 0, OUT no hace nada.
 
 MAPA DE PUERTOS
-  --- PANTALLA (gráficos + texto van juntos) ---
+  --- PANTALLA (gráficos + texto + atributos van juntos) ---
   0x0000 .. 0x03FF   FRAMEBUFFER   gráficos, 1 puerto = 8 píxeles     (IO)
   0x0400 .. 0x04FF   TEXTO         1 puerto = 1 celda de carácter     (IO)
                      puerto = 0x0400 + fila*32 + col  (fila 0..7, col 0..20)
+  0x0500 .. 0x05FF  ATTR_PORT_BASE    atributos de texto, 1 puerto = 1 celda   (IO)
+                    puerto = 0x0500 + fila*32 + col  (misma formula que el texto)
+                    bit0 inverso · bit1 parpadeo · bit2 subrayado · bit3 tachado
+                    bit4 subindice · bit5 superindice · bits6-7 rotacion (0/90/180/270)
   --- Resto de periféricos ---
-  0x0500            PORT_DIR_POS   encoder ADDR: posición       (IN)
-  0x0501            PORT_DIR_BTN   encoder ADDR: bit0 = pulsado (IN)
-  0x0502            PORT_DAT_POS   encoder DATA: posición       (IN)
-  0x0503            PORT_DAT_BTN   encoder DATA: bit0 = pulsado (IN)
-  0x0510            PORT_LED       LED azul de a bordo (GPIO8)   (OUT bit0; IN lee eco)
-  0x0520 .. 0x0527  PORT_TIMER_BASE+i   8 temporizadores descendentes  (OUT arma; IN lee)
-  0x0530            PORT_SND_FREQ_LO   sonido: byte bajo de la frecuencia  (OUT engancha)
-  0x0531            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
-  0x0532            PORT_SND_NOTE      sonido: nota MIDI 0..127 (0 = silencio)
-  0x0533            PORT_SND_DUR       sonido: duración auto = valor * 10 ms (0 = sostenida)
+  0x0600            PORT_DIR_POS   encoder ADDR: posición       (IN)
+  0x0601            PORT_DIR_BTN   encoder ADDR: bit0 = pulsado (IN)
+  0x0602            PORT_DAT_POS   encoder DATA: posición       (IN)
+  0x0603            PORT_DAT_BTN   encoder DATA: bit0 = pulsado (IN)
+  0x0610            PORT_LED       LED azul de a bordo (GPIO8)   (OUT bit0; IN lee eco)
+  0x0620 .. 0x0627  PORT_TIMER_BASE+i   8 temporizadores descendentes  (OUT arma; IN lee)
+  0x0630            PORT_SND_FREQ_LO   sonido: byte bajo de la frecuencia  (OUT engancha)
+  0x0631            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
+  0x0632            PORT_SND_NOTE      sonido: nota MIDI 0..127 (0 = silencio)
+  0x0633            PORT_SND_DUR       sonido: duración auto = valor * 10 ms (0 = sostenida)
   resto            IN -> 0 ; OUT -> nada
 
 FRAMEBUFFER · gráficos (puertos 0x0000..0x03FF)
@@ -403,7 +407,32 @@ TEXTO · rejilla de caracteres (puertos 0x0400..0x04FF)
   Para escribir una cadena: OUT carácter a carácter incrementando el puerto
   (col+1). No hay salto de línea automático.
 
-ENCODERS Y PULSADORES (puertos 0x0500..0x0503, solo IN)
+ATRIBUTOS DE TEXTO (puertos 0x0500..0x05FF, ATTR_PORT_BASE = 0x0500)
+  Un byte de atributos por celda, en la MISMA disposición que la rejilla de
+  texto (fila*32+col) y sobre las mismas 168 celdas -- ver attrPort() en
+  iomap.h. Se aplican al dibujar el carácter de esa celda; una celda con
+  carácter 0 (transparente) no dibuja nada aunque tenga atributos puestos.
+
+  Va pegado a 0x0400..0x04FF (justo detrás del texto); encoders/LED/
+  temporizadores/sonido se desplazaron en bloque a 0x0600+ para dejarle
+  el hueco.
+
+    bit 0  ATTR_INVERSE      vídeo inverso (fondo y trazo intercambiados)
+    bit 1  ATTR_BLINK        parpadea (deja de dibujarse la mitad del ciclo,
+                              ~500 ms encendido / ~500 ms apagado)
+    bit 2  ATTR_UNDERLINE    raya bajo el carácter
+    bit 3  ATTR_STRIKE       raya a media altura (tachado)
+    bit 4  ATTR_SUBSCRIPT    desplazado 1 px hacia abajo dentro de la celda
+    bit 5  ATTR_SUPERSCRIPT  desplazado 1 px hacia arriba
+                              (si se ponen 4 y 5 a la vez, gana subíndice)
+    bits 6-7  rotación del glifo, sentido horario:
+              00=0°  01=90°  10=180°  11=270°
+
+  A esta resolución (glifos de 5x7 en una celda de 8 px de alto) no hay
+  margen para además encoger el carácter en subíndice/superíndice y que se
+  siga leyendo, así que solo se desplaza, a tamaño normal.
+
+ENCODERS Y PULSADORES (puertos 0x0600..0x0603, solo IN)
   "Posición" = contador de 8 bits que se incrementa/decrementa con cada
   detente del encoder y ENVUELVE (0x00 <-> 0xFF). Es absoluta, no un delta.
   Se pone a 0 al (re)iniciar una ejecución. El programa calcula el
@@ -412,28 +441,28 @@ ENCODERS Y PULSADORES (puertos 0x0500..0x0503, solo IN)
   está pulsado. En STEP, los pulsadores los usa el firmware (DATA = avanzar,
   ADDR = reset), así que el programa los verá a 1 en ese instante.
 
-LED DE A BORDO (puerto PORT_LED = 0x0510)
+LED DE A BORDO (puerto PORT_LED = 0x0610)
   OUT bit 0 = 1 -> enciende el LED azul del SuperMini (GPIO8). IN devuelve el
   eco del último valor. Se apaga al (re)iniciar cualquier ejecución.
   GPIO8 es pin de strapping: el firmware lo pone en alto (LED apagado) al
   arrancar; si un programa lo deja encendido y la placa se reinicia, como
   mucho se suprime el log de arranque por UART.
 
-TEMPORIZADORES (puertos 0x0520 .. 0x0527, PORT_TIMER_BASE = 0x0520)
+TEMPORIZADORES (puertos 0x0620 .. 0x0627, PORT_TIMER_BASE = 0x0620)
   8 cuentas atrás independientes. OUT carga el temporizador i con un valor
   (0..255); a partir de ahí decrece solo, de 1 en 1, hasta 0 y se queda ahí.
   IN devuelve el valor actual (0 = terminado). OUT 0 lo detiene.
 
   El temporizador i decrece 1 cada (TIMER_BASE_MS << i) ms, con
   TIMER_BASE_MS = 1:
-    t0 = 0x0520   1 ms/paso   (el más rápido; 255 -> 0 en ~255 ms)
-    t1 = 0x0521   2 ms/paso
-    t2 = 0x0522   4 ms/paso
-    t3 = 0x0523   8 ms/paso
-    t4 = 0x0524   16 ms/paso
-    t5 = 0x0525   32 ms/paso
-    t6 = 0x0526   64 ms/paso
-    t7 = 0x0527   128 ms/paso  (el más lento; 255 -> 0 en ~32,6 s)
+    t0 = 0x0620   1 ms/paso   (el más rápido; 255 -> 0 en ~255 ms)
+    t1 = 0x0621   2 ms/paso
+    t2 = 0x0622   4 ms/paso
+    t3 = 0x0623   8 ms/paso
+    t4 = 0x0624   16 ms/paso
+    t5 = 0x0625   32 ms/paso
+    t6 = 0x0626   64 ms/paso
+    t7 = 0x0627   128 ms/paso  (el más lento; 255 -> 0 en ~32,6 s)
 
   Solo corren en RUN + CONTINUOUS (tickTimers() se llama una vez por vuelta
   de loop()). En STEP están congelados, para poder depurar bucles de espera
@@ -444,19 +473,19 @@ TEMPORIZADORES (puertos 0x0520 .. 0x0527, PORT_TIMER_BASE = 0x0520)
   largo, HALT, etc.), el temporizador se pone al día: descuenta todos los
   pasos transcurridos de una vez (nunca por debajo de 0).
 
-SONIDO (puertos 0x0530 .. 0x0533, PORT_SND_BASE = 0x0530)
+SONIDO (puertos 0x0630 .. 0x0633, PORT_SND_BASE = 0x0630)
   Zumbador PIEZO PASIVO en GPIO3. El firmware genera un tono de onda cuadrada
   por hardware con tone() (LEDC del ESP32-C3); no consume tiempo de CPU.
 
-    0x0530  PORT_SND_FREQ_LO  OUT: engancha el byte bajo de la frecuencia (Hz).
+    0x0630  PORT_SND_FREQ_LO  OUT: engancha el byte bajo de la frecuencia (Hz).
                               No suena aún. IN: eco.
-    0x0531  PORT_SND_FREQ_HI  OUT: byte alto y APLICA  Hz = (hi << 8) | lo.
+    0x0631  PORT_SND_FREQ_HI  OUT: byte alto y APLICA  Hz = (hi << 8) | lo.
                               Hz = 0 -> silencio. Se teclea LO y luego HI.
                               IN: eco.
-    0x0532  PORT_SND_NOTE     OUT: nota MIDI 0..127; suena al momento.
+    0x0632  PORT_SND_NOTE     OUT: nota MIDI 0..127; suena al momento.
                               0 = silencio. 69 = LA4 = 440 Hz; +12 = una octava.
                               Hz = round(440 * 2^((nota-69)/12)). IN: última nota.
-    0x0533  PORT_SND_DUR      OUT: duración automática = valor * 10 ms; pasada
+    0x0633  PORT_SND_DUR      OUT: duración automática = valor * 10 ms; pasada
                               esa, el tono se calla solo. 0 = sostenido.
                               "Pegajoso": cada NOTE / FREQ_HI posterior vuelve a
                               armar esta misma duración. IN: tiempo restante en
@@ -466,6 +495,21 @@ SONIDO (puertos 0x0530 .. 0x0533, PORT_SND_BASE = 0x0530)
   al (re)arrancar una ejecución, al pasar a STEP o EDIT, y al llegar a HALT.
   tickSound() corre una vez por vuelta de loop() (aplica el auto-apagado).
   El piezo pasivo va directo entre GPIO3 y GND (opcional 100 Ω en serie).
+
+  A esta resolución (glifos de 5x7 en una celda de 8 px de alto) no hay
+  margen para además encoger el carácter en subíndice/superíndice y que se
+  siga leyendo, así que solo se desplaza, a tamaño normal.
+
+  El firmware guarda las 168 celdas en g_attr (main.cpp), NO en la RAM. Se
+  ponen a 0 en los mismos momentos que g_text (arranque de una ejecución).
+
+  drawTextCell() (display.cpp) sustituye al Adafruit_GFX::drawChar() que se
+  usaba antes: esa función no puede rotar UN carácter suelto (solo rota la
+  pantalla entera), así que drawTextCell() recorre el bitmap de font5x7.h
+  (copia propia de glcdfont.c de Adafruit GFX, recortada a 0x20..0x7F, ver el
+  propio fichero) píxel a píxel, y lo coloca ya rotado/desplazado/invertido.
+  Con atributos a 0 el resultado es idéntico, píxel a píxel, al drawChar()
+  de antes.
 
 EJEMPLO (escribir "HI" arriba a la izquierda):
   MOV AL,#0x48      ; 'H'
@@ -478,33 +522,33 @@ EJEMPLO (encender el píxel (0,0) y el LED):
   MOV AL,#0x80
   OUT (0x0000),AL
   MOV AL,#0x01
-  OUT (0x0510),AL
+  OUT (0x0610),AL
 
 EJEMPLO (espera de ~0,32 s y luego enciende el LED):
   MOV AL,#0x0A       ; 10 pasos de t5 (32 ms) = 320 ms
-  OUT (0x0525),AL    ; arma el temporizador 5
+  OUT (0x0625),AL    ; arma el temporizador 5
 espera:
-  IN  AL,(0x0525)    ; lee el temporizador
+  IN  AL,(0x0625)    ; lee el temporizador
   CMP AL,#0x00       ; IN no toca flags: hay que comparar
   JMPNZ espera       ; repite mientras != 0
   MOV AL,#0x01
-  OUT (0x0510),AL    ; enciende el LED
+  OUT (0x0610),AL    ; enciende el LED
   HALT
 
 EJEMPLO (dos pitidos: LA4 y LA5, 150 ms cada uno):
   MOV AL,#0x0F      ; 15 * 10 ms = 150 ms por nota
-  OUT (0x0533),AL   ; PORT_SND_DUR
+  OUT (0x0633),AL   ; PORT_SND_DUR
   MOV AL,#69        ; nota MIDI 69 = LA4 = 440 Hz
-  OUT (0x0532),AL   ; PORT_SND_NOTE -> suena y se calla sola a los 150 ms
+  OUT (0x0632),AL   ; PORT_SND_NOTE -> suena y se calla sola a los 150 ms
   ; ... espera con un temporizador ...
   MOV AL,#0x14
-  OUT (0x0524),AL
+  OUT (0x0624),AL
 esp1:
-  IN  AL,(0x0524)
+  IN  AL,(0x0624)
   CMP AL,#0x00
   JMPNZ esp1
   MOV AL,#81        ; nota 81 = LA5 = 880 Hz
-  OUT (0x0532),AL
+  OUT (0x0632),AL
   HALT
 
 
@@ -854,7 +898,7 @@ VISTA EditPrg — renderEditPrg(cpu, ui)
                " %04X %s" por instrucción. Si previewLen == 0: "(slot empty)".
   FILA 7 : "ADDR=slot DATA:turn/go"
 
-VISTA ExecCont — renderFramebuffer(g_fb, g_text, halted)
+VISTA ExecCont — renderFramebuffer(g_fb, g_text, g_attr, halted)
   0) display_.clearDisplay() -- IMPRESCINDIBLE, no solo por borrar el búfer
      (bug corregido: antes era un memset(buffer,0,...) a pelo). Adafruit_
      GrayOLED (base de Adafruit_SH110X) manda por I2C, en display(), solo el
@@ -877,7 +921,11 @@ VISTA ExecCont — renderFramebuffer(g_fb, g_text, halted)
      píxel izquierdo) al buffer interno de la SH1106 (formato de páginas:
      buffer[x + (y/8)*128] bit (y & 7)).
   2) Compone la capa de texto: por cada celda g_text[fila*TEXT_COLS+col] != 0,
-     drawChar(col*6, fila*8, código, WHITE, BLACK) — opaco (borra la celda 6x8).
+     drawTextCell(col*6, fila*8, código, g_attr[fila*TEXT_COLS+col]) —
+     opaco (borra la celda 6x8), pinta el glifo de font5x7.h píxel a píxel
+     (no drawChar(): no puede rotar un carácter suelto) aplicando sus
+     atributos (sección 8, ATTR_*). Con atributos a 0 el resultado es
+     idéntico, píxel a píxel, al drawChar(..., WHITE, BLACK) de antes.
      Celda 0 = transparente (se ve el gráfico).
   3) Si halted, superpone "HALT" en una esquina (encima del texto).
   display_.display(). Se invoca cada FB_FLUSH_MS ms.
@@ -896,7 +944,7 @@ MENSAJE A PANTALLA COMPLETA — message(texto)
   MAX_PROGRAM_SLOTS include/storage.h   60      (lo que cabe en 4 MiB)
   FB_PORT_BASE / FB_BYTES  include/iomap.h  0x0000 / 1024
   TEXT_PORT_BASE / TEXT_COLS / TEXT_ROWS / TEXT_STRIDE  include/iomap.h  0x0400 / 21 / 8 / 32
-  PORT_DIR_* / PORT_DAT_*   include/iomap.h  0x0500..0x0503
+  PORT_DIR_* / PORT_DAT_*   include/iomap.h  0x0600..0x0603
   PREVIEW_BYTES     include/ui.h        48
   DEBOUNCE_MS       include/panel.h     20 ms
   ENC_DIVISOR       include/panel.h     4
@@ -906,13 +954,26 @@ MENSAJE A PANTALLA COMPLETA — message(texto)
   ACTIVE_WINDOW_MS  src/main.cpp        2000 ms  (sigue a 2 ms tras la actividad)
   SCREEN_DIM_MS / SCREEN_OFF_MS / LIGHT_SLEEP_MS  src/main.cpp  20000 / 45000 / 45000 ms
   OLED_CONTRAST_FULL / OLED_CONTRAST_DIM  src/main.cpp  0xCF / 0x10
+  START_SCREEN_DIMMED  src/main.cpp  true (arranca atenuada, ahorra bateria)
+  build_src_flags (platformio.ini)  -fjump-tables -ftree-switch-conversion
+    reactiva la tabla de saltos SOLO para src/*.cpp (el framework de Espressif
+    compila todo con -fno-jump-tables por defecto, pensado para ISRs que
+    podrian ejecutarse con la flash interna deshabilitada; src/*.cpp no tiene
+    ISRs de hardware ni toca la flash interna, asi que no aplica). Sin esto,
+    el switch(family) de 21 casos en Cpu::step() -el bucle mas caliente del
+    firmware- se compilaba como ~20 comparaciones secuenciales en vez de un
+    salto indirecto O(1); verificado con objdump (jr tras cargar de una
+    tabla). Coste: +160 B de flash. Medido con programs/benchmark.asm.
   COMPI_NO_LIGHT_SLEEP  build_flag (opcional)  desactiva el light sleep
   Dirección I2C     src/main.cpp        0x3C
   Pines            src/main.cpp        (sección 9)
   PIN_LED / PIN_LED_ACTIVE_LOW  src/main.cpp   IO8 / true  (LED de a bordo)
-  PORT_LED          include/iomap.h    0x0510
-  PORT_TIMER_BASE / TIMER_COUNT / TIMER_BASE_MS  include/iomap.h  0x0520 / 8 / 1 ms
-  PORT_SND_BASE / SND_PORT_COUNT  include/iomap.h    0x0530 / 4  (piezo en GPIO3)
+  PORT_LED          include/iomap.h    0x0610
+  PORT_TIMER_BASE / TIMER_COUNT / TIMER_BASE_MS  include/iomap.h  0x0620 / 8 / 1 ms
+  PORT_SND_BASE / SND_PORT_COUNT  include/iomap.h    0x0630 / 4  (piezo en GPIO3)
+  ATTR_PORT_BASE / ATTR_PORT_SPAN  include/iomap.h   0x0500 / 0x0100
+  ATTR_INVERSE/BLINK/UNDERLINE/STRIKE/SUBSCRIPT/SUPERSCRIPT/ROT_MASK  include/iomap.h  bits 0-7
+  FONT5X7 / FONT5X7_FIRST / FONT5X7_LAST  include/font5x7.h  0x20 / 0x7F
   PIN_BUZZER        src/main.cpp        IO3
   SPI de la flash   src/spi_flash_storage.cpp   8 MHz, MODE0
 
@@ -978,13 +1039,18 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
   perderse (al muestrear a 100 ms, la cuadratura empieza y acaba en reposo).
 
 portRead(port):  port < 1024 -> g_fb[port] ; celda de texto -> g_text[i] ;
-  0x0500/0x0502 -> dirPos/datPos ; 0x0501/0x0503 -> dirDown/datDown ;
-  0x0510 -> g_led ; 0x0520..0527 -> g_timer[i] ;
-  0x0530..0533 -> eco de sonido (DUR = tiempo restante) ; resto -> 0.
+  celda de atributos -> g_attr[i] ;
+  0x0600/0x0602 -> dirPos/datPos ; 0x0601/0x0603 -> dirDown/datDown ;
+  0x0610 -> g_led ; 0x0620..0627 -> g_timer[i] ;
+  0x0630..0633 -> eco de sonido (DUR = tiempo restante) ; resto -> 0.
 portWrite(port, v):  port < 1024 -> g_fb[port] = v ; celda de texto -> g_text[i] = v ;
-  0x0510 -> LED ; 0x0520..0527 -> arma el temporizador ;
-  0x0530..0533 -> sonido (0x0531 y 0x0532 aplican el tono) ; resto -> nada.
+  celda de atributos -> g_attr[i] = v ;
+  0x0610 -> LED ; 0x0620..0627 -> arma el temporizador ;
+  0x0630..0633 -> sonido (0x0631 y 0x0632 aplican el tono) ; resto -> nada.
   "celda de texto" = textIndex(port) >= 0  (0x0400 + fila*32 + col, fila<8, col<21).
+  "celda de atributos" = attrIndex(port) >= 0  (0x0500 + fila*32 + col, misma
+  formula que el texto, comprobado DESPUES de textIndex en el orden de
+  despacho -- ver el orden real de los if en src/main.cpp).
 
 setup() también hace pinMode(PIN_LED, OUTPUT)/setLed(false) y
 pinMode(PIN_BUZZER, OUTPUT)/LOW lo primero.
@@ -1043,15 +1109,16 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   FB_FLUSH_MS da más CPU al programa a costa de refresco.
 - El framebuffer y la capa de texto se borran en cada (re)inicio de ejecución
   (entrar en RUN, entrar en CONTINUOUS, o RESET en STEP).
-- PANTALLA: gráficos (0x0000..0x03FF) y texto (0x0400..0x04FF) van juntos al
-  principio del espacio de puertos. El texto es una rejilla de caracteres 21x8
-  (fuente 6x8) que se compone ENCIMA del gráfico; una celda a 0 es transparente.
-  Facilita imprimir texto desde el ensamblador (OUT del código de carácter a la
-  celda), sin tener que dibujar píxeles. El resto de periféricos se movió a
-  0x05xx para dejar ese hueco contiguo.
+- PANTALLA: gráficos (0x0000..0x03FF), texto (0x0400..0x04FF) y atributos de
+  texto (0x0500..0x05FF) van juntos al principio del espacio de puertos. El
+  texto es una rejilla de caracteres 21x8 (fuente 6x8) que se compone ENCIMA
+  del gráfico; una celda a 0 es transparente. Facilita imprimir texto desde
+  el ensamblador (OUT del código de carácter a la celda), sin tener que
+  dibujar píxeles. El resto de periféricos se movió a 0x06xx para dejar ese
+  hueco contiguo a los atributos.
 - En STEP los pulsadores de los encoders los usa el firmware (DATA avanza,
-  ADDR resetea) y el programa los verá a 1 en ese instante (IN 0x0501 /
-  0x0503). En CONTINUOUS todo va al programa.
+  ADDR resetea) y el programa los verá a 1 en ese instante (IN 0x0601 /
+  0x0603). En CONTINUOUS todo va al programa.
 - El listado de depuración se alinea siempre desde 0x0000; zonas de datos
   pueden verse "torcidas". No hay scroll manual en ejecución.
 - La previsualización del slot (EditPrg) lee solo PREVIEW_BYTES bytes de la
@@ -1068,7 +1135,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
 - SONIDO: zumbador piezo PASIVO en GPIO3 (el último pin que quedaba libre),
   atacado directo (el piezo es capacitivo, corriente media despreciable). El
   tono lo genera tone()/LEDC por hardware, así que no roba tiempo a la CPU
-  emulada ni depende del modelo de ejecución por lotes. Puertos 0x0530..0x0533:
+  emulada ni depende del modelo de ejecución por lotes. Puertos 0x0630..0x0633:
   frecuencia de 16 bits, nota MIDI (lo más fácil de usar con OUT) y duración
   automática. Solo suena en CONTINUOUS; se calla en STEP/EDIT y al HALT. Con un
   piezo pasivo se pueden tocar melodías; un buzzer ACTIVO solo daría un pitido

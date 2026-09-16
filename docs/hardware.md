@@ -186,7 +186,7 @@ Controlador **SH1106** (no SSD1306). Librería `adafruit/Adafruit SH110X`.
   (`digitalWrite(8, LOW)` = encendido). No hace falta LED externo.
 - Doble uso:
   - **failBlink**: aviso de fallo en el arranque (parpadeo lento/rápido).
-  - **salida del ordenador emulado**: puerto `PORT_LED` (0x0510) — `OUT` bit 0.
+  - **salida del ordenador emulado**: puerto `PORT_LED` (0x0610) — `OUT` bit 0.
 - `PIN_LED` / `PIN_LED_ACTIVE_LOW` en [`src/main.cpp`](../src/main.cpp).
 
 | Ritmo de parpadeo | Fallo |
@@ -194,7 +194,7 @@ Controlador **SH1106** (no SSD1306). Librería `adafruit/Adafruit SH110X`.
 | lento (200 ms) | la pantalla OLED no responde |
 | rápido (80 ms)  | la flash SPI no responde / JEDEC ID incorrecto |
 
-Fuera del arranque, el LED lo controla el programa emulado con `OUT (0x0510),reg`.
+Fuera del arranque, el LED lo controla el programa emulado con `OUT (0x0610),reg`.
 
 ---
 
@@ -238,7 +238,7 @@ batería (sección 10).
 
 ## 9. Sonido — zumbador piezo pasivo (GPIO3)
 
-Salida de sonido del ordenador emulado (puertos `0x0530`–`0x0533`, ver
+Salida de sonido del ordenador emulado (puertos `0x0630`–`0x0633`, ver
 `specs.txt` §8). El firmware genera un tono de onda cuadrada con `tone()`
 (controlador **LEDC** del ESP32-C3): frecuencia arbitraria, por hardware, sin
 gastar tiempo de CPU. El C3 **no tiene DAC**, así que es tono, no audio PCM.

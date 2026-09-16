@@ -53,7 +53,7 @@
   <circle cx="712" cy="108" r="8" fill="#2ea8ff" stroke="#1f6fb0" stroke-width="1.5"/>
   <circle cx="709" cy="105" r="2.5" fill="#bfe4ff"/>
   <text x="712" y="130" text-anchor="middle" class="tiny">onboard LED</text>
-  <text x="712" y="142" text-anchor="middle" class="tiny">OUT (0x0510)</text>
+  <text x="712" y="142" text-anchor="middle" class="tiny">OUT (0x0610)</text>
 
   <!-- encoder izquierdo: DIRECCIÓN -->
   <g transform="translate(150,180)">
@@ -66,7 +66,7 @@
   <text x="150" y="268" text-anchor="middle" class="name">ADDR</text>
   <text x="150" y="289" text-anchor="middle" class="act">turn — move cursor / pick slot</text>
   <text x="150" y="305" text-anchor="middle" class="act">press — cursor −1  /  reset (in STEP)</text>
-  <text x="150" y="323" text-anchor="middle" class="tiny">when running → IN ports 0x0500 · 0x0501</text>
+  <text x="150" y="323" text-anchor="middle" class="tiny">when running → IN ports 0x0600 · 0x0601</text>
 
   <!-- encoder derecho: DATOS -->
   <g transform="translate(850,180)">
@@ -79,7 +79,7 @@
   <text x="850" y="268" text-anchor="middle" class="name">DATA</text>
   <text x="850" y="289" text-anchor="middle" class="act">turn — edit field / pick action</text>
   <text x="850" y="305" text-anchor="middle" class="act">press — confirm field  /  do  /  1 step</text>
-  <text x="850" y="323" text-anchor="middle" class="tiny">when running → IN ports 0x0502 · 0x0503</text>
+  <text x="850" y="323" text-anchor="middle" class="tiny">when running → IN ports 0x0602 · 0x0603</text>
 
   <!-- switches -->
   <g>
@@ -114,7 +114,7 @@
       <circle cx="788" cy="388" r="3.1"/><circle cx="803" cy="388" r="3.1"/><circle cx="818" cy="388" r="3.1"/><circle cx="833" cy="388" r="3.1"/><circle cx="848" cy="388" r="3.1"/><circle cx="863" cy="388" r="3.1"/><circle cx="878" cy="388" r="3.1"/>
     </g>
     <text x="832" y="420" text-anchor="middle" class="name">SOUND</text>
-    <text x="832" y="436" text-anchor="middle" class="act">piezo buzzer — OUT 0x0530–0x0533</text>
+    <text x="832" y="436" text-anchor="middle" class="act">piezo buzzer — OUT 0x0630–0x0633</text>
   </g>
 
   <!-- leyenda: la rejilla 2x2 de vistas -->

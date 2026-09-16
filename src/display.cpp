@@ -3,6 +3,7 @@
 #include "editor.h"
 #include "isa.h"
 #include "iomap.h"
+#include "font5x7.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -29,6 +30,57 @@ const char* editFieldLabel(const UiState& ui) {
     };
     EField f = fieldAt(ui.compose.verb, ui.compose.mode, ui.compose.step);
     return kLabel[(uint8_t)f];
+}
+
+constexpr int16_t CELL_W = 6;
+constexpr int16_t CELL_H = 8;
+constexpr unsigned long BLINK_PERIOD_MS = 500; // medio ciclo encendido, medio apagado
+
+// Dibuja una celda de texto (esquina superior izquierda en x0,y0) aplicando
+// sus atributos (ver iomap.h ATTR_*). No usa Adafruit_GFX::drawChar(): esa
+// función no admite rotar un carácter por separado (solo rota la pantalla
+// entera), así que aquí se recorre el bitmap de font5x7.h píxel a píxel y se
+// coloca ya girado. Con attr=0 el resultado es igual, píxel a píxel, al que
+// daba drawChar(..., fg, bg, 1) -- incluida la fila 8 de fondo, que el
+// carácter nunca toca (la fuente clásica solo usa 7 de las 8 filas).
+void drawTextCell(Adafruit_SH1106G& d, int16_t x0, int16_t y0, uint8_t ch, uint8_t attr) {
+    if (attr & ATTR_BLINK) {
+        bool on = ((millis() / BLINK_PERIOD_MS) & 1) == 0;
+        if (!on) return; // medio ciclo "apagado": celda transparente este fotograma
+    }
+
+    const bool inverse = (attr & ATTR_INVERSE) != 0;
+    const uint16_t fg = inverse ? SH110X_BLACK : SH110X_WHITE;
+    const uint16_t bg = inverse ? SH110X_WHITE : SH110X_BLACK;
+    d.fillRect(x0, y0, CELL_W, CELL_H, bg);
+
+    // Subíndice/superíndice: desplazamiento vertical del glifo dentro de la
+    // celda (a esta resolución -5x7 en una celda de 8 px- no hay margen para
+    // además encogerlo y que se siga leyendo). Si se piden los dos a la vez,
+    // gana subíndice.
+    int8_t dy = 0;
+    if (attr & ATTR_SUBSCRIPT) dy = 1;
+    else if (attr & ATTR_SUPERSCRIPT) dy = -1;
+
+    const uint8_t rot = (uint8_t)((attr & ATTR_ROT_MASK) >> ATTR_ROT_SHIFT);
+    for (uint8_t col = 0; col < FONT5X7_COLS; ++col) {
+        for (uint8_t row = 0; row < FONT5X7_ROWS; ++row) {
+            if (!font5x7Bit((char)ch, col, row)) continue;
+            int16_t px, py;
+            switch (rot) {
+                case 1: px = (int16_t)(FONT5X7_ROWS - 1 - row); py = col; break;              // 90°
+                case 2: px = (int16_t)(FONT5X7_COLS - 1 - col); py = (int16_t)(FONT5X7_ROWS - 1 - row); break; // 180°
+                case 3: px = row; py = (int16_t)(FONT5X7_COLS - 1 - col); break;              // 270°
+                default: px = col; py = row; break;                                           // 0°
+            }
+            py = (int16_t)(py + dy);
+            if (px < 0 || px >= CELL_W || py < 0 || py >= CELL_H) continue; // no sangrar a la celda vecina
+            d.drawPixel((int16_t)(x0 + px), (int16_t)(y0 + py), fg);
+        }
+    }
+
+    if (attr & ATTR_UNDERLINE) d.drawFastHLine(x0, (int16_t)(y0 + CELL_H - 1), CELL_W, fg);
+    if (attr & ATTR_STRIKE)    d.drawFastHLine(x0, (int16_t)(y0 + CELL_H / 2 - 1), CELL_W, fg);
 }
 } // namespace
 
@@ -141,7 +193,7 @@ void OledPanel::renderEditPrg(const Cpu& cpu, const UiState& ui) {
     display_.display();
 }
 
-void OledPanel::renderFramebuffer(const uint8_t* fb, const uint8_t* text, bool halted) {
+void OledPanel::renderFramebuffer(const uint8_t* fb, const uint8_t* text, const uint8_t* attr, bool halted) {
     // clearDisplay() (no memset a pelo): además de poner el búfer a 0, marca
     // TODA la pantalla como "sucia" (window_x1/y1/x2/y2 = pantalla entera).
     // La librería (Adafruit_GrayOLED) solo manda por I2C esa ventana en
@@ -170,14 +222,15 @@ void OledPanel::renderFramebuffer(const uint8_t* fb, const uint8_t* text, bool h
     }
 
     // Capa de texto encima: cada celda no nula se dibuja opaca (6x8) sobre el
-    // gráfico. Celda 0 = transparente (se ve el framebuffer).
+    // gráfico, con sus atributos (ver drawTextCell). Celda 0 = transparente
+    // (se ve el framebuffer).
     if (text) {
         for (uint8_t r = 0; r < TEXT_ROWS; ++r) {
             for (uint8_t c = 0; c < TEXT_COLS; ++c) {
                 uint8_t ch = text[r * TEXT_COLS + c];
                 if (ch == 0) continue;
-                display_.drawChar((int16_t)(c * 6), (int16_t)(r * ROW_H),
-                                  ch, SH110X_WHITE, SH110X_BLACK, 1);
+                uint8_t a = attr ? attr[r * TEXT_COLS + c] : 0;
+                drawTextCell(display_, (int16_t)(c * CELL_W), (int16_t)(r * ROW_H), ch, a);
             }
         }
         display_.setTextColor(SH110X_WHITE);

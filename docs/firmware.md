@@ -120,34 +120,47 @@ y en `specs.txt` §12.)
 `IN`/`OUT` usan un **puerto de 16 bits** (operando de 3 bytes). Espacio de
 65536 puertos, aparte de la RAM.
 
-La pantalla (gráficos + texto) ocupa `0x0000..0x04FF`; el resto de periféricos
-va en `0x05xx`.
+La pantalla (gráficos + texto + atributos) ocupa `0x0000..0x05FF`; el resto de
+periféricos va en `0x06xx`.
 
 - **Gráficos** (framebuffer): puertos `0x0000..0x03FF` (1024 B, lectura y
   escritura). 1 puerto = 8 px horizontales, bit 7 = izquierda, 1 = encendido.
   El buffer vive en `g_fb` (main.cpp), no en la RAM de la CPU.
 - **Texto**: puertos `0x0400..0x04FF`. Rejilla monospace `TEXT_COLS`×`TEXT_ROWS`
-  = 21×8 (fuente 6×8 de GFX). Puerto = `0x0400 + fila*TEXT_STRIDE + col`
-  (`TEXT_STRIDE` = 32; `textIndex()` valida y mapea a `g_text[fila*21+col]`).
-  El byte es el código de carácter: `0` = celda transparente, `0x20` = blanco,
-  resto = glifo opaco. `renderFramebuffer(g_fb, g_text, halted)` compone: blit
-  del framebuffer + `drawChar` opaco por celda no nula + overlay "HALT".
-- **Encoders** (solo `IN`): `PORT_DIR_POS` 0x0500 / `PORT_DAT_POS` 0x0502 =
-  posición absoluta (0–255, envuelve); `PORT_DIR_BTN` 0x0501 / `PORT_DAT_BTN`
-  0x0503 = bit 0 = pulsador.
-- **LED de a bordo** (`OUT`/`IN`): `PORT_LED` 0x0510, bit 0 controla el LED
+  = 21×8 (fuente 6×8 propia, `font5x7.h` -- copia de `glcdfont.c` de Adafruit
+  GFX recortada a `0x20..0x7F`, ver más abajo). Puerto = `0x0400 +
+  fila*TEXT_STRIDE + col` (`TEXT_STRIDE` = 32; `textIndex()` valida y mapea a
+  `g_text[fila*21+col]`). El byte es el código de carácter: `0` = celda
+  transparente, `0x20` = blanco, resto = glifo opaco.
+- **Atributos de texto**: puertos `0x0500..0x05FF`, misma disposición que el
+  texto (`attrIndex()` mapea a `g_attr[fila*21+col]`; `attrPort()`/`ATTR_*` en
+  `iomap.h`, ver `docs/isa.md` §8 para el significado de cada bit). Va pegado
+  a `0x0400..0x04FF`; encoders/LED/temporizadores/sonido se desplazaron en
+  bloque a `0x0600+` para dejarle el hueco.
+  `renderFramebuffer(g_fb, g_text, g_attr, halted)` compone: blit del
+  framebuffer + `drawTextCell()` (display.cpp) por celda no nula, aplicando
+  sus atributos, + overlay "HALT". `drawTextCell()` no usa
+  `Adafruit_GFX::drawChar()`: esa función no rota un carácter por separado
+  (solo la pantalla entera), así que recorre `font5x7.h` píxel a píxel para
+  poder rotarlo, desplazarlo (sub/superíndice) e invertirlo. Con
+  atributos a 0 el resultado es idéntico, píxel a píxel, al `drawChar` de
+  antes.
+- **Encoders** (solo `IN`): `PORT_DIR_POS` 0x0600 / `PORT_DAT_POS` 0x0602 =
+  posición absoluta (0–255, envuelve); `PORT_DIR_BTN` 0x0601 / `PORT_DAT_BTN`
+  0x0603 = bit 0 = pulsador.
+- **LED de a bordo** (`OUT`/`IN`): `PORT_LED` 0x0610, bit 0 controla el LED
   azul del SuperMini (GPIO8). Se apaga al (re)iniciar una ejecución.
-- **Temporizadores** (`OUT`/`IN`): `PORT_TIMER_BASE` 0x0520..0x0527, 8 cuentas
+- **Temporizadores** (`OUT`/`IN`): `PORT_TIMER_BASE` 0x0620..0x0627, 8 cuentas
   atrás. `OUT` arma con 0–255; decrecen solas de 1 en 1 hasta 0. El timer `i`
   baja 1 cada `TIMER_BASE_MS << i` ms (1, 2, 4, 8, 16, 32, 64, 128 ms). `IN`
   lee el valor actual. `tickTimers()` corre una vez por vuelta de `loop()` solo
   en `ExecCont`; en `ExecPaso` están congelados. `resetTimers()` los pone a 0
   al (re)iniciar una ejecución. `IN` **no** toca flags: para un bucle de espera
   hay que `CMP reg,#0` antes del `JMPNZ`.
-- **Sonido** (`OUT`/`IN`): `PORT_SND_BASE` 0x0530..0x0533, zumbador piezo pasivo
-  en `PIN_BUZZER` (GPIO3). `0x0530`/`0x0531` = frecuencia de 16 bits (LO
-  engancha, HI aplica `Hz=hi<<8|lo`); `0x0532` = nota MIDI 0–127 (`noteToHz()`,
-  `440·2^((n-69)/12)`); `0x0533` = auto-apagado `valor·10 ms` (pegajoso). El
+- **Sonido** (`OUT`/`IN`): `PORT_SND_BASE` 0x0630..0x0633, zumbador piezo pasivo
+  en `PIN_BUZZER` (GPIO3). `0x0630`/`0x0631` = frecuencia de 16 bits (LO
+  engancha, HI aplica `Hz=hi<<8|lo`); `0x0632` = nota MIDI 0–127 (`noteToHz()`,
+  `440·2^((n-69)/12)`); `0x0633` = auto-apagado `valor·10 ms` (pegajoso). El
   tono lo genera `tone()` (LEDC), no gasta CPU. `sndApply(hz)` centraliza
   `tone`/`noTone` y (re)arma `g_sndOffAt`. `tickSound()` aplica el auto-apagado
   en `ExecCont`; `resetSound()` calla y pone los 4 registros a 0. Se silencia

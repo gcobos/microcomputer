@@ -34,10 +34,12 @@ COMPI_CHUNK = 1024  # debe coincidir con COMPI_CHUNK en src/main.cpp
 
 
 def build_if_needed(path):
-    """Devuelve (bytes, slot). slot es None si no se puede deducir (.bin)."""
+    """Devuelve (bytes, slot, fichero_bin). slot es None si no se puede
+    deducir (.bin). fichero_bin es el .bin real que se manda (el propio
+    fichero si ya lo era, o el generado al ensamblar un .asm)."""
     if not path.endswith(".asm"):
         with open(path, "rb") as f:
-            return f.read(), None
+            return f.read(), None, path
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     asm = casm.Assembler()
@@ -50,7 +52,7 @@ def build_if_needed(path):
     out = path[:-4] + ".bin"
     with open(out, "wb") as f:
         f.write(image[:used])
-    return image[:used], asm.slot
+    return image[:used], asm.slot, out
 
 
 def main(argv=None):
@@ -70,7 +72,7 @@ def main(argv=None):
         print("compi_send: falta pyserial  ->  pip install pyserial", file=sys.stderr)
         return 2
 
-    data, deduced_slot = build_if_needed(args.image)
+    data, deduced_slot, bin_path = build_if_needed(args.image)
 
     if args.slot is not None:
         slot = args.slot
@@ -147,7 +149,7 @@ def main(argv=None):
     if reply.startswith("COMPI OK"):
         got = int(reply.split()[2])
         ok = "  (checksum OK)" if got == checksum else f"  (!! checksum {got} != {checksum})"
-        print(f"compi_send: grabado en el slot {slot}{ok}")
+        print(f"compi_send: grabado {bin_path} en el slot {slot}{ok}")
         return 0 if got == checksum else 1
     print(f"compi_send: fallo: {reply!r}", file=sys.stderr)
     return 1

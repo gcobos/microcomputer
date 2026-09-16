@@ -1,22 +1,22 @@
   linea  addr  bytes            fuente
      89  0000  10 00             MOV AL,#0
      90  0002  20 01 FE          STA [sel],AL
-     91  0005  68 02 05          IN AL,(P_DAT_POS)
+     91  0005  68 02 06          IN AL,(P_DAT_POS)
      92  0008  A1 00 5D          ADD AL,#0x5D
      93  000B  20 00 FE          STA [seed],AL
      94  000E  A3 00 00          CMP AL,#0
      95  0011  8A 19 00          JMPNZ menu
      96  0014  10 5D             MOV AL,#0x5D
      97  0016  20 00 FE          STA [seed],AL
-    101  0019  68 02 05          IN AL,(P_DAT_POS)
+    101  0019  68 02 06          IN AL,(P_DAT_POS)
     102  001C  20 02 FE          STA [dat_prev],AL
-    103  001F  68 01 05          IN AL,(P_DIR_BTN)
+    103  001F  68 01 06          IN AL,(P_DIR_BTN)
     104  0022  20 03 FE          STA [btn_prev],AL
     105  0025  10 00             MOV AL,#0
     106  0027  20 04 FE          STA [g_exit],AL
     107  002A  90 1C 08          CALL clsg
     108  002D  90 FC 06          CALL draw_menu
-    110  0030  68 02 05          IN AL,(P_DAT_POS)
+    110  0030  68 02 06          IN AL,(P_DAT_POS)
     111  0033  20 05 FE          STA [tmp0],AL
     112  0036  1A 02 FE          LDA BL,[dat_prev]
     113  0039  FA 02             SUB AL,BL
@@ -46,7 +46,7 @@
     143  007E  10 01             MOV AL,#1
     144  0080  90 D5 09          CALL frame_wait
     145  0083  88 30 00          JMP menu_l
-    147  0086  68 03 05          IN AL,(0x0503)
+    147  0086  68 03 06          IN AL,(0x0603)
     148  0089  1A 03 FE          LDA BL,[btn_prev]
     149  008C  20 03 FE          STA [btn_prev],AL
     150  008F  A3 00 00          CMP AL,#0
@@ -194,9 +194,9 @@
     323  020D  18 05 FE          LDA AL,[tmp0]
     325  0210  70 00 04          OUT (P_TEXT),AL
     326  0213  10 01             MOV AL,#1
-    327  0215  70 33 05          OUT (P_SND_D),AL
+    327  0215  70 33 06          OUT (P_SND_D),AL
     328  0218  10 54             MOV AL,#84
-    329  021A  70 32 05          OUT (P_SND_N),AL
+    329  021A  70 32 06          OUT (P_SND_N),AL
     330  021D  18 1C FE          LDA AL,[tw_col]
     331  0220  A1 00 01          ADD AL,#1
     332  0223  20 1C FE          STA [tw_col],AL
@@ -305,9 +305,9 @@
     456  0338  18 24 FE          LDA AL,[ds_note]
     457  033B  A3 00 00          CMP AL,#0
     458  033E  89 87 03          JMPZ ds_rest
-    459  0341  70 32 05          OUT (P_SND_N),AL
+    459  0341  70 32 06          OUT (P_SND_N),AL
     460  0344  10 01             MOV AL,#1
-    461  0346  70 10 05          OUT (P_LED),AL
+    461  0346  70 10 06          OUT (P_LED),AL
     463  0349  10 28             MOV AL,#40
     464  034B  20 05 FE          STA [tmp0],AL
     465  034E  10 00             MOV AL,#0
@@ -333,19 +333,19 @@
     486  0381  90 54 08          CALL hspan
     487  0384  88 8F 03          JMP ds_wt
     489  0387  10 00             MOV AL,#0
-    490  0389  70 32 05          OUT (P_SND_N),AL
-    491  038C  70 10 05          OUT (P_LED),AL
+    490  0389  70 32 06          OUT (P_SND_N),AL
+    491  038C  70 10 06          OUT (P_LED),AL
     493  038F  18 25 FE          LDA AL,[ds_dur]
     494  0392  90 E2 09          CALL frame_wait_n
     495  0395  10 00             MOV AL,#0
-    496  0397  70 32 05          OUT (P_SND_N),AL
-    497  039A  70 10 05          OUT (P_LED),AL
+    496  0397  70 32 06          OUT (P_SND_N),AL
+    497  039A  70 10 06          OUT (P_LED),AL
     498  039D  10 01             MOV AL,#1
     499  039F  90 E2 09          CALL frame_wait_n
     500  03A2  88 02 03          JMP ds_nx
     502  03A5  10 00             MOV AL,#0
-    503  03A7  70 32 05          OUT (P_SND_N),AL
-    504  03AA  70 10 05          OUT (P_LED),AL
+    503  03A7  70 32 06          OUT (P_SND_N),AL
+    504  03AA  70 10 06          OUT (P_LED),AL
     505  03AD  90 33 0A          CALL wait_dir_release
     506  03B0  98                RET
     512  03B1  10 00             MOV AL,#0
@@ -413,7 +413,7 @@
     587  0457  18 28 FE          LDA AL,[li_ph]
     588  045A  A4 00 01          AND AL,#1
     589  045D  20 05 FE          STA [tmp0],AL
-    590  0460  70 10 05          OUT (P_LED),AL
+    590  0460  70 10 06          OUT (P_LED),AL
     591  0463  A3 00 00          CMP AL,#0
     592  0466  89 6F 04          JMPZ dl_blk
     593  0469  90 17 08          CALL fillg
@@ -441,9 +441,9 @@
     617  04A6  A3 00 00          CMP AL,#0
     618  04A9  89 B6 04          JMPZ dl_nb
     619  04AC  10 02             MOV AL,#2
-    620  04AE  70 33 05          OUT (P_SND_D),AL
+    620  04AE  70 33 06          OUT (P_SND_D),AL
     621  04B1  10 2D             MOV AL,#45
-    622  04B3  70 32 05          OUT (P_SND_N),AL
+    622  04B3  70 32 06          OUT (P_SND_N),AL
     624  04B6  18 28 FE          LDA AL,[li_ph]
     625  04B9  A1 00 01          ADD AL,#1
     626  04BC  20 28 FE          STA [li_ph],AL
@@ -451,8 +451,8 @@
     628  04C1  90 D5 09          CALL frame_wait
     629  04C4  88 4B 04          JMP dl_l
     631  04C7  10 00             MOV AL,#0
-    632  04C9  70 10 05          OUT (P_LED),AL
-    633  04CC  70 32 05          OUT (P_SND_N),AL
+    632  04C9  70 10 06          OUT (P_LED),AL
+    633  04CC  70 32 06          OUT (P_SND_N),AL
     634  04CF  90 33 0A          CALL wait_dir_release
     635  04D2  98                RET
     641  04D3  10 00             MOV AL,#0
@@ -479,7 +479,7 @@
     663  050A  18 04 FE          LDA AL,[g_exit]
     664  050D  A3 00 00          CMP AL,#0
     665  0510  8A 8C 05          JMPNZ dg2_ret
-    666  0513  68 02 05          IN AL,(P_DAT_POS)
+    666  0513  68 02 06          IN AL,(P_DAT_POS)
     667  0516  A4 00 7F          AND AL,#0x7F
     668  0519  A3 00 71          CMP AL,#113
     669  051C  8B 21 05          JMPC dg2_pok
@@ -558,9 +558,9 @@
     757  05E6  A1 00 01          ADD AL,#1
     758  05E9  20 2A FE          STA [g_score],AL
     759  05EC  10 01             MOV AL,#1
-    760  05EE  70 33 05          OUT (P_SND_D),AL
+    760  05EE  70 33 06          OUT (P_SND_D),AL
     761  05F1  10 58             MOV AL,#88
-    762  05F3  70 32 05          OUT (P_SND_N),AL
+    762  05F3  70 32 06          OUT (P_SND_N),AL
     763  05F6  98                RET
     765  05F7  18 2E FE          LDA AL,[ob_newy]
     767  05FA  20 01 F3          STA [0xF301],AL
@@ -628,7 +628,7 @@
     838  0686  20 2F FE          STA [go_i],AL
     840  0689  90 17 08          CALL fillg
     841  068C  10 01             MOV AL,#1
-    842  068E  70 10 05          OUT (P_LED),AL
+    842  068E  70 10 06          OUT (P_LED),AL
     843  0691  18 2F FE          LDA AL,[go_i]
     844  0694  F8 10             MOV BL,AL
     845  0696  62                SHL BL
@@ -637,14 +637,14 @@
     848  069A  FA 02             SUB AL,BL
     849  069C  20 05 FE          STA [tmp0],AL
     850  069F  10 03             MOV AL,#3
-    851  06A1  70 33 05          OUT (P_SND_D),AL
+    851  06A1  70 33 06          OUT (P_SND_D),AL
     852  06A4  18 05 FE          LDA AL,[tmp0]
-    853  06A7  70 32 05          OUT (P_SND_N),AL
+    853  06A7  70 32 06          OUT (P_SND_N),AL
     854  06AA  10 04             MOV AL,#4
     855  06AC  90 D5 09          CALL frame_wait
     856  06AF  90 1C 08          CALL clsg
     857  06B2  10 00             MOV AL,#0
-    858  06B4  70 10 05          OUT (P_LED),AL
+    858  06B4  70 10 06          OUT (P_LED),AL
     859  06B7  10 03             MOV AL,#3
     860  06B9  90 D5 09          CALL frame_wait
     861  06BC  18 2F FE          LDA AL,[go_i]
@@ -653,7 +653,7 @@
     864  06C5  A3 00 0A          CMP AL,#10
     865  06C8  8A 89 06          JMPNZ go_l
     866  06CB  10 00             MOV AL,#0
-    867  06CD  70 32 05          OUT (P_SND_N),AL
+    867  06CD  70 32 06          OUT (P_SND_N),AL
     868  06D0  90 1C 08          CALL clsg
     869  06D3  90 43 08          CALL clst
     870  06D6  12 97             MOV BL,#lo(str_over)
@@ -986,8 +986,8 @@
    1272  09CE  A6 00 B8          XOR AL,#0xB8
    1274  09D1  20 00 FE          STA [seed],AL
    1275  09D4  98                RET
-   1279  09D5  70 23 05          OUT (P_T3),AL
-   1281  09D8  68 23 05          IN AL,(P_T3)
+   1279  09D5  70 23 06          OUT (P_T3),AL
+   1281  09D8  68 23 06          IN AL,(P_T3)
    1282  09DB  A3 00 00          CMP AL,#0
    1283  09DE  8A D8 09          JMPNZ fw_l
    1284  09E1  98                RET
@@ -1015,13 +1015,13 @@
    1315  0A1D  90 D5 09          CALL frame_wait
    1316  0A20  88 00 0A          JMP hd_l
    1318  0A23  98                RET
-   1322  0A24  68 01 05          IN AL,(P_DIR_BTN)
+   1322  0A24  68 01 06          IN AL,(P_DIR_BTN)
    1323  0A27  A3 00 00          CMP AL,#0
    1324  0A2A  89 32 0A          JMPZ pe_d
    1325  0A2D  10 01             MOV AL,#1
    1326  0A2F  20 04 FE          STA [g_exit],AL
    1328  0A32  98                RET
-   1332  0A33  68 01 05          IN AL,(P_DIR_BTN)
+   1332  0A33  68 01 06          IN AL,(P_DIR_BTN)
    1333  0A36  A3 00 00          CMP AL,#0
    1334  0A39  89 44 0A          JMPZ wdr_d
    1335  0A3C  10 02             MOV AL,#2
@@ -1125,14 +1125,8 @@
     dl_nb                = 0x04B6  (1206)
     dl_x                 = 0x04C7  (1223)
     do_game              = 0x04D3  (1235)
-    P_DIR_BTN            = 0x0501  (1281)
-    P_DAT_POS            = 0x0502  (1282)
     dg2_l                = 0x0507  (1287)
-    P_LED                = 0x0510  (1296)
     dg2_pok              = 0x0521  (1313)
-    P_T3                 = 0x0523  (1315)
-    P_SND_N              = 0x0532  (1330)
-    P_SND_D              = 0x0533  (1331)
     dg2_s1               = 0x0535  (1333)
     dg2_s0               = 0x0546  (1350)
     dg2_obs              = 0x054B  (1355)
@@ -1147,6 +1141,12 @@
     ob_store             = 0x05F7  (1527)
     ob_wy                = 0x05FA  (1530)
     game_draw            = 0x05FE  (1534)
+    P_DIR_BTN            = 0x0601  (1537)
+    P_DAT_POS            = 0x0602  (1538)
+    P_LED                = 0x0610  (1552)
+    P_T3                 = 0x0623  (1571)
+    P_SND_N              = 0x0632  (1586)
+    P_SND_D              = 0x0633  (1587)
     draw_ob              = 0x0650  (1616)
     dob_rx               = 0x065C  (1628)
     dob_ry               = 0x0668  (1640)

@@ -75,12 +75,12 @@ pn_v      = 0xFE30      ; put_num: valor en curso
 ; --- puertos (ver ../docs/isa.md) ------------------------------------------
 P_FB      = 0x0000      ; framebuffer
 P_TEXT    = 0x0400      ; rejilla de texto
-P_DAT_POS = 0x0502      ; encoder DATOS: posicion
-P_DIR_BTN = 0x0501      ; encoder DIRECCION: pulsado
-P_LED     = 0x0510
-P_T3      = 0x0523      ; temporizador 3 (8 ms/paso)
-P_SND_N   = 0x0532      ; nota MIDI
-P_SND_D   = 0x0533      ; duracion automatica (x10 ms)
+P_DAT_POS = 0x0602      ; encoder DATOS: posicion
+P_DIR_BTN = 0x0601      ; encoder DIRECCION: pulsado
+P_LED     = 0x0610
+P_T3      = 0x0623      ; temporizador 3 (8 ms/paso)
+P_SND_N   = 0x0632      ; nota MIDI
+P_SND_D   = 0x0633      ; duracion automatica (x10 ms)
 
 ; ============================================================================
 ;  ARRANQUE  +  MENU
@@ -144,7 +144,7 @@ mn_rd:
     CALL frame_wait
     JMP menu_l
 mn_btn:
-    IN  AL,(0x0503)            ; pulsador del encoder DATOS
+    IN  AL,(0x0603)            ; pulsador del encoder DATOS
     LDA BL,[btn_prev]
     STA [btn_prev],AL
     CMP AL,#0

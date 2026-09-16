@@ -39,7 +39,13 @@ constexpr uint8_t PIN_BUZZER = 3;
 // EJECUCIÓN + CONTINUO: instrucciones por vuelta de loop() y refresco del
 // framebuffer.
 constexpr int EXEC_BATCH = 4000;
-constexpr unsigned long FB_FLUSH_MS = 50;
+// Cada volcado a la OLED bloquea ~30 ms de I2C; con 50 ms de periodo eso deja
+// el "duty cycle" de cómputo en solo ~40% (ver specs.txt §16). Subir el
+// periodo reparte ese coste fijo entre más tiempo: a 100 ms, ~30 ms
+// bloqueado de cada 100 = ~70% de cómputo (casi el doble que antes) a costa
+// de refrescar la pantalla a la mitad de frecuencia (más "a saltos" en
+// animaciones rápidas como cubo.asm). Medido con programs/benchmark.asm.
+constexpr unsigned long FB_FLUSH_MS = 125;
 
 // --- Ahorro de energía (funcionamiento con batería) --------------------
 // El panel se muestrea desde un esp_timer, NO desde loop(), así que sigue
@@ -61,6 +67,10 @@ constexpr uint32_t SCREEN_OFF_MS     = 45000;  // apagar la OLED
 constexpr uint32_t LIGHT_SLEEP_MS    = 45000;  // dormir la CPU (light sleep); >= SCREEN_OFF_MS
 constexpr uint8_t  OLED_CONTRAST_FULL = 0xCF;
 constexpr uint8_t  OLED_CONTRAST_DIM  = 0x10;
+// Arrancar ya atenuada (en vez de a pleno brillo) ahorra batería mientras el
+// aparato espera a que alguien lo toque; cualquier actividad del panel la
+// sube a pleno brillo al momento (ver noteActivity()).
+constexpr bool     START_SCREEN_DIMMED = true;
 
 Cpu cpu;
 FrontPanel panel(PIN_HC165_LOAD, PIN_HC165_CLOCK, PIN_HC165_DATA);
@@ -69,6 +79,7 @@ SpiFlashStorage flash(PIN_FLASH_CS);
 
 static uint8_t g_fb[FB_BYTES];              // framebuffer del dispositivo (puertos)
 static uint8_t g_text[TEXT_CELLS];          // rejilla de texto (puertos 0x0400+)
+static uint8_t g_attr[TEXT_CELLS];          // atributos de texto (puertos 0x0500+)
 static uint8_t g_preview[PREVIEW_BYTES];    // primeros bytes del slot (EditPrg)
 
 UiState ui;
@@ -79,10 +90,10 @@ uint8_t prevSlot = 0xFF;
 bool running = false;
 unsigned long lastFlush = 0;
 uint8_t g_led = 0;                          // estado del LED (puerto PORT_LED)
-uint8_t g_timer[TIMER_COUNT] = {0};         // temporizadores (puertos 0x0520+)
+uint8_t g_timer[TIMER_COUNT] = {0};         // temporizadores (puertos 0x0620+)
 unsigned long g_timerLast[TIMER_COUNT] = {0};
 
-// Sonido (puertos 0x0530..0x0533). g_sndHz = tono que suena ahora (0 = silencio).
+// Sonido (puertos 0x0630..0x0633). g_sndHz = tono que suena ahora (0 = silencio).
 uint8_t  g_sndLo = 0, g_sndHi = 0;          // frecuencia enganchada (bytes)
 uint8_t  g_sndNote = 0;                     // última nota MIDI escrita (eco de IN)
 uint8_t  g_sndDurUnits = 0;                 // duración auto en unidades de 10 ms
@@ -115,7 +126,7 @@ void resetTimers() {
     for (uint8_t i = 0; i < TIMER_COUNT; ++i) { g_timer[i] = 0; g_timerLast[i] = now; }
 }
 
-// --- Sonido (piezo pasivo en PIN_BUZZER, puertos 0x0530..0x0533) -----
+// --- Sonido (piezo pasivo en PIN_BUZZER, puertos 0x0630..0x0633) -----
 uint16_t noteToHz(uint8_t note) {
     if (note == 0 || note > 127) return 0;            // 0 = silencio
     float hz = 440.0f * powf(2.0f, ((int)note - 69) / 12.0f);   // 69 = LA4
@@ -156,10 +167,22 @@ int textIndex(uint16_t port) {
     return row * TEXT_COLS + col;
 }
 
+// Lo mismo que textIndex() pero para el banco de atributos (0x0500+, misma
+// disposición fila*32+col -- ver iomap.h).
+int attrIndex(uint16_t port) {
+    if (port < ATTR_PORT_BASE || port >= ATTR_PORT_BASE + ATTR_PORT_SPAN) return -1;
+    uint16_t off = (uint16_t)(port - ATTR_PORT_BASE);
+    uint8_t row = (uint8_t)(off >> 5);
+    uint8_t col = (uint8_t)(off & 31);
+    if (row >= TEXT_ROWS || col >= TEXT_COLS) return -1;
+    return row * TEXT_COLS + col;
+}
+
 // --- Puertos de E/S de la CPU (espacio de 16 bits) --------------------
 uint8_t portRead(uint16_t port) {
     if (port < FB_BYTES) return g_fb[port];
     { int ti = textIndex(port); if (ti >= 0) return g_text[ti]; }
+    { int ai = attrIndex(port); if (ai >= 0) return g_attr[ai]; }
     if (port >= PORT_TIMER_BASE && port < PORT_TIMER_BASE + TIMER_COUNT)
         return g_timer[port - PORT_TIMER_BASE];
     if (port >= PORT_SND_BASE && port < PORT_SND_BASE + SND_PORT_COUNT) {
@@ -189,6 +212,7 @@ uint8_t portRead(uint16_t port) {
 void portWrite(uint16_t port, uint8_t value) {
     if (port < FB_BYTES) { g_fb[port] = value; return; }
     { int ti = textIndex(port); if (ti >= 0) { g_text[ti] = value; return; } }
+    { int ai = attrIndex(port); if (ai >= 0) { g_attr[ai] = value; return; } }
     if (port >= PORT_TIMER_BASE && port < PORT_TIMER_BASE + TIMER_COUNT) {
         uint8_t i = (uint8_t)(port - PORT_TIMER_BASE);
         g_timer[i] = value;
@@ -411,11 +435,15 @@ void setup() {
     running = prevExec && prevAbajo;   // arrancado en EJECUTAR+CONTINUO
     ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // arranca el editor en lo que haya
 
-    oled.contrast(OLED_CONTRAST_FULL);
+    g_scr = START_SCREEN_DIMMED ? SCR_DIM : SCR_FULL;
+    oled.contrast(START_SCREEN_DIMMED ? OLED_CONTRAST_DIM : OLED_CONTRAST_FULL);
     oled.render(cpu, ui);
 
     // Muestreo del panel en su propio temporizador, independiente de loop().
-    g_lastActivity = millis();
+    // Si arranca atenuada, se retrasa g_lastActivity para que la gestión de
+    // energía de loop() (basada en tiempo de inactividad) la vea ya "inactiva"
+    // desde el primer fotograma, en vez de subirla a pleno brillo de inmediato.
+    g_lastActivity = millis() - (START_SCREEN_DIMMED ? SCREEN_DIM_MS : 0);
     esp_timer_create_args_t sargs = {};
     sargs.callback = &samplerCb;
     sargs.dispatch_method = ESP_TIMER_TASK;
@@ -448,6 +476,7 @@ void loop() {
         panel.resetPositions();
         memset(g_fb, 0, sizeof(g_fb));
         memset(g_text, 0, sizeof(g_text)); // rejilla de texto -> transparente
+        memset(g_attr, 0, sizeof(g_attr)); // atributos de texto -> ninguno
         g_led = 0; setLed(false);          // apaga el LED del programa
         resetTimers();
         resetSound();                      // calla el piezo
@@ -553,6 +582,7 @@ void loop() {
             panel.resetPositions();
             memset(g_fb, 0, sizeof(g_fb));
             memset(g_text, 0, sizeof(g_text));
+            memset(g_attr, 0, sizeof(g_attr));
             g_led = 0; setLed(false);
             resetTimers();
             resetSound();
@@ -570,7 +600,7 @@ void loop() {
         }
         if (cpu.halted() && g_sndHz) sndApply(0);   // silencio al llegar a HALT
         if (g_scr != SCR_OFF && (millis() - lastFlush) >= FB_FLUSH_MS) {
-            oled.renderFramebuffer(g_fb, g_text, cpu.halted());
+            oled.renderFramebuffer(g_fb, g_text, g_attr, cpu.halted());
             lastFlush = millis();
         }
         panel.takeDirPress();

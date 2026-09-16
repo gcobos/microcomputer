@@ -96,7 +96,7 @@
   <path class="wire gnd" d="M150,736 H120"/>
   <circle class="dot" cx="120" cy="736" r="3"/>
   <text class="sig" x="150" y="776">tono cuadrado por hardware &#8212; tone() / LEDC</text>
-  <text class="sig" x="150" y="790">solo suena en CONTINUO &#183; puertos 0x0530&#8211;0x0533</text>
+  <text class="sig" x="150" y="790">solo suena en CONTINUO &#183; puertos 0x0630&#8211;0x0633</text>
   <text class="sig" x="150" y="804">PASIVO: un buzzer activo solo dar&#237;a un pitido fijo</text>
 
   <!-- 74HC165 -->
