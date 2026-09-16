@@ -3,3 +3,21 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+
+# Python: bytecode cacheado (tools/*.py)
+__pycache__/
+*.pyc
+*.pyo
+
+# Resultado de ensamblar programs/*.asm con tools/casm.py (regenerable desde
+# el .asm con `python3 tools/casm.py programs/X.asm -o programs/X.bin --list programs/X.lst`)
+*.bin
+*.lst
+
+# Objetos y artefactos de compilación C/C++ fuera de .pio (por si se compila
+# algo suelto con gcc/g++ a mano)
+*.o
+*.obj
+*.elf
+*.map
+*.d
