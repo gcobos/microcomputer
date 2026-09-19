@@ -3,42 +3,6 @@
 
 namespace compi {
 
-uint8_t Registers::get8(uint8_t reg) const {
-    switch (reg) {
-        case REG_AL: return AX & 0xFF;
-        case REG_AH: return (AX >> 8) & 0xFF;
-        case REG_BL: return BX & 0xFF;
-        case REG_BH: return (BX >> 8) & 0xFF;
-        case REG_CL: return CX & 0xFF;
-        case REG_CH: return (CX >> 8) & 0xFF;
-        case REG_DL: return DX & 0xFF;
-        case REG_DH: return (DX >> 8) & 0xFF;
-        default: return 0;
-    }
-}
-
-void Registers::set8(uint8_t reg, uint8_t value) {
-    switch (reg) {
-        case REG_AL: AX = (uint16_t)((AX & 0xFF00) | value); break;
-        case REG_AH: AX = (uint16_t)((AX & 0x00FF) | (value << 8)); break;
-        case REG_BL: BX = (uint16_t)((BX & 0xFF00) | value); break;
-        case REG_BH: BX = (uint16_t)((BX & 0x00FF) | (value << 8)); break;
-        case REG_CL: CX = (uint16_t)((CX & 0xFF00) | value); break;
-        case REG_CH: CX = (uint16_t)((CX & 0x00FF) | (value << 8)); break;
-        case REG_DL: DX = (uint16_t)((DX & 0xFF00) | value); break;
-        case REG_DH: DX = (uint16_t)((DX & 0x00FF) | (value << 8)); break;
-    }
-}
-
-uint16_t Registers::get16(uint8_t pairCode) const {
-    switch (pairCode & 0x03) {
-        case REG_AX: return AX;
-        case REG_BX: return BX;
-        case REG_CX: return CX;
-        default:     return DX;   // REG_DX
-    }
-}
-
 Cpu::Cpu() {
     memset(memory_, 0, sizeof(memory_));
     reset();
@@ -105,29 +69,31 @@ bool Cpu::testCond(uint8_t cond) const {
     }
 }
 
+// Version sin ramas: cada flag (0/1) se desplaza directamente a su bit y se
+// combina con OR, en vez de una cadena de "if (cond) flags_ |= BIT". Un
+// salto condicional cuesta ciclos de pipeline en el RV32IMC del ESP32-C3;
+// esto se ejecuta en CADA instruccion ADD/SUB/CMP. Verificado por fuerza
+// bruta contra la version anterior en las 131072 combinaciones de (a,b,
+// isSub) -- ver el historial de esta sesion.
 uint8_t Cpu::updateFlagsArith(uint8_t a, uint8_t b, bool isSub) {
     int full = isSub ? (int)a - (int)b : (int)a + (int)b;
     uint8_t result = (uint8_t)(full & 0xFF);
-    bool carry = isSub ? (a < b) : (full > 0xFF);
-    bool zero  = result == 0;
-    bool neg   = (result & 0x80) != 0;
-    bool overflow = isSub
+    uint8_t carry = isSub ? (a < b) : (full > 0xFF);
+    uint8_t zero  = (result == 0);
+    uint8_t neg   = (result & 0x80) != 0;
+    uint8_t overflow = isSub
         ? (((a ^ b) & (a ^ result) & 0x80) != 0)
         : ((~(a ^ b) & (a ^ result) & 0x80) != 0);
 
-    flags_ = 0;
-    if (carry)    flags_ |= FLAG_C;
-    if (zero)     flags_ |= FLAG_Z;
-    if (neg)      flags_ |= FLAG_N;
-    if (overflow) flags_ |= FLAG_V;
+    flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (overflow << 3));
     return result;
 }
 
 void Cpu::updateFlagsLogic(uint8_t result) {
-    flags_ = 0;
-    if (result == 0)      flags_ |= FLAG_Z;
-    if (result & 0x80)    flags_ |= FLAG_N;
     // AND/OR/XOR/NOT no generan acarreo ni overflow: C y V quedan a 0.
+    uint8_t zero = (result == 0);
+    uint8_t neg  = (result & 0x80) != 0;
+    flags_ = (uint8_t)((zero << 1) | (neg << 2));
 }
 
 uint8_t Cpu::aluOp(uint8_t op, uint8_t a, uint8_t b) {
@@ -189,28 +155,24 @@ bool Cpu::step() {
         }
         case OP_SHR: {
             uint8_t v = regs_.get8(r);
-            bool carry = v & 0x01;
-            bool originalMsb = v & 0x80;
+            uint8_t carry = v & 0x01;
+            uint8_t originalMsb = (v & 0x80) != 0;
             uint8_t result = (uint8_t)(v >> 1);
             regs_.set8(r, result);
-            flags_ = 0;
-            if (carry)         flags_ |= FLAG_C;
-            if (result == 0)   flags_ |= FLAG_Z;
-            if (result & 0x80) flags_ |= FLAG_N;
-            if (originalMsb)   flags_ |= FLAG_V;
+            uint8_t zero = (result == 0);
+            uint8_t neg  = (result & 0x80) != 0;
+            flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (originalMsb << 3));
             break;
         }
         case OP_SHL: {
             uint8_t v = regs_.get8(r);
-            bool carry = v & 0x80;
+            uint8_t carry = (v & 0x80) != 0;
             uint8_t result = (uint8_t)(v << 1);
             regs_.set8(r, result);
-            bool neg = result & 0x80;
-            flags_ = 0;
-            if (carry)        flags_ |= FLAG_C;
-            if (result == 0)  flags_ |= FLAG_Z;
-            if (neg)          flags_ |= FLAG_N;
-            if (carry != neg) flags_ |= FLAG_V;
+            uint8_t zero = (result == 0);
+            uint8_t neg  = (result & 0x80) != 0;
+            uint8_t overflow = (carry != neg);
+            flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (overflow << 3));
             break;
         }
         case OP_IN: {

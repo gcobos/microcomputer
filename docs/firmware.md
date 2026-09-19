@@ -88,8 +88,8 @@ La **vista** es función pura de los dos interruptores — nada oculto:
 
 | Vista | ADDR girar | ADDR pulsar | DATA girar | DATA pulsar |
 |---|---|---|---|---|
-| `EditMem` | cursor ±1 (navega) | retrocede un campo / dirección | cambia el campo activo (en vivo) | confirma campo → siguiente / avanza dirección |
-| `EditPrg` | slot 0–59 | — | LOAD ⇄ SAVE | ejecutar la acción |
+| `EditMem` | cursor ±1 (navega) | salta a la instrucción anterior entera | cambia el campo activo (en vivo) | confirma campo → siguiente / avanza dirección |
+| `EditPrg` | slot 0–59 | ejecutar la acción (igual que DATA pulsar) | LOAD ⇄ SAVE | ejecutar la acción |
 | `ExecPaso` | → programa (IN) | reset (PC=0) | → programa (IN) | 1 instrucción |
 | `ExecCont` | → programa (IN) | → programa (IN) | → programa (IN) | → programa (IN) |
 

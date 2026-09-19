@@ -135,10 +135,10 @@ void OledPanel::renderEditMem(const Cpu& cpu, const UiState& ui) {
     const int16_t y7 = (int16_t)(SCREEN_HEIGHT - ROW_H);
     if (paso) {
         display_.setCursor(0, y6);
-        snprintf(buf, sizeof(buf), "AX%04X BX%04X SP%04X", rg.AX, rg.BX, cpu.sp());
+        snprintf(buf, sizeof(buf), "AX%04X BX%04X SP%04X", rg.AX(), rg.BX(), cpu.sp());
         display_.print(buf);
         display_.setCursor(0, y7);
-        snprintf(buf, sizeof(buf), "CX%04X DX%04X %s", rg.CX, rg.DX, fl);
+        snprintf(buf, sizeof(buf), "CX%04X DX%04X %s", rg.CX(), rg.DX(), fl);
         display_.print(buf);
     } else {
         display_.setCursor(0, y6);

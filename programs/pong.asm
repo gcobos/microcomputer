@@ -177,6 +177,12 @@ update_pad_r:
     SUB AL,BL
     LDA CL,[tmp0]
     STA [dat_prev],CL
+    ; la paleta derecha queda mas natural invirtiendo el sentido del encoder
+    ; DATOS respecto al de DIRECCION (no es un problema del firmware: los dos
+    ; mandos ya son consistentes ahi, es solo como se siente mejor este juego
+    ; en concreto con jugadores enfrentados a los lados)
+    NOT AL
+    ADD AL,#1
     CMP AL,#0
     JMPZ upr_done
     STA [tmp1],AL

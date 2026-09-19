@@ -757,8 +757,12 @@ BUCLE
      ADDR girar  -> cursor = clamp(cursor + detentes, 0, 0xFFFF) ;
                        decodeAt() en el nuevo cursor (step=0) — sigue
                        navegando libre, byte a byte, como antes
-     ADDR pulsar -> step > 0: step-- (retrocede un campo) ;
-                       step == 0: cursor-1 y decodeAt() (retrocede dirección)
+     ADDR pulsar -> siempre salta a la instrucción ANTERIOR entera, sea cual
+                       sea el step actual: cursor = prevInstrStart(cursor)
+                       (recorre desde 0, como listBase, para encontrar el
+                       límite de instrucción real -- cursor-1 a secas
+                       aterrizaría en mitad de una instrucción de 2/3 bytes)
+                       y decodeAt() ahí (step=0)
 
      decodeAt(mem, len, cursor) reconstruye verb/mode/campos a partir de lo
      que YA hay en memoria (arranca la edición "en lo que ya hay", igual que
@@ -774,6 +778,9 @@ BUCLE
 
   EditPrg
      ADDR girar   -> slot = (slot + detentes) mod MAX_PROGRAM_SLOTS
+     ADDR pulsar  -> ejecuta prgAction, igual que DATA pulsar (ver abajo):
+                     los dos pulsadores hacen lo mismo en esta vista, asi que
+                     si prgAction esta en SAVE, cualquiera de los dos guarda
      DATA     girar   -> alterna prgAction  LOAD <-> SAVE
      DATA     pulsar  -> ejecuta prgAction:
                             LOAD : flash.loadProgram(slot, cpu.ram()) ;
@@ -1036,7 +1043,14 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
   panel, o al menos de los pulsadores/switches) a un GPIO RTC (IO0..IO5 en el
   C3). Sin ella: un giro mantenido despierta en ~200-400 ms, un toque de
   pulsador o de switch en ~120 ms; un flick rápido de un solo detente puede
-  perderse (al muestrear a 100 ms, la cuadratura empieza y acaba en reposo).
+  perderse (al muestrear cada SAMPLE_IDLE_MS, la cuadratura empieza y acaba
+  en reposo). Por eso SAMPLE_SCREENON_MS/SAMPLE_IDLE_MS se bajaron en dos
+  rondas (20/100 -> 20/40 -> 4/8 ms): con la diferencia "activo" vs "reposo"
+  tan grande que había al principio, dejar de tocar el panel un momento hacía
+  que el siguiente giro se perdiera casi entero hasta girar muy rápido -- con
+  4/8 ms la respuesta en reposo es casi igual que activa, al precio de un
+  consumo en reposo bastante más alto que con 100 ms. Sigue sin ser una
+  solución de raíz -- eso exige la línea de arriba.
 
 portRead(port):  port < 1024 -> g_fb[port] ; celda de texto -> g_text[i] ;
   celda de atributos -> g_attr[i] ;
@@ -1066,12 +1080,14 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   (visible), no oculto en un pulsador. Los dos pulsadores son simétricos en
   criterio: ADDR = retroceder/reiniciar, DATA = avanzar/hacer.
 - LAS 5 RUTINAS COMUNES:
-  1) Cargar y ejecutar: SW_STEP ▼ (EditPrg), girar ADDR al slot, pulsar
-     DATA (LOAD). SW_MODE RUN, SW_STEP ▼ (CONTINUOUS).
+  1) Cargar y ejecutar: SW_STEP ▼ (EditPrg), girar ADDR al slot, con
+     prgAction en LOAD pulsar DATA o ADDR (los dos hacen lo mismo).
+     SW_MODE RUN, SW_STEP ▼ (CONTINUOUS).
   2) Programa nuevo: SW_MODE EDIT, SW_STEP ▲. Girar DATA (se ve el
      mnemónico), pulsar DATA para avanzar. Repetir.
   3) A ejecución: SW_MODE RUN (▲ paso / ▼ continuo).
-  4) Grabar: SW_STEP ▼, girar al slot, girar DATA hasta SAVE, pulsar DATA.
+  4) Grabar: SW_STEP ▼, girar al slot, girar DATA hasta SAVE, pulsar DATA o
+     ADDR (los dos guardan igual estando en SAVE).
   5) Paso a paso de un programa cargado: cargar (rutina 1), SW_MODE RUN,
      SW_STEP ▲, pulsar DATA repetidamente.
 - Encoders leídos por sondeo (no hay interrupción de flanco posible: las señales

@@ -5,13 +5,16 @@ namespace compi {
 namespace {
 // Tabla de transición de cuadratura: índice = (estado_prev << 2) | estado_actual.
 // Signo elegido para que GIRO HORARIO == avance (+1) con el cableado real de
-// este panel (A/B como en docs/hardware.md). Si algún día se cambia el
-// cableado de A/B de los encoders, esta es la tabla a invertir.
+// este panel (A/B como en docs/hardware.md) -- invertida respecto a la
+// primera versión: con el cableado real, el signo original hacía que el
+// giro horario RESTARA en vez de sumar en los dos mandos por igual (se
+// comprobó a mano en el aparato). Si algún día se vuelve a cambiar el
+// cableado de A/B de los encoders, esta es la tabla a invertir de nuevo.
 const int8_t kQuadratureTable[16] = {
-     0,  1, -1,  0,
-    -1,  0,  0,  1,
+     0, -1,  1,  0,
      1,  0,  0, -1,
-     0, -1,  1,  0
+    -1,  0,  0,  1,
+     0,  1, -1,  0
 };
 
 // Mapa de las 8 entradas dentro del byte de ShiftRegister165::read()
@@ -122,8 +125,13 @@ void FrontPanel::begin() {
     inputs_.begin();
     uint8_t b = inputs_.read();
     prevByte_ = b;
-    dirEnc_.begin(bitOf(b, BIT_ADDR_A), bitOf(b, BIT_ADDR_B));
-    datEnc_.begin(bitOf(b, BIT_DATA_A), bitOf(b, BIT_DATA_B));
+    // A/B invertidos a propósito en los DOS encoders: con el orden "natural"
+    // (A,B tal cual llegan del '165) los dos contaban al revés del sentido
+    // horario en este panel -- comprobado a mano en el aparato, primero en
+    // DATOS y luego en DIRECCIÓN. Cruzar A/B aquí compensa eso en software
+    // sin tocar kQuadratureTable.
+    dirEnc_.begin(bitOf(b, BIT_ADDR_B), bitOf(b, BIT_ADDR_A));
+    datEnc_.begin(bitOf(b, BIT_DATA_B), bitOf(b, BIT_DATA_A));
     dirBtn_.begin(low(b, BIT_ADDR_SW));
     datBtn_.begin(low(b, BIT_DATA_SW));
     swModo_.begin(low(b, BIT_SW_MODO));
@@ -140,8 +148,8 @@ bool FrontPanel::update() {
 
     portENTER_CRITICAL(&mux_);
     prevByte_ = b;
-    dirEnc_.update(bitOf(b, BIT_ADDR_A), bitOf(b, BIT_ADDR_B));
-    datEnc_.update(bitOf(b, BIT_DATA_A), bitOf(b, BIT_DATA_B));
+    dirEnc_.update(bitOf(b, BIT_ADDR_B), bitOf(b, BIT_ADDR_A));  // A/B cruzados, ver begin()
+    datEnc_.update(bitOf(b, BIT_DATA_B), bitOf(b, BIT_DATA_A));  // A/B cruzados, ver begin()
     dirBtn_.update(low(b, BIT_ADDR_SW));
     datBtn_.update(low(b, BIT_DATA_SW));
     swModo_.update(low(b, BIT_SW_MODO));

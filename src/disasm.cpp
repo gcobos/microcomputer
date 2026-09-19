@@ -115,4 +115,16 @@ uint16_t listBase(const uint8_t* mem, uint32_t memLen, uint16_t anchor) {
     return ctx;
 }
 
+uint16_t prevInstrStart(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
+    if (addr == 0) return 0;
+    uint16_t p = 0, prev = 0;
+    while (p < addr) {
+        prev = p;
+        uint16_t next = (uint16_t)(p + instrLen(mem, memLen, p));
+        if (next <= p) break;   // misma salvaguarda que listBase (longitud 0)
+        p = next;
+    }
+    return prev;
+}
+
 } // namespace compi

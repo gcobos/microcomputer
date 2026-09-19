@@ -15,15 +15,37 @@ namespace compi {
 // compilación.
 constexpr size_t kMemSize = 65536;
 
+// AX/BX/CX/DX y sus 8 mitades de 8 bits son la MISMA memoria (union): así
+// get8/set8/get16 son un indexado directo de array en vez de un switch de
+// 8/4 casos -- son de las funciones mas llamadas de todo el interprete
+// (varias veces por CADA instruccion emulada), y al definirlas aqui mismo
+// (en la clase) quedan inline. Requiere little-endian (bytes[0] = byte bajo
+// de words[0] = AL, ver Reg8 en isa.h): tanto el ESP32-C3 (RISC-V) como
+// cualquier maquina x86_64 donde se compile nativo (docs/firmware.md) lo
+// son. Verificado por fuerza bruta contra la version anterior (switch sobre
+// AX/BX/CX/DX con nombre propio) en las 65536 combinaciones de registro x
+// valor -- ver el historial de esta sesion.
 struct Registers {
-    uint16_t AX = 0, BX = 0, CX = 0, DX = 0;
+    union {
+        uint16_t words[4];  // 0=AX 1=BX 2=CX 3=DX (orden de Reg16, isa.h)
+        uint8_t  bytes[8];  // 0=AL 1=AH 2=BL ... 7=DH (orden de Reg8, isa.h)
+    };
 
-    uint8_t get8(uint8_t reg) const;
-    void set8(uint8_t reg, uint8_t value);
+    Registers() : words{0, 0, 0, 0} {}
+
+    // AX/BX/CX/DX ya no son campos con nombre (ver el union de arriba):
+    // display.cpp los lee a través de estos accesores.
+    uint16_t AX() const { return words[0]; }
+    uint16_t BX() const { return words[1]; }
+    uint16_t CX() const { return words[2]; }
+    uint16_t DX() const { return words[3]; }
+
+    uint8_t get8(uint8_t reg) const { return bytes[reg & 0x07]; }
+    void set8(uint8_t reg, uint8_t value) { bytes[reg & 0x07] = value; }
 
     // Par de 16 bits por código Reg16 (isa.h): para el direccionamiento
     // indirecto de LDA/STA/IN/OUT (OP_LDAR/OP_STAR/OP_INR/OP_OUTR).
-    uint16_t get16(uint8_t pairCode) const;
+    uint16_t get16(uint8_t pairCode) const { return words[pairCode & 0x03]; }
 };
 
 // Núcleo de la CPU, sin ninguna dependencia de hardware. El panel frontal
@@ -89,12 +111,18 @@ private:
     uint16_t fetch16();
     void push8(uint8_t v);
     uint8_t pop8();
+    bool testCond(uint8_t cond) const;
     uint8_t updateFlagsArith(uint8_t a, uint8_t b, bool isSub);
     void updateFlagsLogic(uint8_t result);
     // Aplica una operación de la ALU (compi::AluOp) a (a, b), actualiza los
     // flags y devuelve el nuevo valor del destino (para CMP devuelve a).
+    // NO esta forzada a inline: probado en el benchmark real, integrarla en
+    // step()/run() (duplicandola en 3 sitios) salio ~12% MAS LENTA, no mas
+    // rapida -- el codigo resultante es notablemente mas grande y parece
+    // perjudicar el aprovechamiento de la cache de instrucciones del
+    // RV32IMC mas de lo que ahorra en llamadas evitadas. Ver el historial de
+    // esta sesion (N=0x1EE=494 con aluOp aparte, N=0x1B2=434 integrada).
     uint8_t aluOp(uint8_t op, uint8_t a, uint8_t b);
-    bool testCond(uint8_t cond) const;
 
     uint8_t memory_[kMemSize];
     Registers regs_;

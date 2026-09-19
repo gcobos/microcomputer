@@ -12,8 +12,8 @@ namespace compi {
 //   DATOS pulsar  -> confirma el campo y pasa al siguiente; en el último,
 //                    esa misma pulsación ya avanza el cursor a la dirección
 //                    siguiente (longitud de la instrucción ya compuesta)
-//   DIRECCIÓN pulsar -> retrocede un campo (o una dirección si ya estás en
-//                    el primero)
+//   DIRECCIÓN pulsar -> salta a la instrucción anterior entera (a su
+//                    opcode), sea cual sea el campo en el que estés
 //
 // La instrucción se escribe en memoria EN VIVO, sobreescribiendo en el sitio
 // (nunca desplaza bytes) cada vez que cambia un campo — igual que ya hace la

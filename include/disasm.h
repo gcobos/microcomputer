@@ -27,4 +27,12 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
 // de contexto por encima.
 uint16_t listBase(const uint8_t* mem, uint32_t memLen, uint16_t anchor);
 
+// Dirección de inicio de la instrucción INMEDIATAMENTE ANTERIOR a 'addr',
+// recorriendo desde 0 (igual que listBase). Asume que 'addr' ya es en sí un
+// límite de instrucción válido; si no lo es (p. ej. cae en mitad de un
+// operando), el resultado no tiene por qué tener sentido -- ver la nota en
+// main.cpp sobre por qué EditMem solo llama a esto para retroceder desde un
+// cursor que siempre se mantiene alineado.
+uint16_t prevInstrStart(const uint8_t* mem, uint32_t memLen, uint16_t addr);
+
 } // namespace compi

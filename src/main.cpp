@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 #include "esp_sleep.h"
 #include "cpu.h"
+#include "disasm.h"
 #include "editor.h"
 #include "panel.h"
 #include "display.h"
@@ -50,17 +51,27 @@ constexpr unsigned long FB_FLUSH_MS = 125;
 // --- Ahorro de energía (funcionamiento con batería) --------------------
 // El panel se muestrea desde un esp_timer, NO desde loop(), así que sigue
 // respondiendo aunque la OLED esté volcando (~30 ms) o se esté grabando la
-// flash (~1 s). El ritmo es adaptativo: 2 ms mientras hay actividad, 100 ms en
-// reposo (menos despertares -> menos consumo). Con la CPU en reposo prolongado
-// se apaga la OLED y se entra en light sleep (conserva los 64 KiB de RAM).
+// flash (~1 s). El ritmo es adaptativo: rápido mientras hay actividad, más
+// lento en reposo (menos despertares -> menos consumo). Con la CPU en reposo
+// prolongado se apaga la OLED y se entra en light sleep (conserva los 64 KiB
+// de RAM).
+//
+// La diferencia entre "activo" y "reposo" se mantiene A PROPÓSITO pequeña
+// (2 ms vs 4/8 ms, no 2 ms vs 20/100 ms como en versiones anteriores):
+// un salto grande hacía que, nada más dejar de tocar el panel, un giro
+// posterior pudiera empezar a perderse casi por completo hasta girar muy
+// rápido -- con separaciones así de pequeñas el consumo extra en reposo es
+// mínimo y la respuesta se mantiene prácticamente igual que "activo".
 //
 // Nota de hardware: para despertar del light sleep girando un encoder haría
 // falta una línea de "actividad de panel" (OR de las señales activas-bajas)
-// a un GPIO RTC. Sin ella, en light sleep se muestrea el '165 cada 100 ms;
-// un giro mantenido despierta en ~200 ms, un toque de pulsador también.
+// a un GPIO RTC. Sin ella, en light sleep se muestrea el '165 cada
+// SAMPLE_IDLE_MS; un giro corto y rápido puede caer entero dentro del hueco
+// entre dos muestras y perderse -- de ahí que SAMPLE_IDLE_MS se mantenga
+// bajo en vez de subirlo para ahorrar más batería.
 constexpr uint32_t SAMPLE_ACTIVE_MS  = 2;      // muestreo del '165 en uso
-constexpr uint32_t SAMPLE_SCREENON_MS = 20;    // pantalla encendida pero sin tocar
-constexpr uint32_t SAMPLE_IDLE_MS    = 100;    // pantalla atenuada/apagada
+constexpr uint32_t SAMPLE_SCREENON_MS = 4;     // pantalla encendida pero sin tocar (antes 20)
+constexpr uint32_t SAMPLE_IDLE_MS    = 8;      // pantalla atenuada/apagada (antes 40, y 100 antes de eso)
 constexpr uint32_t ACTIVE_WINDOW_MS  = 2000;   // sigue a 2 ms tras la última actividad
 constexpr uint32_t SCREEN_DIM_MS     = 20000;  // atenuar la OLED por inactividad
 constexpr uint32_t SCREEN_OFF_MS     = 45000;  // apagar la OLED
@@ -498,8 +509,9 @@ void loop() {
         // (verbo -> mode -> operandos); DATOS pulsa confirma y pasa al
         // siguiente, o -si ya era el último campo- avanza el cursor la
         // longitud de la instrucción ya compuesta. DIRECCIÓN sigue navegando
-        // libremente byte a byte; su pulsador retrocede un campo (o una
-        // dirección si ya estabas en el primero).
+        // libremente byte a byte; su pulsador retrocede una instrucción
+        // ENTERA de golpe (al OPCODE de la anterior), sea cual sea el campo
+        // en el que estés -- no hace falta salir campo a campo de la actual.
         if (changed) {
             // vista recién entrada (o venimos de otra): re-decodifica en lo
             // que ya haya en memoria en el cursor actual.
@@ -521,10 +533,21 @@ void loop() {
         }
 
         if (panel.takeDirPress()) {
-            if (ui.compose.step > 0) {
-                --ui.compose.step;
-            } else if (ui.cursor) {
-                --ui.cursor;
+            if (ui.cursor) {
+                // Salta a la instrucción anterior ENTERA, no campo a campo:
+                // sea cual sea ui.compose.step ahora mismo, una pulsación de
+                // DIRECCIÓN siempre lleva al OPCODE de la instrucción de
+                // antes. No puede ser simplemente cursor-1: la instrucción
+                // anterior puede ocupar 2 o 3 bytes, y aterrizar en mitad de
+                // ella (p. ej. en el byte alto de una dirección) hace que
+                // decodeAt() la reinterprete como un opcode nuevo -- el
+                // selector diría que edita "OP" pero el listado (que sí ve
+                // la instrucción real, alineada desde 0x0000) no lo
+                // reflejaría, y escribir ahí corrompería el operando de la
+                // instrucción anterior en vez de crear una nueva. prevInstrStart()
+                // recorre desde 0 (como el propio listado) para encontrar el
+                // límite de instrucción real inmediatamente anterior.
+                ui.cursor = prevInstrStart(cpu.ram(), 65536u, ui.cursor);
                 ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
             }
             changed = true;
@@ -556,13 +579,21 @@ void loop() {
                                                               : PrgAction::Cargar;
             changed = true;
         }
-        if (panel.takeDatPress()) {
+        // Los dos pulsadores hacen lo mismo aquí: ejecutan prgAction (LOAD o
+        // SAVE, lo que esté elegido con el giro de DATOS). No hay una acción
+        // "solo cargar" fija en ningún botón -- si prgAction está en SAVE,
+        // pulsar cualquiera de los dos guarda. Ambos take*Press() se llaman
+        // siempre (sin cortocircuito de ||): cada uno consume su propio
+        // evento de pulsación, y saltarse la llamada dejaría una pulsación
+        // sin consumir para el siguiente fotograma.
+        const bool datPressed = panel.takeDatPress();
+        const bool dirPressed = panel.takeDirPress();
+        if (datPressed || dirPressed) {
             if (ui.prgAction == PrgAction::Cargar) loadSlot(ui.slot);
             else                                   saveSlot(ui.slot);
             prevSlot = 0xFF;               // fuerza recargar la previsualización
             changed = true;
         }
-        panel.takeDirPress();              // sin uso en esta vista
 
         if (ui.slot != prevSlot) {
             prevSlot = ui.slot;
@@ -596,7 +627,14 @@ void loop() {
         tickTimers();
         tickSound();
         if (running && !cpu.halted()) {
-            for (int i = 0; i < EXEC_BATCH && !cpu.halted(); ++i) cpu.step();
+            // cpu.run(N) en vez de un bucle propio llamando a cpu.step(): al
+            // estar run()/step() en el mismo archivo (cpu.cpp), el compilador
+            // integra step() dentro del bucle de run() (visto con -O3, ver
+            // platformio.ini). Llamado asi desde main.cpp, cada iteracion
+            // pagaba una llamada de funcion real cruzando de fichero -- la
+            // que -O3 no puede eliminar sin LTO -- en la instruccion mas
+            // ejecutada de todo el firmware.
+            cpu.run(EXEC_BATCH);
         }
         if (cpu.halted() && g_sndHz) sndApply(0);   // silencio al llegar a HALT
         if (g_scr != SCR_OFF && (millis() - lastFlush) >= FB_FLUSH_MS) {

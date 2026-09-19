@@ -71,6 +71,10 @@ ob_i      = 0xFE2D      ; juego: offset del obstaculo en curso (0/2/4)
 ob_newy   = 0xFE2E
 go_i      = 0xFE2F      ; game_over: contador de destellos
 pn_v      = 0xFE30      ; put_num: valor en curso
+sf_val    = 0xFE31      ; shadow_fill: byte de relleno
+sfb_off   = 0xFE32      ; shadow_fillbox/shadow_hspan: offset dentro de la pagina
+sfb_pag   = 0xFE33      ; shadow_fillbox/shadow_hspan: pagina (0..3)
+sfb_wid   = 0xFE34      ; shadow_hspan: ancho en bytes (calculado antes de tocar BX)
 
 ; --- puertos (ver ../docs/isa.md) ------------------------------------------
 P_FB      = 0x0000      ; framebuffer
@@ -575,7 +579,9 @@ da_label:
 do_lights:
     MOV AL,#0
     STA [g_exit],AL
-    CALL clsg
+    MOV AL,#0
+    CALL shadow_fill
+    CALL shadow_blit
     CALL clst
     MOV AL,#0
     STA [li_ph],AL
@@ -590,10 +596,12 @@ dl_l:
     OUT (P_LED),AL
     CMP AL,#0
     JMPZ dl_blk
-    CALL fillg
+    MOV AL,#0xFF
+    CALL shadow_fill
     JMP dl_bars
 dl_blk:
-    CALL clsg
+    MOV AL,#0
+    CALL shadow_fill
 dl_bars:
     CALL rnd
     AND AL,#0x3F
@@ -605,7 +613,8 @@ dl_bars:
     STA [tmp2],AL
     MOV AL,#0xFF
     STA [hs_val],AL
-    CALL hspan
+    CALL shadow_hspan
+    CALL shadow_blit
     CALL clst
     MOV BL,#lo(h_light)
     MOV BH,#hi(h_light)
@@ -642,7 +651,9 @@ do_game:
     STA [g_exit],AL
     STA [g_over],AL
     STA [g_score],AL
-    CALL clsg
+    MOV AL,#0
+    CALL shadow_fill
+    CALL shadow_blit
     CALL clst
     MOV AL,#1
     STA [g_speed],AL
@@ -768,7 +779,8 @@ ob_wy:
     RET
 
 game_draw:
-    CALL clsg
+    MOV AL,#0
+    CALL shadow_fill
     LDA AL,[gpx]            ; jugador (alineado a byte)
     SHR AL
     SHR AL
@@ -783,7 +795,7 @@ game_draw:
     STA [gb_wb],AL
     MOV AL,#5
     STA [gb_ht],AL
-    CALL fillbox_solid
+    CALL shadow_fillbox
     MOV AL,#0
     STA [ob_i],AL
     CALL draw_ob
@@ -793,6 +805,7 @@ game_draw:
     MOV AL,#4
     STA [ob_i],AL
     CALL draw_ob
+    CALL shadow_blit
     CALL clst
     MOV BL,#lo(h_game)
     MOV BH,#hi(h_game)
@@ -830,14 +843,16 @@ dob_yok:
     STA [gb_wb],AL
     MOV AL,#4
     STA [gb_ht],AL
-    CALL fillbox_solid
+    CALL shadow_fillbox
     RET
 
 game_over:
     MOV AL,#0
     STA [go_i],AL
 go_l:
-    CALL fillg
+    MOV AL,#0xFF
+    CALL shadow_fill
+    CALL shadow_blit
     MOV AL,#1
     OUT (P_LED),AL
     LDA AL,[go_i]           ; tono descendente 64, 60, 56...
@@ -853,7 +868,9 @@ go_l:
     OUT (P_SND_N),AL
     MOV AL,#4
     CALL frame_wait
-    CALL clsg
+    MOV AL,#0
+    CALL shadow_fill
+    CALL shadow_blit
     MOV AL,#0
     OUT (P_LED),AL
     MOV AL,#3
@@ -865,7 +882,9 @@ go_l:
     JMPNZ go_l
     MOV AL,#0
     OUT (P_SND_N),AL
-    CALL clsg
+    MOV AL,#0
+    CALL shadow_fill
+    CALL shadow_blit
     CALL clst
     MOV BL,#lo(str_over)
     MOV BH,#hi(str_over)
@@ -1172,6 +1191,176 @@ fb_io:
     JMPNZ fs_l
     RET
 
+; ============================================================================
+;  DOBLE BUFFER (solo para 5 LUCES y 6 JUEGO): esas dos rutinas borraban y
+;  redibujaban el framebuffer REAL entero cada vuelta con clsg/fillg/hspan/
+;  fillbox_solid; si el volcado a la OLED (FB_FLUSH_MS, ver docs/firmware.md)
+;  caía a mitad de ese borrado+redibujado, se veía un fotograma a medias
+;  (parpadeo/parpadeo errático). El resto de ejemplos no tocan el framebuffer
+;  con esa frecuencia y se dejan tal cual -- ver programs/cubo.asm para el
+;  mismo patrón explicado con más detalle.
+; ============================================================================
+
+; --- idx_ptr:  BX = (BL/BH iniciales) + CL, propagando el acarreo a mano ---
+idx_ptr:
+    ADD BL,CL
+    JMPNC ip_d
+    ADD BH,#1
+ip_d:
+    RET
+
+; --- shadow_fill:  rellena los 1024 bytes de `shadow` con AL (equivalente a
+; clsg/fillg pero sobre la copia en RAM). Contador de 16 bits explícito:
+; `shadow` no cae en un límite de página, así que no vale el truco de contar
+; 4 "vueltas" de BH que usa clsg (ver el aviso de cubo.asm).
+shadow_fill:
+    STA [sf_val],AL
+    MOV BL,#lo(shadow)
+    MOV BH,#hi(shadow)
+    MOV CL,#0
+    MOV CH,#4
+shf_l:
+    LDA AL,[sf_val]
+    STA [BX],AL
+    ADD BL,#1
+    JMPNC shf_addr_ok
+    ADD BH,#1
+shf_addr_ok:
+    SUB CL,#1
+    JMPNC shf_cnt_ok
+    SUB CH,#1
+shf_cnt_ok:
+    MOV DL,CH
+    OR  DL,CL
+    JMPNZ shf_l
+    RET
+
+; --- shadow_fillbox:  como fillbox_solid, pero escribe en `shadow` -- misma
+; convención de parámetros (gb_x/gb_y/gb_wb/gb_ht).
+shadow_fillbox:
+    LDA AL,[gb_ht]
+    STA [fs_h],AL
+    LDA AL,[gb_y]
+    STA [fs_row],AL
+sfb_l:
+    LDA AL,[fs_row]
+    STA [tmp0],AL
+    AND AL,#0x0F
+    SHL AL
+    SHL AL
+    SHL AL
+    SHL AL
+    LDA BL,[gb_x]
+    SHR BL
+    SHR BL
+    SHR BL
+    ADD AL,BL
+    STA [sfb_off],AL
+    LDA AL,[tmp0]
+    SHR AL
+    SHR AL
+    SHR AL
+    SHR AL
+    STA [sfb_pag],AL
+
+    MOV BL,#lo(shadow)
+    MOV BH,#hi(shadow)
+    LDA CL,[sfb_off]
+    CALL idx_ptr
+    LDA AL,[sfb_pag]
+    ADD BH,AL
+
+    LDA CL,[gb_wb]
+    MOV AL,#0xFF
+sfb_cl:
+    STA [BX],AL
+    ADD BL,#1
+    JMPNC sfb_nc
+    ADD BH,#1
+sfb_nc:
+    SUB CL,#1
+    JMPNZ sfb_cl
+
+    LDA AL,[fs_row]
+    ADD AL,#1
+    STA [fs_row],AL
+    LDA AL,[fs_h]
+    SUB AL,#1
+    STA [fs_h],AL
+    JMPNZ sfb_l
+    RET
+
+; --- shadow_hspan:  como hspan, pero escribe en `shadow` (fila tmp0,
+; bytes-x tmp1..tmp2, valor hs_val). El ancho se calcula ANTES de montar el
+; puntero BX: si se calculara después pisaría BL a medio construir la
+; dirección (el mismo tipo de bug que ya se dio en pong.asm con `speed`).
+shadow_hspan:
+    LDA AL,[tmp2]
+    LDA BL,[tmp1]
+    SUB AL,BL
+    ADD AL,#1
+    STA [sfb_wid],AL
+
+    LDA AL,[tmp0]
+    AND AL,#0x0F
+    SHL AL
+    SHL AL
+    SHL AL
+    SHL AL
+    LDA BL,[tmp1]
+    ADD AL,BL
+    STA [sfb_off],AL
+    LDA AL,[tmp0]
+    SHR AL
+    SHR AL
+    SHR AL
+    SHR AL
+    STA [sfb_pag],AL
+
+    MOV BL,#lo(shadow)
+    MOV BH,#hi(shadow)
+    LDA CL,[sfb_off]
+    CALL idx_ptr
+    LDA AL,[sfb_pag]
+    ADD BH,AL
+
+    LDA CL,[sfb_wid]
+    LDA AL,[hs_val]
+shsp_l:
+    STA [BX],AL
+    ADD BL,#1
+    JMPNC shsp_nc
+    ADD BH,#1
+shsp_nc:
+    SUB CL,#1
+    JMPNZ shsp_l
+    RET
+
+; --- shadow_blit:  copia `shadow` al framebuffer real, solo lo que cambie --
+shadow_blit:
+    MOV BL,#0
+    MOV BH,#0
+    MOV DL,#lo(shadow)
+    MOV DH,#hi(shadow)
+sbl_l:
+    IN  AL,(BX)
+    LDA CL,[DX]
+    CMP AL,CL
+    JMPZ sbl_same
+    MOV AL,CL
+    OUT (BX),AL
+sbl_same:
+    ADD DL,#1
+    JMPNC sbl_dnc
+    ADD DH,#1
+sbl_dnc:
+    ADD BL,#1
+    JMPNC sbl_l
+    ADD BH,#1
+    CMP BH,#4
+    JMPNZ sbl_l
+    RET
+
 ; --- fillbox_xor:  invierte (XOR 0xFF) una caja gb_wb x gb_ht en gb_x,gb_y -
 ; dibujarla dos veces en el mismo sitio la borra sin tocar el fondo.
 fillbox_xor:
@@ -1341,7 +1530,10 @@ wdr_d:
 ; ============================================================================
 ;  DATOS
 ;
-;  sine/melody van justo despues del codigo (que hoy acaba en 0x0A45), no en
+;  sine/melody van justo despues del codigo (que hoy acaba en 0x0B84 --
+;  subido de 0x0B00 a 0x0C00 al añadir shadow_fill/shadow_fillbox/
+;  shadow_hspan/shadow_blit para 5 LUCES y 6 JUEGO, que llegaron a pisar la
+;  tabla; ver el aviso de mas abajo, es EXACTAMENTE lo que paso), no en
 ;  0xF000/0xF100: casm.py recorta el .bin tras el ultimo byte usado, y dejar
 ;  ese hueco de por medio lo unico que hacia era inflar el fichero (ver
 ;  "Tamano del .bin" en programs/README.md). Cada tabla SIGUE necesitando
@@ -1349,24 +1541,26 @@ wdr_d:
 ;  parcheando solo el byte bajo de la instruccion (p. ej. `STA
 ;  [dax_rd+1],AL`), sin tocar la pagina alta, asi que si no empezara en
 ;  byte-bajo 0 apuntaria al sitio equivocado.
-;  Si este fichero crece y el codigo llega a pisar 0x0B00, hay que subir esa
-;  direccion (y la de melody, siempre 0x100 por encima) al siguiente multiplo
-;  de 0x100 libre -- casm.py no avisa de un solape, simplemente escribiria
-;  sine/melody encima de las ultimas instrucciones.
+;  Si este fichero vuelve a crecer y el codigo llega a pisar 0x0C00, hay que
+;  subir esa direccion (y la de melody, siempre 0x100 por encima) al
+;  siguiente multiplo de 0x100 libre -- casm.py NO avisa de un solape,
+;  simplemente escribiria sine/melody encima de las ultimas instrucciones
+;  sin decir nada (compila igual, el .bin cambia de contenido pero no de
+;  tamaño -- esa es la señal de alarma a vigilar, no un error del ensamblador).
 ;
 ;  obarr se queda en 0xF300 sin tocar: al ser un `.space` sin datos reales,
 ;  no le cuesta ni un byte al fichero este donde este (y a esta lo lejos que
 ;  esta no le afecta el recorte, que solo mira hasta el ultimo byte con
 ;  datos de verdad).
 ; ============================================================================
-    .org 0x0B00
+    .org 0x0C00
 sine:
     .db 32, 35, 38, 41, 43, 46, 49, 51, 53, 55, 57, 58, 60, 61, 61, 62
     .db 62, 62, 61, 61, 60, 58, 57, 55, 53, 51, 49, 46, 43, 41, 38, 35
     .db 32, 29, 26, 23, 21, 18, 15, 13, 11, 9, 7, 6, 4, 3, 3, 2
     .db 2, 2, 3, 3, 4, 6, 7, 9, 11, 13, 15, 18, 21, 23, 26, 29
 
-    .org 0x0C00
+    .org 0x0D00
 melody:
     .db 60,6, 62,6, 64,6, 65,6, 67,6, 69,6, 71,6, 72,12
     .db 0,3
@@ -1402,3 +1596,9 @@ txt_msg:
 
     .org 0xF300
 obarr:     .space 6
+
+; shadow: copia del framebuffer en RAM para 5 LUCES y 6 JUEGO (ver la nota
+; junto a shadow_fill). Va aparte con su propio .org, igual que obarr: es un
+; .space sin datos reales, así que no cuenta para el recorte del .bin.
+    .org 0xF400
+shadow:    .space 1024
