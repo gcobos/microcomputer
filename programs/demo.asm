@@ -314,11 +314,7 @@ dt_rd:
     JMPZ dt_nl
     STA [tmp0],AL             ; guarda el caracter
     LDA AL,[tw_row]
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                    ; fila * 32
+    SHL AL,#5                 ; fila * 32
     LDA BL,[tw_col]
     ADD AL,BL
     STA [dt_o+1],AL
@@ -388,11 +384,7 @@ show_charset:
     STA [cs_row],AL
 sc_l:
     LDA AL,[cs_row]
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#5
     LDA BL,[cs_col]
     ADD AL,BL
     STA [sc_io+1],AL
@@ -782,12 +774,8 @@ game_draw:
     MOV AL,#0
     CALL shadow_fill
     LDA AL,[gpx]            ; jugador (alineado a byte)
-    SHR AL
-    SHR AL
-    SHR AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHR AL,#3
+    SHL AL,#3
     STA [gb_x],AL
     MOV AL,#58
     STA [gb_y],AL
@@ -825,12 +813,8 @@ draw_ob:
     STA [dob_ry+1],AL
 dob_rx:
     LDA AL,[0xF300]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHR AL,#3
+    SHL AL,#3
     STA [gb_x],AL
 dob_ry:
     LDA AL,[0xF301]
@@ -857,8 +841,7 @@ go_l:
     OUT (P_LED),AL
     LDA AL,[go_i]           ; tono descendente 64, 60, 56...
     MOV BL,AL
-    SHL BL
-    SHL BL
+    SHL BL,#2
     MOV AL,#64
     SUB AL,BL
     STA [tmp0],AL
@@ -960,11 +943,7 @@ draw_menu:
 ; solo altera AL.
 puts:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#5
     ADD AL,CL
     STA [ps_o+1],AL
     MOV AL,#0x04
@@ -1035,11 +1014,7 @@ pn_td:
 putc:
     STA [tmp0],AL
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#5
     ADD AL,CL
     STA [pc_o+1],AL
     MOV AL,#0x04
@@ -1091,18 +1066,12 @@ ct_io:
 hspan:
     LDA AL,[tmp0]
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     LDA BL,[tmp1]
     ADD AL,BL
     STA [hp_io+1],AL
     LDA AL,[tmp0]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [hp_io+2],AL
     LDA CL,[tmp2]
     LDA BL,[tmp1]
@@ -1123,16 +1092,10 @@ hp_io:
 hline_full:
     LDA AL,[tmp0]
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     STA [hf_io+1],AL
     LDA AL,[tmp0]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [hf_io+2],AL
     MOV CL,#16
     MOV AL,#0xFF
@@ -1156,21 +1119,13 @@ fs_l:
     LDA AL,[fs_row]
     STA [tmp0],AL
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     LDA BL,[gb_x]
-    SHR BL
-    SHR BL
-    SHR BL
+    SHR BL,#3
     ADD AL,BL
     STA [fb_io+1],AL
     LDA AL,[tmp0]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [fb_io+2],AL
     LDA CL,[gb_wb]
     MOV AL,#0xFF
@@ -1246,21 +1201,13 @@ sfb_l:
     LDA AL,[fs_row]
     STA [tmp0],AL
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     LDA BL,[gb_x]
-    SHR BL
-    SHR BL
-    SHR BL
+    SHR BL,#3
     ADD AL,BL
     STA [sfb_off],AL
     LDA AL,[tmp0]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [sfb_pag],AL
 
     MOV BL,#lo(shadow)
@@ -1303,18 +1250,12 @@ shadow_hspan:
 
     LDA AL,[tmp0]
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     LDA BL,[tmp1]
     ADD AL,BL
     STA [sfb_off],AL
     LDA AL,[tmp0]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [sfb_pag],AL
 
     MOV BL,#lo(shadow)
@@ -1372,22 +1313,14 @@ fxb_l:
     LDA AL,[fs_row]
     STA [tmp0],AL
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     LDA BL,[gb_x]
-    SHR BL
-    SHR BL
-    SHR BL
+    SHR BL,#3
     ADD AL,BL
     STA [fxb_i+1],AL
     STA [fxb_o+1],AL
     LDA AL,[tmp0]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [fxb_i+2],AL
     STA [fxb_o+2],AL
     LDA CL,[gb_wb]
@@ -1418,22 +1351,14 @@ plot:
     LDA CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     MOV DL,CL
-    SHR DL
-    SHR DL
-    SHR DL
+    SHR DL,#3
     OR AL,DL
     STA [pl_i+1],AL
     STA [pl_o+1],AL
     MOV AL,CH
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [pl_i+2],AL
     STA [pl_o+2],AL
     MOV DL,CL

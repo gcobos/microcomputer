@@ -268,20 +268,63 @@ solo daría un pitido de frecuencia fija.
 
 El aparato puede alimentarse solo por USB (como hasta ahora) o añadir una
 batería LiPo con su cargador, para uso portátil. Ver el bloque
-"ALIMENTACIÓN POR BATERÍA" en [`wiring.svg`](wiring.svg) / `wiring.png`.
+"ALIMENTACIÓN POR BATERÍA" y la nota "MODIFICACIÓN" en
+[`wiring.svg`](wiring.svg) / `wiring.png`.
 
 ### Cadena de alimentación
 
 ```
-LiPo 1S 3,7V --B+/B---> TP4056 (protegido) --OUT+/OUT---> interruptor --> 5V/VBUS (SuperMini)
-                              ^ USB-C / micro-USB propio (carga)
+                    diodo de fabrica de la SuperMini, cátodo reubicado
+USB-C SuperMini (VBUS) ------------------|>|------------------> IN+/IN- (TP4056)
+                                                                       |
+LiPo 1S 3,7V --B+/B---------------------------------------------------+
+                                                                       |
+                                                              OUT+/OUT- (TP4056)
+                                                                       |
+                                                          interruptor -+-> 5V/VBUS (SuperMini)
 ```
 
 | Bloque | Nota |
 |---|---|
 | Batería LiPo 1S | 3,0–4,2 V, capacidad según la carcasa (p. ej. 500–1200 mAh). Conector JST-PH 2,0. |
-| Cargador **TP4056 con protección** | Módulo con **DW01A** (protección de sobre/infra-carga y cortocircuito) + **FS8205A** (doble MOSFET). Sin el DW01A/FS8205A el TP4056 pelado NO protege la celda — usar siempre la versión "con protección". Tiene su **propio** conector USB-C o micro-USB para cargar, independiente del USB-C de la SuperMini. |
+| Cargador **TP4056 con protección** | Módulo con **DW01A** (protección de sobre/infra-carga y cortocircuito) + **FS8205A** (doble MOSFET). Sin el DW01A/FS8205A el TP4056 pelado NO protege la celda — usar siempre la versión "con protección". **No usa su propio conector USB-C/micro-USB**: `IN+`/`IN−` se alimentan desde el USB-C de la propia SuperMini (ver "Modificación" abajo) — un solo cable USB-C programa y carga a la vez. |
 | Interruptor SPST | En serie entre `OUT+` del cargador y el pin **5V/VBUS** de la SuperMini. Apaga el aparato sin desconectar la batería del cargador (sigue cargando con el interruptor en OFF). |
+
+### Modificación: cargar por el mismo USB-C de la SuperMini
+
+La SuperMini trae de fábrica un diodo entre el `VBUS` de su propio USB-C y su
+pin `5V` — protege al **host USB** (el ordenador) por si además hay una fuente
+de 5V externa puesta en ese pin cuando se enchufa el cable: sin el diodo, esa
+tensión externa podría verse empujada de vuelta hacia el puerto del ordenador.
+
+Para que ese mismo USB-C también cargue la batería, **no se quita ese diodo**
+(sería quitar justo la protección que le da sentido) — se reaprovecha:
+
+1. Localiza el diodo (continuidad/modo diodo con el polímetro, trazando desde
+   el pin `VBUS` del conector USB-C hasta él, para identificar ánodo y cátodo
+   con certeza antes de tocar nada).
+2. Desuelda **solo su cátodo** (el extremo que iba hacia el pin `5V`/entrada
+   del regulador) y llévalo, con un cable, a `IN+` del TP4056. El ánodo se
+   deja intacto — sigue conectado al `VBUS` real del conector.
+3. `IN−` del TP4056 a GND común.
+4. Añade un cable nuevo, **sin diodo**, desde `OUT+` del TP4056 hasta el punto
+   donde antes llegaba el cátodo (el pin `5V`/entrada del regulador, el mismo
+   de siempre — vía el interruptor, sin cambios ahí).
+
+Con esto: el diodo sigue haciendo exactamente su trabajo original (bloquear
+que lo que sea que haya en el lado `IN+` — VBUS o una fuga interna del TP4056
+desde la batería — llegue hasta el conector y de ahí al host), y de paso dejan
+de existir un camino directo sin supervisar entre el USB y la batería: la
+única forma en que el USB llega a cargar la celda es atravesando el propio
+chip del TP4056. Usa un diodo **Schottky** (p. ej. 1N5819/SS14, caída
+~0,2–0,3 V) si el original no lo es — con un diodo de silicio normal
+(~0,6–0,7 V) el TP4056 puede quedarse sin margen para regular bien hasta los
+4,2 V de corte.
+
+Después de modificarlo, comprueba que programar/flashear
+(`tools/compi_send.py`, monitor serie) sigue funcionando igual — esta
+modificación no toca las líneas de datos USB (D+/D−), solo la alimentación,
+pero conviene confirmarlo en la placa real.
 
 ### Por qué al pin 5V, no al 3V3
 
@@ -289,15 +332,15 @@ La SuperMini ya tiene un regulador 5V→3,3V a bordo; el pin 3V3 es su
 **salida** regulada. Meter la batería (hasta 4,2 V a tope de carga)
 directamente en el pin 3V3 sumaría esa tensión a la del regulador si además
 hay USB conectado (p. ej. para programar) — puede superar el máximo absoluto
-del ESP32-C3 (~3,6 V) y dañarlo. Entrando por **5V/VBUS**, el regulador de la
-placa arbitra entre USB y batería con seguridad: se puede tener el USB-C de la
-SuperMini conectado (programar, `tools/compi_send.py`) con la batería puesta y
-el interruptor en ON sin ningún riesgo.
+del ESP32-C3 (~3,6 V) y dañarlo. Entrando por **5V/VBUS** en cambio, el
+regulador de la placa solo ve, como mucho, la tensión de la propia batería
+(≤4,2 V) tanto si hay USB puesto (con la modificación de arriba, cargando a
+través del TP4056) como si no.
 
-El coste de esta opción segura: el regulador de a bordo consume su propia
-corriente en reposo (algo de mA en muchos clones — medirlo) y tiene una caída
-de tensión (dropout) que resta algo de capacidad útil de la batería al final
-de la descarga. Ver `specs.txt` §16 para el resto de medidas de ahorro
+El coste: el regulador de a bordo consume su propia corriente en reposo
+(algo de mA en muchos clones — medirlo) y tiene una caída de tensión
+(dropout) que resta algo de capacidad útil de la batería al final de la
+descarga. Ver `specs.txt` §16 para el resto de medidas de ahorro
 (atenuar/apagar la OLED, *light sleep*, flash en *deep power-down*) que sí
 están bajo control del firmware.
 

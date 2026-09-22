@@ -16,6 +16,8 @@ uint8_t modeCount(uint8_t verb) {
         case V_ADD: case V_SUB: case V_AND: case V_OR: case V_XOR: return 3;
         // LDA/STA/IN/OUT: 0 = [addr16] (3 bytes) ; 1 = [AX|BX|CX|DX] indirecto (2 bytes)
         case V_LDA: case V_STA: case V_IN: case V_OUT: return 2;
+        // SHR/SHL: 0 = desplaza 1 bit (1 byte) ; 1 = reg,#N, N=1..8 (2 bytes)
+        case V_SHR: case V_SHL: return 2;
         default: return 0;
     }
 }
@@ -25,8 +27,12 @@ uint8_t operandFields(uint8_t verb, uint8_t mode, EField out[3]) {
     switch (verb) {
         case V_NOP: case V_HALT: case V_RET:
             return 0;
-        case V_NOT: case V_SHR: case V_SHL: case V_PUSH: case V_POP:
+        case V_NOT: case V_PUSH: case V_POP:
             out[0] = EField::Reg;
+            return 1;
+        case V_SHR: case V_SHL:
+            out[0] = EField::Reg;
+            if (mode == 1) { out[1] = EField::Shift; return 2; }
             return 1;
         case V_LDA: case V_IN:
             if (mode == 1) { out[0] = EField::Reg; out[1] = EField::Ptr; return 2; }
@@ -112,7 +118,7 @@ void applyDelta(ComposeState& st, int16_t delta) {
             // El verbo nuevo no hereda campos del anterior: evita mezclas raras
             // (p. ej. un registro/condición que por casualidad coincidiera).
             st.mode = 0; st.reg = 0; st.dst = 0; st.src = 0; st.cond = 0;
-            st.imm = 0; st.addr16 = 0; st.ptr = 0;
+            st.imm = 0; st.addr16 = 0; st.ptr = 0; st.shift = 1;
             break;
         }
         case EField::Mode: {
@@ -134,6 +140,13 @@ void applyDelta(ComposeState& st, int16_t delta) {
         case EField::Src: st.src = (uint8_t)(((int16_t)st.src + delta) & 7); break;
         case EField::Ptr: st.ptr = (uint8_t)(((int16_t)st.ptr + delta) & 3); break;
         case EField::Imm: st.imm = (uint8_t)((int16_t)st.imm + delta); break;
+        case EField::Shift: {
+            // 1..8 con envoltura (a diferencia de Imm, que es un byte libre).
+            int16_t v = (int16_t)(((int16_t)(st.shift - 1) + delta) % 8);
+            if (v < 0) v += 8;
+            st.shift = (uint8_t)(v + 1);
+            break;
+        }
         case EField::Lo: {
             uint8_t lo = (uint8_t)((int16_t)(st.addr16 & 0xFF) + delta);
             st.addr16 = (uint16_t)((st.addr16 & 0xFF00) | lo);
@@ -161,8 +174,12 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
         case V_HALT: put(addr, makeOpcode(OP_HALT, 0)); return 1;
         case V_RET:  put(addr, makeOpcode(OP_RET, 0));  return 1;
         case V_NOT:  put(addr, makeOpcode(OP_NOT, st.reg));  return 1;
-        case V_SHR:  put(addr, makeOpcode(OP_SHR, st.reg));  return 1;
-        case V_SHL:  put(addr, makeOpcode(OP_SHL, st.reg));  return 1;
+        case V_SHR:
+            if (st.mode == 1) { put(addr, makeOpcode(OP_SHRN, st.reg)); put((uint16_t)(addr + 1), (uint8_t)(st.shift - 1)); return 2; }
+            put(addr, makeOpcode(OP_SHR, st.reg)); return 1;
+        case V_SHL:
+            if (st.mode == 1) { put(addr, makeOpcode(OP_SHLN, st.reg)); put((uint16_t)(addr + 1), (uint8_t)(st.shift - 1)); return 2; }
+            put(addr, makeOpcode(OP_SHL, st.reg)); return 1;
         case V_PUSH: put(addr, makeOpcode(OP_PUSH, st.reg)); return 1;
         case V_POP:  put(addr, makeOpcode(OP_POP, st.reg));  return 1;
         case V_LDA:
@@ -243,8 +260,10 @@ ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
         case OP_OR:   st.verb = V_OR;  st.mode = 2; st.reg = r; st.addr16 = a16; break;
         case OP_XOR:  st.verb = V_XOR; st.mode = 2; st.reg = r; st.addr16 = a16; break;
         case OP_NOT:  st.verb = V_NOT;  st.reg = r; break;
-        case OP_SHR:  st.verb = V_SHR;  st.reg = r; break;
-        case OP_SHL:  st.verb = V_SHL;  st.reg = r; break;
+        case OP_SHR:  st.verb = V_SHR;  st.mode = 0; st.reg = r; break;
+        case OP_SHL:  st.verb = V_SHL;  st.mode = 0; st.reg = r; break;
+        case OP_SHRN: st.verb = V_SHR;  st.mode = 1; st.reg = r; st.shift = (uint8_t)((b1 & 7) + 1); break;
+        case OP_SHLN: st.verb = V_SHL;  st.mode = 1; st.reg = r; st.shift = (uint8_t)((b1 & 7) + 1); break;
         case OP_IN:   st.verb = V_IN;   st.mode = 0; st.reg = r; st.addr16 = a16; break;
         case OP_OUT:  st.verb = V_OUT;  st.mode = 0; st.reg = r; st.addr16 = a16; break;
         case OP_LDAR: st.verb = V_LDA; st.mode = 1; st.reg = r; st.ptr = (uint8_t)(b1 & 3); break;

@@ -21,7 +21,8 @@ Instrucciones (reg = AL AH BL BH CL CH DL DH):
     LDA reg,[addr]   STA [addr],reg     (o [AX|BX|CX|DX]: indirecto por registro)
     ADD/SUB/AND/OR/XOR  reg,[addr] | reg,#imm | dst,src
     CMP reg,#imm | dst,src
-    NOT/SHR/SHL/PUSH/POP reg
+    NOT/PUSH/POP reg
+    SHR/SHL reg              (desplaza 1 bit)   o   SHR/SHL reg,#N  (N=1..8)
     IN  reg,(port)   OUT (port),reg     (o (AX|BX|CX|DX): indirecto por registro)
     JMP/JMPZ/JMPNZ/JMPC/JMPNC/JMPN/JMPNN   addr
     CALL/CALLZ/CALLNZ/CALLC/CALLNC/CALLN/CALLNN  addr
@@ -59,6 +60,8 @@ F_ALUI, F_EXT = 20, 31
 # Direccionamiento indirecto por registro de 16 bits: LEN 2 (opcode + par
 # AX/BX/CX/DX), en vez de opcode + addr16/port16 de 2 bytes.
 F_LDAR, F_STAR, F_INR, F_OUTR = 21, 22, 23, 24
+# SHR/SHL reg,#N (N=1..8, byte2 = N-1): LEN 2, familias antes reservadas.
+F_SHRN, F_SHLN = 25, 26
 REG16 = {"AX": 0, "BX": 1, "CX": 2, "DX": 3}
 
 MEM_ALU = {"ADD": F_ADD, "SUB": F_SUB, "AND": F_AND, "OR": F_OR, "XOR": F_XOR}
@@ -340,8 +343,14 @@ class Assembler:
         ops = [classify(t, lineno) for t in split_operands(rest)]
         if mnem in ("NOP", "HALT", "RET"):
             return 1
-        if mnem in ("NOT", "SHR", "SHL", "PUSH", "POP"):
+        if mnem in ("NOT", "PUSH", "POP"):
             return 1
+        if mnem in ("SHR", "SHL"):
+            if len(ops) == 1:
+                return 1
+            if len(ops) == 2:
+                return 2
+            raise AsmError(f"{mnem} reg  o  {mnem} reg,#N", lineno)
         if mnem == "MOV":
             if len(ops) != 2:
                 raise AsmError("MOV necesita 2 operandos", lineno)
@@ -423,12 +432,25 @@ class Assembler:
         if mnem == "RET":
             return [opcode(F_RET, 0)]
 
-        if mnem in ("NOT", "SHR", "SHL", "PUSH", "POP"):
-            fam = {"NOT": F_NOT, "SHR": F_SHR, "SHL": F_SHL,
-                   "PUSH": F_PUSH, "POP": F_POP}[mnem]
+        if mnem in ("NOT", "PUSH", "POP"):
+            fam = {"NOT": F_NOT, "PUSH": F_PUSH, "POP": F_POP}[mnem]
             if len(ops) != 1 or ops[0].kind != "reg":
                 raise AsmError(f"{mnem} reg", lineno)
             return [opcode(fam, ops[0].value)]
+
+        if mnem in ("SHR", "SHL"):
+            if len(ops) < 1 or ops[0].kind != "reg":
+                raise AsmError(f"{mnem} reg  o  {mnem} reg,#N", lineno)
+            fam1 = F_SHR if mnem == "SHR" else F_SHL
+            if len(ops) == 1:
+                return [opcode(fam1, ops[0].value)]
+            if len(ops) == 2 and ops[1].kind == "imm":
+                n = self._imm8(ops[1], pc, lineno)
+                if not (1 <= n <= 8):
+                    raise AsmError(f"{mnem}: N debe ser 1..8 (era {n})", lineno)
+                famN = F_SHRN if mnem == "SHR" else F_SHLN
+                return [opcode(famN, ops[0].value), n - 1]
+            raise AsmError(f"{mnem} reg  o  {mnem} reg,#N", lineno)
 
         if mnem == "MOV":
             dst, src = ops

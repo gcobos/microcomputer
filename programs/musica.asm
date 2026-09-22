@@ -135,11 +135,7 @@ mel_inc_d:
 ; --- puts:  BL/BH = puntero asciiz,  CL = col,  CH = fila -------------------
 puts:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                      ; fila*32
+    SHL AL,#5                   ; fila*32
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04                ; puerto texto = 0x0400 + fila*32 + col

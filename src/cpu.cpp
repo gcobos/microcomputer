@@ -96,6 +96,30 @@ void Cpu::updateFlagsLogic(uint8_t result) {
     flags_ = (uint8_t)((zero << 1) | (neg << 2));
 }
 
+void Cpu::doShr(uint8_t reg, uint8_t n) {
+    uint32_t v = regs_.get8(reg);
+    uint8_t originalMsb = (v & 0x80) != 0;
+    // v cabe en 32 bits, asi que desplazar hasta 8 posiciones nunca es
+    // comportamiento indefinido (a diferencia de desplazar un uint8_t).
+    uint8_t result = (uint8_t)(v >> n);
+    uint8_t carry = (uint8_t)((v >> (n - 1)) & 1);
+    regs_.set8(reg, result);
+    uint8_t zero = (result == 0);
+    uint8_t neg  = (result & 0x80) != 0;
+    flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (originalMsb << 3));
+}
+
+void Cpu::doShl(uint8_t reg, uint8_t n) {
+    uint32_t v = regs_.get8(reg);
+    uint8_t result = (uint8_t)((v << n) & 0xFF);
+    uint8_t carry = (uint8_t)((v >> (8 - n)) & 1);
+    regs_.set8(reg, result);
+    uint8_t zero = (result == 0);
+    uint8_t neg  = (result & 0x80) != 0;
+    uint8_t overflow = (carry != neg);
+    flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (overflow << 3));
+}
+
 uint8_t Cpu::aluOp(uint8_t op, uint8_t a, uint8_t b) {
     switch (op) {
         case ALU_MOV: return b;                             // no toca flags
@@ -153,26 +177,20 @@ bool Cpu::step() {
             updateFlagsLogic(result);
             break;
         }
-        case OP_SHR: {
-            uint8_t v = regs_.get8(r);
-            uint8_t carry = v & 0x01;
-            uint8_t originalMsb = (v & 0x80) != 0;
-            uint8_t result = (uint8_t)(v >> 1);
-            regs_.set8(r, result);
-            uint8_t zero = (result == 0);
-            uint8_t neg  = (result & 0x80) != 0;
-            flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (originalMsb << 3));
+        case OP_SHR:
+            doShr(r, 1);
+            break;
+        case OP_SHL:
+            doShl(r, 1);
+            break;
+        case OP_SHRN: {
+            uint8_t n = (uint8_t)((fetch8() & 0x07) + 1);
+            doShr(r, n);
             break;
         }
-        case OP_SHL: {
-            uint8_t v = regs_.get8(r);
-            uint8_t carry = (v & 0x80) != 0;
-            uint8_t result = (uint8_t)(v << 1);
-            regs_.set8(r, result);
-            uint8_t zero = (result == 0);
-            uint8_t neg  = (result & 0x80) != 0;
-            uint8_t overflow = (carry != neg);
-            flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (overflow << 3));
+        case OP_SHLN: {
+            uint8_t n = (uint8_t)((fetch8() & 0x07) + 1);
+            doShl(r, n);
             break;
         }
         case OP_IN: {
@@ -249,7 +267,7 @@ bool Cpu::step() {
             break;
         }
         default:
-            // Familias 21-30: reservadas, se comportan como NOP por ahora.
+            // Familias 27-30: reservadas, se comportan como NOP por ahora.
             break;
     }
     return !halted_;

@@ -390,21 +390,13 @@ calc_pix:
     LDA CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                      ; AL = (y&15)<<4
+    SHL AL,#4                   ; AL = (y&15)<<4
     MOV DL,CL
-    SHR DL
-    SHR DL
-    SHR DL                      ; DL = x>>3 (xbyte)
+    SHR DL,#3                   ; DL = x>>3 (xbyte)
     OR  AL,DL
     STA [pix_lo],AL
     MOV AL,CH
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL                      ; AL = y>>4
+    SHR AL,#4                   ; AL = y>>4
     STA [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
@@ -426,11 +418,7 @@ cpx_d:
 ; --- puts:  BL/BH = puntero asciiz,  CL = col,  CH = fila -------------------
 puts:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                      ; fila*32
+    SHL AL,#5                   ; fila*32
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04                ; puerto texto = 0x0400 + fila*32 + col

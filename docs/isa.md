@@ -105,7 +105,9 @@ formas — ver secciones 6 y 6b. El resto:
 | `JMP<cc> addr16`   | 3 | 17 | `88` + cc | si se cumple `cc`: `PC = addr` | — |
 | `CALL<cc> addr16`  | 3 | 18 | `90` + cc | si `cc`: apila PC, `PC = addr` | — |
 | `RET`              | 1 | 19 | `98` | `PC = ` dirección apilada | — |
-| *(reservadas)*     | 1 | 25–30 | `C8 … F7` | se ejecutan como `NOP` | — |
+| `SHR reg,#N`       | 2 | 25 | `C8 … CF` | `reg >>= N` (N=1..8; sección 4c) | C = bit que sale en el último paso · V = bit 7 previo · N Z |
+| `SHL reg,#N`       | 2 | 26 | `D0 … D7` | `reg <<= N` (N=1..8; sección 4c) | C = bit que sale en el último paso · N = bit 7 · V = (C≠N) · Z |
+| *(reservadas)*     | 1 | 27–30 | `D8 … F7` | se ejecutan como `NOP` | — |
 | `<op> dst,src`     | 2 | 31 | `F8` + op | ALU registro-registro (sección 6) | según op |
 
 Columna "Opcode (AL … DH)": el primer valor es con el registro AL; cada
@@ -142,6 +144,49 @@ En el selector de mnemónico del panel (sección 1): al elegir `LDA`/`STA`/
 `[reg16]` (este modo); en `[reg16]` el operando de dirección/puerto es un
 único campo **`PTR`** que gira entre `AX`/`BX`/`CX`/`DX`, en vez de los dos
 campos `LO`/`HI`.
+
+---
+
+## 4c. Desplazamiento de varios bits de una vez: `SHR`/`SHL reg,#N`
+
+Segunda forma de `SHR`/`SHL` (familias 25/26, antes reservadas): desplaza
+`N` bits (1 a 8) en una sola instrucción, en vez de repetir `SHR`/`SHL reg`
+N veces. Pensada para las divisiones/multiplicaciones por una potencia de 2
+conocida en tiempo de ensamblado (convertir una posición en "baldosa",
+calcular una dirección de pantalla, etc.), donde antes hacían falta N
+instrucciones de 1 bit para exactamente el mismo resultado.
+
+    opcode = familia×8 + reg     (igual que la forma de 1 bit)
+    byte 2 = N - 1               (3 bits bajos; 0 = 1 bit .. 7 = 8 bits)
+
+| Mnemónico | Familia | Opcode (AL … DH) | Byte 2 |
+|---|---|---|---|
+| `SHR reg,#N` | 25 | `C8 … CF` | `N - 1` |
+| `SHL reg,#N` | 26 | `D0 … D7` | `N - 1` |
+
+El resultado y las flags son **exactamente los mismos** que repetir
+`SHR reg` / `SHL reg` (la forma de 1 bit) N veces seguidas: `C` es el bit
+que sale en el ÚLTIMO de los N pasos, y el resultado es el valor
+desplazado N bits, con `Z`/`N` calculadas sobre ese resultado final. La
+única flag que no sale de "repetir el bucle" es la `V` de `SHR`: como aquí
+se trata de una sola instrucción (aunque desplace N bits), "bit 7 previo"
+significa el bit 7 de ANTES de esta instrucción, no de antes de cada paso
+interno (que a partir del segundo paso siempre seria 0, porque `SHR` mete
+un 0 arriba en cada desplazamiento).
+
+`SHR reg` / `SHL reg` sin `,#N` **se mantienen tal cual** (familias 11/12,
+LEN 1, desplazan 1 bit): son la forma corta, no una versión distinta con
+otro comportamiento. `casm.py` elige automáticamente la forma de 1 byte
+cuando no se da ningún operando `,#N`, y la de 2 bytes en cuanto se da uno
+(incluido `,#1`, aunque para ese caso concreto sea equivalente y más largo).
+
+Ejemplo: `SHR BL,#4` → `CA 03` (familia 25, reg BL=2 → 25×8+2=202=0xCA;
+byte2 = 4-1 = 3) — antes hacían falta 4 bytes (`SHR BL` × 4) para lo mismo.
+
+En el selector de mnemónico del panel (sección 1): al elegir `SHR`/`SHL`,
+el campo `MODE` alterna entre desplazar 1 bit y `reg,#N`; en este último,
+tras `REG` aparece un campo **`N`** que gira entre 1 y 8 (con envoltura,
+igual que `PTR` envuelve entre `AX`/`BX`/`CX`/`DX`).
 
 ---
 
@@ -219,7 +264,8 @@ Flags: iguales que en la sección 6 (aritméticos para ADD/SUB/CMP, lógicos par
   - `SUB`/`CMP`: `C` = 1 si `a < b` (préstamo). `V` = desbordamiento con signo.
   - `ADD`: `C` = 1 si la suma pasa de 255. `V` = desbordamiento con signo.
 - **Lógica** (`AND`, `OR`, `XOR`, `NOT`): `Z` y `N` según el resultado; `C = 0`, `V = 0`.
-- **Desplazamientos**: ver la tabla de la sección 4.
+- **Desplazamientos**: ver la tabla de la sección 4 (`SHR`/`SHL reg`, 1 bit)
+  y la sección 4c (`SHR`/`SHL reg,#N`, N bits de una vez).
 - `MOV`, `LDA`, `STA`, `IN`, `OUT`, `PUSH`, `POP`, `JMP`, `CALL`, `RET`, `NOP`:
   **no tocan los flags**.
 - `reset` (arranque de ejecución): todos los flags a 0.

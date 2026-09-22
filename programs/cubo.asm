@@ -658,21 +658,13 @@ calc_pix:
     LDA CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     MOV DL,CL
-    SHR DL
-    SHR DL
-    SHR DL
+    SHR DL,#3
     OR  AL,DL
     STA [pix_lo],AL
     MOV AL,CH
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07

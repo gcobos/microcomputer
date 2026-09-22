@@ -340,6 +340,38 @@ class Cpu:
             lo = self._pop()
             hi = self._pop()
             self.pc = lo | (hi << 8)
+        elif fam == 25:  # SHR reg,#N (N = byte2+1, 1..8)
+            n = (self._f8() & 7) + 1
+            v = self.r[r]
+            res = (v >> n) & 0xFF
+            self.r[r] = res
+            f = 0
+            if (v >> (n - 1)) & 1:
+                f |= FLAG_C
+            if res == 0:
+                f |= FLAG_Z
+            if res & 0x80:
+                f |= FLAG_N
+            if v & 0x80:  # V = bit 7 de ANTES de esta instruccion (una sola,
+                f |= FLAG_V  # aunque desplace N bits -- no de cada paso interno)
+            self.flags = f
+        elif fam == 26:  # SHL reg,#N (N = byte2+1, 1..8)
+            n = (self._f8() & 7) + 1
+            v = self.r[r]
+            res = (v << n) & 0xFF
+            self.r[r] = res
+            carry = bool((v >> (8 - n)) & 1)
+            neg = bool(res & 0x80)
+            f = 0
+            if carry:
+                f |= FLAG_C
+            if res == 0:
+                f |= FLAG_Z
+            if neg:
+                f |= FLAG_N
+            if carry != neg:
+                f |= FLAG_V
+            self.flags = f
         elif fam == F_EXT:
             operand = self._f8()
             dst, src = (operand >> 3) & 7, operand & 7
@@ -348,7 +380,7 @@ class Cpu:
             dst = self._f8() & 7
             imm = self._f8()
             self.r[dst] = self._alu(r, self.r[dst], imm)
-        # 21..30: NOP
+        # 27..30: NOP
         return not self.halted
 
 

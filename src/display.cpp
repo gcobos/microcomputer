@@ -25,8 +25,8 @@ void flagsStr(uint8_t f, char out[5]) {
 // Nombre corto del campo que está editando ahora mismo el selector de
 // mnemónico (editor.h), para el encabezado de EditMem.
 const char* editFieldLabel(const UiState& ui) {
-    static const char* const kLabel[11] = {
-        "OP", "MODE", "COND", "REG", "DST", "SRC", "IMM", "LO", "HI", "PTR", ""
+    static const char* const kLabel[12] = {
+        "OP", "MODE", "COND", "REG", "DST", "SRC", "IMM", "LO", "HI", "PTR", "N", ""
     };
     EField f = fieldAt(ui.compose.verb, ui.compose.mode, ui.compose.step);
     return kLabel[(uint8_t)f];
@@ -68,7 +68,13 @@ void drawTextCell(Adafruit_SH1106G& d, int16_t x0, int16_t y0, uint8_t ch, uint8
             if (!font5x7Bit((char)ch, col, row)) continue;
             int16_t px, py;
             switch (rot) {
-                case 1: px = (int16_t)(FONT5X7_ROWS - 1 - row); py = col; break;              // 90°
+                // 90°/270°: la fuente es de 7 filas pero la celda solo tiene 6 px de
+                // ancho -- girada, no cabe entera, hay que perder 1 fila. A 90° sin
+                // este -1, se perdía la fila 0 (arriba) del glifo original, que para
+                // letras como 'R' es justo el rasgo que la distingue (el bucle
+                // superior); con el -1 se pierde la fila 6 (abajo) en su lugar, igual
+                // que ya pasa de forma natural en 270° (ver el caso 3, sin -1).
+                case 1: px = (int16_t)(FONT5X7_ROWS - 2 - row); py = col; break;              // 90°
                 case 2: px = (int16_t)(FONT5X7_COLS - 1 - col); py = (int16_t)(FONT5X7_ROWS - 1 - row); break; // 180°
                 case 3: px = row; py = (int16_t)(FONT5X7_COLS - 1 - col); break;              // 270°
                 default: px = col; py = row; break;                                           // 0°
@@ -168,8 +174,10 @@ void OledPanel::renderEditPrg(const Cpu& cpu, const UiState& ui) {
     display_.setCursor(2, ROW_H);
     if (ui.prgAction == PrgAction::Guardar)
         display_.print(ui.slotUsed ? "SAVE  [overwrite]" : "SAVE");
-    else
+    else if (ui.prgAction == PrgAction::Cargar)
         display_.print("LOAD");
+    else
+        display_.print("NEW   [blank RAM]");
     display_.setTextColor(SH110X_WHITE);
 
     // Previsualización (filas 2..6).

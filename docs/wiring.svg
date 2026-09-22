@@ -8,6 +8,11 @@
     <!-- resistencia: rectangulo (IEC). #res vertical (0,0)->(0,34); #resr horizontal (0,0)->(32,0) -->
     <g id="res"><rect x="-6" y="0" width="12" height="34" fill="#ffffff" stroke="#cc2222" stroke-width="1.8"/></g>
     <g id="resr"><rect x="0" y="-6" width="32" height="12" fill="#ffffff" stroke="#cc2222" stroke-width="1.8"/></g>
+    <!-- diodo vertical: anodo arriba (y=0), catodo abajo (y=14); corriente permitida de arriba a abajo -->
+    <g id="diode_v" stroke="#334155" stroke-width="1.6">
+      <polygon points="-6,0 6,0 0,14" fill="#334155"/>
+      <line x1="-7" y1="14" x2="7" y2="14"/>
+    </g>
   </defs>
   <style>
     .wire{fill:none;stroke-width:2}
@@ -39,7 +44,7 @@
   <text x="162" y="140" class="ttl" text-anchor="middle">ESP32-C3 SuperMini</text>
   <line class="wire p3"  x1="200" y1="150" x2="200" y2="126"/><text x="200" y="120" class="p3t" text-anchor="middle">3V3</text>
   <line class="wire v5"  x1="250" y1="150" x2="250" y2="126"/><text x="250" y="120" class="v5t" text-anchor="middle">5V</text>
-  <text x="262" y="120" class="sig" fill="#be185d">batería, opcional — ver abajo</text>
+  <text x="262" y="120" class="sig" fill="#be185d">batería, opcional — ver abajo (su propio USB-C también carga, ver nota)</text>
   <line class="wire gnd" x1="120" y1="630" x2="120" y2="1140"/><text x="127" y="662" class="sig">GND</text>
 
   <line class="wire spi" x1="255" y1="200" x2="287" y2="200"/><text class="pin" x="249" y="203" text-anchor="end">IO4</text><text class="sig" x="264" y="194">SCK</text>
@@ -173,9 +178,22 @@
   <text class="sig" x="914" y="732">abierto = 1ª opción · cerrado (a GND) = 2ª</text>
 
   <!-- ================= ALIMENTACIÓN POR BATERÍA (opcional) ================= -->
+  <text x="40" y="822" class="ttl" font-size="12.5">MODIFICACIÓN: el USB-C de la SuperMini también carga (ver docs/hardware.md &#167;10)</text>
+  <text x="40" y="838" class="sig">Diodo de fábrica VBUS&#8594;5V de la SuperMini: su cátodo se lleva a IN+ del TP4056 (no al pin 5V).</text>
+  <text x="40" y="851" class="sig">Sigue protegiendo al host USB igual que antes; ya no hace falta el USB-C/microUSB propio del TP4056.</text>
+
+  <text x="300" y="898" class="v5t" text-anchor="middle">VBUS</text>
+  <text x="330" y="898" class="sig" fill="#be185d">USB-C propio de la SuperMini (mismo diodo, cátodo reubicado)</text>
+  <line class="wire v5" x1="300" y1="904" x2="300" y2="925"/>
+  <use xlink:href="#diode_v" transform="translate(300,925)"/>
+  <line class="wire v5" x1="300" y1="939" x2="300" y2="1019"/>
+
+  <use xlink:href="#gnd" transform="translate(380,913)"/>
+  <line class="wire gnd" x1="380" y1="925" x2="380" y2="1019"/>
+
   <text x="40" y="955" class="ttl">ALIMENTACIÓN POR BATERÍA (opcional)</text>
-  <text x="40" y="972" class="sig">El interruptor corta solo la batería; el USB-C de la SuperMini (para programar / provisioning) sigue</text>
-  <text x="40" y="985" class="sig">funcionando igual, con o sin batería puesta — entra por su propio regulador, no por el pin 5V de abajo.</text>
+  <text x="40" y="972" class="sig">El interruptor corta solo la salida hacia el pin 5V (alimentar el aparato); la carga por IN+/IN&#8722;</text>
+  <text x="40" y="985" class="sig">de arriba sigue funcionando igual con el interruptor en OFF -- solo deja de alimentar, no de cargar.</text>
 
   <!-- batería -->
   <rect class="dev" x="40" y="1019" width="150" height="85" rx="5"/>
@@ -191,11 +209,12 @@
   <!-- cargador TP4056 con protección -->
   <rect class="chip2" x="225" y="1019" width="240" height="85" rx="6"/>
   <text x="345" y="1013" class="ttl" text-anchor="middle" font-size="12">Cargador LiPo TP4056 (protegido)</text>
+  <text class="pin" x="306" y="1030">IN+</text>
+  <text class="pin" x="386" y="1030">IN&#8722;</text>
   <text class="pin" x="233" y="1038">B+</text>
   <text class="pin" x="233" y="1093">B&#8722;</text>
-  <text class="sig" x="256" y="1054">DW01A + FS8205A</text>
-  <text class="sig" x="256" y="1067">USB-C/microUSB: carga</text>
-  <text class="sig" x="256" y="1080">(aparte del USB de la SuperMini)</text>
+  <text class="sig" x="256" y="1067">DW01A + FS8205A (protección batería)</text>
+  <text class="sig" x="256" y="1080">IN+/IN&#8722;: desde el USB-C (arriba)</text>
   <text class="pin" x="457" y="1038" text-anchor="end">OUT+</text>
   <text class="pin" x="457" y="1093" text-anchor="end">OUT&#8722;</text>
   <line class="wire v5"  x1="465" y1="1034" x2="490" y2="1034"/>

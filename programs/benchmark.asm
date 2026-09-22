@@ -93,10 +93,7 @@ bench_chk:
 
     ; N=0x + 4 digitos hex, justo despues de "N=0x" (que ocupa col 1..4)
     LDA AL,[res_hi]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     CALL hex_digit
     MOV BL,AL
     MOV CL,#5
@@ -112,10 +109,7 @@ bench_chk:
     CALL putc
 
     LDA AL,[res_lo]
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     CALL hex_digit
     MOV BL,AL
     MOV CL,#7
@@ -150,11 +144,7 @@ hd_num:
 ; --- putc:  BL = caracter,  CL = col,  CH = fila ---------------------------
 putc:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                      ; fila*32
+    SHL AL,#5                   ; fila*32
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
@@ -164,11 +154,7 @@ putc:
 ; --- puts:  BL/BH = puntero asciiz,  CL = col,  CH = fila ------------------
 puts:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                      ; fila*32
+    SHL AL,#5                   ; fila*32
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04

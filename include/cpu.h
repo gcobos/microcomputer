@@ -114,6 +114,16 @@ private:
     bool testCond(uint8_t cond) const;
     uint8_t updateFlagsArith(uint8_t a, uint8_t b, bool isSub);
     void updateFlagsLogic(uint8_t result);
+    // SHR/SHL de N bits (1-8) de una vez: OP_SHR/OP_SHL llaman a estas con
+    // n=1 (asi el caso de 1 bit es identico, bit a bit, al de siempre).
+    // Flags: C = el bit que sale en el ULTIMO de los N desplazamientos; Z/N
+    // del resultado final; V de SHR = bit 7 del valor ANTES de esta
+    // instruccion (no de cada paso interno -- "previo" se refiere a la
+    // instruccion completa, que aqui es una sola aunque desplace N bits);
+    // V de SHL = igual formula de siempre (carry != signo), aplicada al
+    // ultimo paso.
+    void doShr(uint8_t reg, uint8_t n);
+    void doShl(uint8_t reg, uint8_t n);
     // Aplica una operación de la ALU (compi::AluOp) a (a, b), actualiza los
     // flags y devuelve el nuevo valor del destino (para CMP devuelve a).
     // NO esta forzada a inline: probado en el benchmark real, integrarla en

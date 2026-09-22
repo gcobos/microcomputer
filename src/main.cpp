@@ -315,6 +315,17 @@ void saveSlot(uint8_t s) {
     flash.saveProgram((int)s, cpu.ram());
 }
 
+// Borra la RAM (todo a 0x00 = NOP, ver isa.h) para empezar a teclear un
+// programa desde cero en EditMem, sin leer ni escribir la flash -- para
+// que quede grabado en el slot elegido hace falta un Guardar aparte,
+// igual que con cualquier otro cambio hecho a mano en la RAM.
+void newSlot() {
+    cpu.clearMemory();
+    cpu.reset();
+    ui.cursor = 0;
+    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // resincroniza el editor
+}
+
 // --- Provisioning por USB-CDC ----------------------------------------------
 // Recibe una imagen de RAM (<= 64 KiB) por el puerto serie y la graba en un
 // slot de la flash, sin tener que teclearla byte a byte en el panel.
@@ -572,25 +583,34 @@ void loop() {
             int s = ((int)ui.slot + d) % (int)MAX_PROGRAM_SLOTS;
             if (s < 0) s += (int)MAX_PROGRAM_SLOTS;
             ui.slot = (uint8_t)s;
+            // cambiar de slot vuelve siempre a LOAD: si se dejaba SAVE o
+            // NEW elegido de un slot anterior, girar a otro slot sin
+            // querer podria acabar guardando/borrando el que no tocaba
+            ui.prgAction = PrgAction::Cargar;
             changed = true;
         }
-        if (panel.takeDatDelta()) {
-            ui.prgAction = (ui.prgAction == PrgAction::Cargar) ? PrgAction::Guardar
-                                                              : PrgAction::Cargar;
+        if (int16_t dd = panel.takeDatDelta()) {
+            // gira entre las 3 acciones (Cargar/Guardar/Nuevo); el sentido
+            // del giro decide para qué lado se avanza en el ciclo
+            int a = ((int)ui.prgAction + (dd > 0 ? 1 : -1) + 3) % 3;
+            ui.prgAction = (PrgAction)a;
             changed = true;
         }
-        // Los dos pulsadores hacen lo mismo aquí: ejecutan prgAction (LOAD o
-        // SAVE, lo que esté elegido con el giro de DATOS). No hay una acción
-        // "solo cargar" fija en ningún botón -- si prgAction está en SAVE,
-        // pulsar cualquiera de los dos guarda. Ambos take*Press() se llaman
-        // siempre (sin cortocircuito de ||): cada uno consume su propio
-        // evento de pulsación, y saltarse la llamada dejaría una pulsación
-        // sin consumir para el siguiente fotograma.
+        // Los dos pulsadores hacen lo mismo aquí: ejecutan prgAction (LOAD,
+        // SAVE o NEW, lo que esté elegido con el giro de DATOS). No hay una
+        // acción "solo cargar" fija en ningún botón -- si prgAction está en
+        // SAVE, pulsar cualquiera de los dos guarda. Ambos take*Press() se
+        // llaman siempre (sin cortocircuito de ||): cada uno consume su
+        // propio evento de pulsación, y saltarse la llamada dejaría una
+        // pulsación sin consumir para el siguiente fotograma.
         const bool datPressed = panel.takeDatPress();
         const bool dirPressed = panel.takeDirPress();
         if (datPressed || dirPressed) {
-            if (ui.prgAction == PrgAction::Cargar) loadSlot(ui.slot);
-            else                                   saveSlot(ui.slot);
+            switch (ui.prgAction) {
+                case PrgAction::Cargar:  loadSlot(ui.slot); break;
+                case PrgAction::Guardar: saveSlot(ui.slot); break;
+                case PrgAction::Nuevo:   newSlot();         break;
+            }
             prevSlot = 0xFF;               // fuerza recargar la previsualización
             changed = true;
         }

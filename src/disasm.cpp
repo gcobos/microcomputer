@@ -41,6 +41,7 @@ uint8_t instrLen(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
     switch (opFamily(rd(mem, memLen, addr))) {
         case OP_LDI: case OP_EXT:
         case OP_LDAR: case OP_STAR: case OP_INR: case OP_OUTR:
+        case OP_SHRN: case OP_SHLN:
             return 2;
         case OP_LDA: case OP_STA: case OP_ADD: case OP_SUB:
         case OP_AND: case OP_OR:  case OP_XOR:
@@ -75,6 +76,8 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
         case OP_NOT:  snprintf(out, n, "NOT %s",  regName8(r)); return 1;
         case OP_SHR:  snprintf(out, n, "SHR %s",  regName8(r)); return 1;
         case OP_SHL:  snprintf(out, n, "SHL %s",  regName8(r)); return 1;
+        case OP_SHRN: snprintf(out, n, "SHR %s,#%d", regName8(r), (b1 & 7) + 1); return 2;
+        case OP_SHLN: snprintf(out, n, "SHL %s,#%d", regName8(r), (b1 & 7) + 1); return 2;
         case OP_IN:   snprintf(out, n, "IN %s,(0x%04X)",  regName8(r), a16); return 3;
         case OP_OUT:  snprintf(out, n, "OUT (0x%04X),%s", a16, regName8(r)); return 3;
         case OP_LDAR: snprintf(out, n, "LDA %s,[%s]", regName8(r), regName16(b1)); return 2;

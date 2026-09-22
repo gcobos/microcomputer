@@ -11,7 +11,10 @@ namespace compi {
 //   SW_MODO=EJECUTAR + SW_PASO=▼ -> ExecCont
 enum class View : uint8_t { EditMem, EditPrg, ExecPaso, ExecCont };
 
-enum class PrgAction : uint8_t { Cargar, Guardar };
+// Nuevo: borra la RAM (todo a NOP) para empezar un programa desde cero,
+// sin tocar la flash -- para eso hace falta un Guardar aparte, como con
+// cualquier otro cambio hecho en EditMem.
+enum class PrgAction : uint8_t { Cargar, Guardar, Nuevo };
 
 // Estado de la interfaz que el sketch principal mantiene y pasa al
 // renderizador. No lo toca el FrontPanel (que es solo lectura de hardware).

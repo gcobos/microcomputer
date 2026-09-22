@@ -41,7 +41,15 @@ enum OpFamily : uint8_t {
     OP_STAR = 22,  // STA  [ptr16], reg    (MOV mem[ptr16] <- reg)
     OP_INR  = 23,  // IN   reg, (ptr16)
     OP_OUTR = 24,  // OUT  (ptr16), reg
-    // 25-30: reservadas para el futuro (se ejecutan como NOP por ahora)
+    // SHR/SHL reg, #N (N=1..8, LEN 2: opcode + byte con (N-1) en los 3 bits
+    // bajos, resto reservado a 0). Mismo dato que OP_SHR/OP_SHL, pero
+    // desplaza N bits de una vez en vez de solo 1 -- para no tener que
+    // repetir la instruccion N veces cuando se conoce N en tiempo de
+    // ensamblado (multiplicar/dividir por potencias de 2, direcciones de
+    // pantalla, etc).
+    OP_SHRN = 25,  // SHR  reg, #N
+    OP_SHLN = 26,  // SHL  reg, #N
+    // 27-30: reservadas para el futuro (se ejecutan como NOP por ahora)
     OP_EXT  = 31,  // <op> dst, src     (reg de opcode = AluOp; operando: [--|dst:3|src:3])
 };
 

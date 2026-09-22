@@ -825,8 +825,7 @@ dr_l:
     JMPNZ dr_no_tree
 
     LDA AL,[tmp3]
-    SHR AL
-    SHR AL
+    SHR AL,#2
     AND AL,#0x01
     STA [tmp3],AL                 ; tmp3: 0 = arbusto bajo, 1 = arbusto alto
 
@@ -909,8 +908,7 @@ dm_l:
     STA [tmp2],AL                 ; tmp2 = altura de esta columna
 
     LDA AL,[row_i]
-    SHL AL
-    SHL AL                         ; x = row_i*4 (0,4,8..124)
+    SHL AL,#2                      ; x = row_i*4 (0,4,8..124)
     STA [px_x],AL
 
     LDA AL,[tmp2]
@@ -987,8 +985,7 @@ compute_ship_lane:
     MOV BH,#hi(road_width)
     CALL idx_ptr
     LDA AL,[BX]
-    SHR AL
-    SHR AL
+    SHR AL,#2
     STA [tmp1],AL                 ; tmp1 = umbral (ancho31/4)
 
     LDA AL,[ship_x]
@@ -1111,8 +1108,7 @@ uo_clamp_ok:
     MOV BH,#hi(road_width)
     CALL idx_ptr
     LDA AL,[BX]
-    SHR AL
-    SHR AL
+    SHR AL,#2
     STA [tmp2],AL
 
     LDA CL,[obst_i]
@@ -1511,21 +1507,13 @@ calc_pix:
     LDA CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#4
     MOV DL,CL
-    SHR DL
-    SHR DL
-    SHR DL
+    SHR DL,#3
     OR  AL,DL
     STA [pix_lo],AL
     MOV AL,CH
-    SHR AL
-    SHR AL
-    SHR AL
-    SHR AL
+    SHR AL,#4
     STA [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
@@ -1568,11 +1556,7 @@ ct_l:
 ; --- putc:  BL = caracter,  CL = col,  CH = fila ---------------------------
 putc:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#5
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
@@ -1582,11 +1566,7 @@ putc:
 ; --- puts:  BL/BH = puntero asciiz,  CL = col,  CH = fila ------------------
 puts:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
+    SHL AL,#5
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04

@@ -30,7 +30,7 @@ constexpr uint8_t VERB_COUNT = 21;
 constexpr uint8_t COND_COUNT = 7;   // JC_ALWAYS..JC_NN (isa.h)
 
 // Campo que se está editando ahora mismo dentro de la instrucción.
-enum class EField : uint8_t { Verb, Mode, Cond, Reg, Dst, Src, Imm, Lo, Hi, Ptr, Done };
+enum class EField : uint8_t { Verb, Mode, Cond, Reg, Dst, Src, Imm, Lo, Hi, Ptr, Shift, Done };
 
 // Estado de una instrucción en construcción en el cursor actual.
 struct ComposeState {
@@ -38,7 +38,8 @@ struct ComposeState {
     uint8_t  mode  = 0;      // 0..2; solo válido si el verbo tiene varias formas
                                //   (MOV/CMP: 0=reg,reg 1=reg,#imm ;
                                //    ADD/SUB/AND/OR/XOR: + 2=reg,[dir] ;
-                               //    LDA/STA/IN/OUT: 0=[addr16] 1=[AX|BX|CX|DX])
+                               //    LDA/STA/IN/OUT: 0=[addr16] 1=[AX|BX|CX|DX] ;
+                               //    SHR/SHL: 0=desplaza 1 bit  1=reg,#N (1..8))
     uint8_t  reg    = 0;      // registro único: LDA/STA/IN/OUT/NOT/SHR/SHL/PUSH/POP
                                //   y el "reg" de las formas reg,#imm / reg,[dir]
     uint8_t  dst    = 0;      // mode reg,reg
@@ -47,6 +48,7 @@ struct ComposeState {
     uint8_t  imm    = 0;      // mode reg,#imm
     uint16_t addr16 = 0;      // LDA/STA/IN/OUT/JMP/CALL/mode reg,[dir]
     uint8_t  ptr    = 0;      // LDA/STA/IN/OUT mode 1: par de 16 bits (isa.h Reg16)
+    uint8_t  shift  = 1;      // SHR/SHL mode 1: cuenta de desplazamiento (1..8)
     uint8_t  step   = 0;      // paso actual (0 = eligiendo verbo)
 };
 

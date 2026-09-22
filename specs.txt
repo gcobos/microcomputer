@@ -183,7 +183,17 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi)
              tecleando/desensamblando como LDA/STA/IN/OUT (es el modo 1 de
              ese verbo en el selector del panel, ver sección 12); LDAR/STAR/
              INR/OUTR son solo los nombres internos de la familia de opcode.
-  25..30                           RESERVADAS: se ejecutan como NOP (LEN 1)
+  25 SHRN   LEN 2   reg, #N (1..8) reg >>= N   ; byte2 = N-1 (3 bits bajos)
+                    C = bit que sale en el ULTIMO de los N pasos
+                    V = bit7 de ANTES de esta instruccion (no de cada paso
+                        interno -- es una sola instruccion aunque desplace
+                        N bits); Z, N del resultado final
+                    Mismo resultado/flags que repetir "SHR reg" N veces.
+  26 SHLN   LEN 2   reg, #N (1..8) reg <<= N   ; byte2 = N-1 (3 bits bajos)
+                    C = bit que sale en el ULTIMO de los N pasos
+                    N = bit7 del resultado final; V = (C != N); Z
+                    Mismo resultado/flags que repetir "SHL reg" N veces.
+  27..30                           RESERVADAS: se ejecutan como NOP (LEN 1)
   31 EXT    LEN 2   <op> dst,src    op en bits 2..0 del opcode (AluOp);
                                     operando de 1 byte:  [ -- | dst(3) | src(3) ]
 
@@ -742,10 +752,11 @@ BUCLE
      SHR SHL IN OUT PUSH POP JMP CALL RET CMP) -> mode, si el verbo tiene
      varios (MOV/CMP: reg,reg | reg,#imm ; ADD/SUB/AND/OR/XOR: + reg,[dir] ;
      LDA/STA/IN/OUT: [dir] con addr16/port16 inmediato | [reg16] indirecto
-     por AX/BX/CX/DX) -> operandos (condición, registro(s), inmediato,
-     dirección/puerto bajo y alto por separado, o el registro de 16 bits
-     puntero). ComposeState (verb, mode, reg, dst, src, cond, imm, addr16,
-     ptr, step) vive en ui.compose.
+     por AX/BX/CX/DX ; SHR/SHL: desplaza 1 bit | reg,#N con N=1..8) ->
+     operandos (condición, registro(s), inmediato, dirección/puerto bajo y
+     alto por separado, el registro de 16 bits puntero, o la cuenta de
+     desplazamiento). ComposeState (verb, mode, reg, dst, src, cond, imm,
+     addr16, ptr, shift, step) vive en ui.compose.
 
      DATA  girar   -> cambia el valor del campo activo (fieldAt(verb,mode,step)),
                        con wrap; escribe en el sitio con assemble() (en vivo,
@@ -777,16 +788,26 @@ BUCLE
      cambiar de verbo.
 
   EditPrg
-     ADDR girar   -> slot = (slot + detentes) mod MAX_PROGRAM_SLOTS
+     ADDR girar   -> slot = (slot + detentes) mod MAX_PROGRAM_SLOTS ;
+                     prgAction vuelve siempre a LOAD (evita guardar/borrar
+                     por error el slot equivocado tras girar sin querer)
      ADDR pulsar  -> ejecuta prgAction, igual que DATA pulsar (ver abajo):
                      los dos pulsadores hacen lo mismo en esta vista, asi que
                      si prgAction esta en SAVE, cualquiera de los dos guarda
-     DATA     girar   -> alterna prgAction  LOAD <-> SAVE
+     DATA     girar   -> gira el ciclo de 3 acciones LOAD -> SAVE -> NEW (el
+                     sentido del giro decide para que lado se avanza)
      DATA     pulsar  -> ejecuta prgAction:
                             LOAD : flash.loadProgram(slot, cpu.ram()) ;
                                      cpu.reset() ; cursor = 0
+                                     (si el slot esta vacio, no hace NADA:
+                                     la RAM se queda como estaba)
                             SAVE: oled.message("SAVING slot NN") ;
                                      flash.saveProgram(slot, cpu.ram())   (~1 s)
+                            NEW  : cpu.clearMemory() (RAM a 0x00 = NOP) ;
+                                     cpu.reset() ; cursor = 0
+                                     -- NO toca la flash; para que el slot
+                                     elegido quede realmente en blanco hace
+                                     falta un SAVE aparte despues
      al cambiar de slot: relee slotUsed y los PREVIEW_BYTES primeros bytes de
                          la imagen (g_preview) para la previsualización.
 
@@ -829,7 +850,8 @@ REGLAS
   regName16(p)                      "AX".."DX" (p = 0..3, Reg16 en isa.h)
   instrLen(mem, memLen, addr)       longitud (1..3):
                                       LDI, EXT,
-                                      LDAR,STAR,INR,OUTR (§4b)          -> 2
+                                      LDAR,STAR,INR,OUTR (§4b),
+                                      SHRN,SHLN (§4c)                   -> 2
                                       LDA,STA,ADD,SUB,AND,OR,XOR,
                                       IN,OUT,JMP,CALL,ALUI              -> 3
                                       resto                             -> 1
@@ -846,12 +868,13 @@ MNEMÓNICOS
   <op> dst,src                     op = MOV ADD SUB CMP AND OR XOR   (OP_EXT)
   <op> reg,#0xNN                   op = MOV ADD SUB CMP AND OR XOR   (OP_ALUI)
   NOT reg   SHR reg   SHL reg   PUSH reg   POP reg
+  SHR reg,#N   SHL reg,#N        (N = 1..8; familias 25/26, sección 4c)
   IN reg,(0xNNNN)   OUT (0xNNNN),reg          (0xNNNN = puerto de 16 bits)
   LDA reg,[AX|BX|CX|DX]   STA [AX|BX|CX|DX],reg      (indirecto; sección 4b)
   IN reg,(AX|BX|CX|DX)    OUT (AX|BX|CX|DX),reg      (idem, puerto indirecto)
   JMP<cc> 0xNNNN    CALL<cc> 0xNNNN
        sufijo <cc>:  ALWAYS -> ""   Z / NZ / C / NC / N / NN -> ese texto
-  DB 0xNN                           (familias 25..30, reservadas)
+  DB 0xNN                           (familias 27..30, reservadas)
 
 FORMATOS: registros por nombre; inmediato "#0x%02X"; dirección de dato
 "[0x%04X]" o "[reg16]"; PUERTO "(0x%04X)" o "(reg16)"; destino de salto
@@ -879,7 +902,7 @@ VISTA EditMem / ExecPaso — renderEditMem(cpu, ui)
 
   FILA 0 — CABECERA
     EditMem  : "%04X %s"     (ui.cursor, nombre del campo activo del selector
-                              de mnemónico: OP/MODE/COND/REG/DST/SRC/IMM/LO/HI/PTR
+                              de mnemónico: OP/MODE/COND/REG/DST/SRC/IMM/LO/HI/PTR/N
                               -- abreviaturas en inglés, como el resto del
                               editor (registros, mnemónicos); interfaz
                               internacional)
@@ -899,8 +922,8 @@ VISTA EditMem / ExecPaso — renderEditMem(cpu, ui)
 
 VISTA EditPrg — renderEditPrg(cpu, ui)
   FILA 0 : "PRG  slot %02u   %s"   ("[prog]" o "[----]" según ui.slotUsed)
-  FILA 1 : ui.prgAction en VÍDEO INVERSO: "LOAD"  o  "SAVE" / "SAVE
-           [overwrite]" si el slot está ocupado
+  FILA 1 : ui.prgAction en VÍDEO INVERSO: "LOAD" / "SAVE" o "SAVE
+           [overwrite]" si el slot está ocupado / "NEW   [blank RAM]"
   FILAS 2..6 : previsualización — disassemble(ui.preview, ui.previewLen, ...),
                " %04X %s" por instrucción. Si previewLen == 0: "(slot empty)".
   FILA 7 : "ADDR=slot DATA:turn/go"

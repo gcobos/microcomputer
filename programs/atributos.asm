@@ -179,11 +179,7 @@ draw:
 ;     la cadena debe caber desde CL hasta el final de la fila (col < 21).
 puts_attr:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                      ; fila*32
+    SHL AL,#5                   ; fila*32
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04                ; puerto texto = 0x0400 + fila*32 + col
@@ -210,11 +206,7 @@ pa_d:
 ;     Escribe un unico caracter y su atributo en una celda.
 set_cell:
     MOV AL,CH
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL
-    SHL AL                      ; fila*32
+    SHL AL,#5                   ; fila*32
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
