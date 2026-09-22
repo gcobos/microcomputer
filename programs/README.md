@@ -34,6 +34,11 @@ python3 ../tools/sim.py demo.bin --steps 3000000 --script mi_guion.txt
 
 # 3. grabar en el aparato (el slot se deduce de la ".slot 4" del propio .asm)
 python3 ../tools/compi_send.py --port /dev/ttyACM0 demo.asm
+
+# 4. y al reves: sacar un slot del aparato (p.ej. uno editado a mano en el
+#    panel, que solo existe alli) de vuelta a un .bin, y verlo como texto
+python3 ../tools/compi_recv.py --port /dev/ttyACM0 --slot 4 -o vuelta.bin
+python3 ../tools/compi_disasm.py vuelta.bin -o vuelta.asm
 ```
 
 `compi_send.py` acepta directamente un `.asm` (lo ensambla al vuelo) o un
@@ -41,6 +46,16 @@ python3 ../tools/compi_send.py --port /dev/ttyACM0 demo.asm
 el de su directiva `.slot`; con un `.bin` (que no lleva esa directiva) hay que
 darlo explícitamente. Un `--slot` explícito siempre gana, aunque no coincida
 con el del fichero (avisa por si acaso, pero lo respeta).
+
+`compi_disasm.py` no distingue código de datos (igual que el listado del
+panel): recorre la imagen linealmente desde 0x0000, así que una tabla de
+datos incrustada entre instrucciones (como la de `musica.asm`) puede salir
+con pinta de sopa de letras a partir de ahí. Aun así, el resultado siempre
+reensambla EXACTAMENTE los mismos bytes con `casm.py` -- se comprobó bit a
+bit contra los doce `.asm` de esta carpeta -- porque cualquier combinación
+de bits sin mnemónico limpio (opcodes reservados, o campos de la ALU/registro
+con bits que un mnemónico normal no reproduciría al volver a ensamblar) se
+vuelca como `.db` en vez de inventarse algo que no cuadre.
 
 ## La sintaxis en 30 segundos
 

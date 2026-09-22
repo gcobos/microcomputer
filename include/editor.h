@@ -61,8 +61,15 @@ uint8_t lastStep(uint8_t verb, uint8_t mode);
 
 // Gira el encoder DATOS: cambia el campo activo (con wrap). Cambiar el verbo
 // reinicia mode/reg/dst/src/cond/imm/addr16 a 0 (no hereda bits sueltos del
-// verbo anterior).
+// verbo anterior). En el campo Verb, el orden en que se van ofreciendo al
+// girar es alfabético por nombre (ver verbName), no el orden interno del
+// enum de arriba (que agrupa por familia de opcode y no importa a quien
+// teclea).
 void applyDelta(ComposeState& st, int16_t delta);
+
+// Nombre corto del verbo (p.ej. "NOP", "MOV"), para mostrarlo en pantalla
+// mientras se elige en el campo Verb.
+const char* verbName(uint8_t verb);
 
 // Vuelca el estado a mem[addr..], sobreescribiendo en el sitio (nunca
 // desplaza bytes siguientes). Devuelve la longitud escrita (1-3).

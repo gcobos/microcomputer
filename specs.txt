@@ -115,7 +115,12 @@ MOV reg,#inmediato; un valor de 16 bits, en dos bytes.
                        cpu.cpp y el modelo de main.cpp); vuelca la pantalla en
                        ASCII. Para probar programas sin el aparato.
   tools/compi_send.py  graba una imagen en un slot de la flash por USB-CDC
-                       (protocolo de provisioning, §7).
+                       (protocolo LOAD de provisioning, §7).
+  tools/compi_recv.py  saca la imagen de un slot de la flash por USB-CDC
+                       (protocolo DUMP de provisioning, §7) a un .bin.
+  tools/compi_disasm.py  vuelca un .bin como texto ensamblador (misma
+                       sintaxis que casm.py), reensamblable byte a byte --
+                       ver la nota de fidelidad en su docstring.
   programs/            programas de ejemplo en ensamblador (.asm) y su README.
   programs/demo.asm    demo de capacidades (menú + gráficos, texto, sonido,
                        animación, luces y un juego). Va al slot 4.
@@ -320,32 +325,62 @@ OPERACIONES DESDE EL PANEL (ver sección 12)
                 cpu.reset()          (PC=0, SP=0xFFFF, regs=0)
                 panel.homeCursor()   (cursor a 0)
 
-PROVISIONING POR USB-CDC (grabar un slot desde el PC, sin teclear)
+PROVISIONING POR USB-CDC (meter o sacar un slot del PC, sin teclear)
   provisionPoll() se sondea al principio de cada loop() (src/main.cpp). Lee
-  líneas del puerto serie; las que no empiezan por "COMPI LOAD " se ignoran
-  (se puede seguir usando el monitor). Protocolo:
+  líneas del puerto serie; las que no empiezan por "COMPI LOAD " o
+  "COMPI DUMP " se ignoran (se puede seguir usando el monitor). Dos
+  protocolos, LOAD (grabar, host -> aparato) y DUMP (sacar, aparato -> host):
 
-    host -> aparato:  "COMPI LOAD <slot> <len>\n"   slot 0..59, len 0..65536
-                      <len> bytes crudos, en bloques de COMPI_CHUNK (1024)
-                      bytes; el host espera el eco de cada bloque antes de
-                      mandar el siguiente. El resto de los 64 KiB va a 0.
-    aparato -> host:  "COMPI READY\n"               cabecera aceptada
-                      "COMPI CHUNK <n>\n"           van <n> bytes recibidos
-                      "COMPI OK <sum>\n"            grabado; sum = suma de los
-                                                   65536 bytes módulo 2^32
-                      "COMPI ERR <motivo>\n"        error (cabecera/datos/flash)
+    LOAD  host -> aparato:  "COMPI LOAD <slot> <len>\n"  slot 0..59, len 0..65536
+                            <len> bytes crudos, en bloques de COMPI_CHUNK
+                            (1024) bytes; el host espera el eco de cada
+                            bloque antes de mandar el siguiente. El resto de
+                            los 64 KiB va a 0.
+          aparato -> host:  "COMPI READY\n"              cabecera aceptada
+                            "COMPI CHUNK <n>\n"          van <n> bytes recibidos
+                            "COMPI OK <sum>\n"           grabado; sum = suma de
+                                                        los 65536 bytes módulo 2^32
+                            "COMPI ERR <motivo>\n"       error (cabecera/datos/flash)
 
-  Por qué a trozos y con eco: el USB-CDC nativo del C3 (USBCDC.cpp, core de
-  Arduino) mete los bytes entrantes en una cola de software de solo 256 bytes
-  por defecto y, si se llena, los DESCARTA SIN AVISAR (no hay control de
-  flujo). setup() ya agranda esa cola (Serial.setRxBufferSize(8192)), pero
-  exigir el eco por bloque evita depender del tamaño del búfer: obliga al
-  host a ir al ritmo del aparato pase lo que pase.
+    DUMP  host -> aparato:  "COMPI DUMP <slot> [<len>]\n"  slot 0..59; <len>
+                                                        opcional (0..65536)
+                                                        para pedir solo los
+                                                        primeros <len> bytes
+                                                        -- sin el, la imagen
+                                                        entera (PROGRAM_SIZE;
+                                                        la flash no guarda
+                                                        longitudes, solo
+                                                        imágenes completas)
+          aparato -> host:  "COMPI READY <len>\n"        cabecera aceptada;
+                                                        len = el pedido, o
+                                                        PROGRAM_SIZE si no
+                                                        se pidió ninguno
+                            <len> bytes crudos, DE UN TIRÓN (sin trocear: ver
+                                                        por qué más abajo)
+                            "COMPI OK <sum>\n"           enviado; sum = checksum
+                                                        de esos <len> bytes
+                                                        (igual cálculo que
+                                                        LOAD, solo del trozo)
+                            "COMPI ERR <motivo>\n"       error (slot/len fuera
+                                                        de rango o vacío)
 
-  La imagen entra directamente en cpu.ram(); luego flash.saveProgram(slot,
-  cpu.ram()) (bloquea ~1 s) y cpu.reset(). En el PC:
+  Por qué LOAD va a trozos y con eco: el USB-CDC nativo del C3 (USBCDC.cpp,
+  core de Arduino) mete los bytes entrantes en una cola de software de solo
+  256 bytes por defecto y, si se llena, los DESCARTA SIN AVISAR (no hay
+  control de flujo). setup() ya agranda esa cola (Serial.setRxBufferSize
+  (8192)), pero exigir el eco por bloque evita depender del tamaño del
+  búfer: obliga al host a ir al ritmo del aparato pase lo que pase. DUMP no
+  lo necesita: ese problema es de RECEPCIÓN; para ENVIAR, Serial.write() ya
+  bloquea lo que haga falta hasta que cabe, no hay cola que desborde.
+
+  Las dos usan cpu.ram() como buffer de paso (LOAD la recibe ahí antes de
+  flash.saveProgram(); DUMP la lee ahí con flash.loadProgram() antes de
+  mandarla) -- el provisioning ya asume que puede pisar lo que hubiera en
+  RAM sin guardar, igual en los dos sentidos. En el PC:
     python3 tools/casm.py programs/demo.asm -o programs/demo.bin
     python3 tools/compi_send.py --port /dev/ttyACM0 --slot 4 programs/demo.bin
+    python3 tools/compi_recv.py --port /dev/ttyACM0 --slot 4 -o vuelta.bin
+    python3 tools/compi_disasm.py vuelta.bin -o vuelta.asm   # texto legible
 
 
 --------------------------------------------------------------------------------
@@ -371,7 +406,7 @@ MAPA DE PUERTOS
   0x0602            PORT_DAT_POS   encoder DATA: posición       (IN)
   0x0603            PORT_DAT_BTN   encoder DATA: bit0 = pulsado (IN)
   0x0610            PORT_LED       LED azul de a bordo (GPIO8)   (OUT bit0; IN lee eco)
-  0x0620 .. 0x0627  PORT_TIMER_BASE+i   8 temporizadores descendentes  (OUT arma; IN lee)
+  0x0620 .. 0x0629  PORT_TIMER_BASE+i   10 temporizadores descendentes  (OUT arma; IN lee)
   0x0630            PORT_SND_FREQ_LO   sonido: byte bajo de la frecuencia  (OUT engancha)
   0x0631            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
   0x0632            PORT_SND_NOTE      sonido: nota MIDI 0..127 (0 = silencio)
@@ -458,8 +493,8 @@ LED DE A BORDO (puerto PORT_LED = 0x0610)
   arrancar; si un programa lo deja encendido y la placa se reinicia, como
   mucho se suprime el log de arranque por UART.
 
-TEMPORIZADORES (puertos 0x0620 .. 0x0627, PORT_TIMER_BASE = 0x0620)
-  8 cuentas atrás independientes. OUT carga el temporizador i con un valor
+TEMPORIZADORES (puertos 0x0620 .. 0x0629, PORT_TIMER_BASE = 0x0620)
+  10 cuentas atrás independientes. OUT carga el temporizador i con un valor
   (0..255); a partir de ahí decrece solo, de 1 en 1, hasta 0 y se queda ahí.
   IN devuelve el valor actual (0 = terminado). OUT 0 lo detiene.
 
@@ -472,7 +507,9 @@ TEMPORIZADORES (puertos 0x0620 .. 0x0627, PORT_TIMER_BASE = 0x0620)
     t4 = 0x0624   16 ms/paso
     t5 = 0x0625   32 ms/paso
     t6 = 0x0626   64 ms/paso
-    t7 = 0x0627   128 ms/paso  (el más lento; 255 -> 0 en ~32,6 s)
+    t7 = 0x0627   128 ms/paso
+    t8 = 0x0628   256 ms/paso
+    t9 = 0x0629   512 ms/paso  (el más lento; 255 -> 0 en ~130,6 s)
 
   Solo corren en RUN + CONTINUOUS (tickTimers() se llama una vez por vuelta
   de loop()). En STEP están congelados, para poder depurar bucles de espera
@@ -748,32 +785,83 @@ BUCLE
 
   EditMem — SELECTOR DE MNEMÓNICO (include/editor.h, src/editor.cpp)
      En vez de ciclar el byte crudo (0..255), se compone la instrucción CAMPO
-     A CAMPO: verbo (uno de 21: NOP HALT MOV LDA STA ADD SUB AND OR XOR NOT
-     SHR SHL IN OUT PUSH POP JMP CALL RET CMP) -> mode, si el verbo tiene
-     varios (MOV/CMP: reg,reg | reg,#imm ; ADD/SUB/AND/OR/XOR: + reg,[dir] ;
-     LDA/STA/IN/OUT: [dir] con addr16/port16 inmediato | [reg16] indirecto
-     por AX/BX/CX/DX ; SHR/SHL: desplaza 1 bit | reg,#N con N=1..8) ->
-     operandos (condición, registro(s), inmediato, dirección/puerto bajo y
-     alto por separado, el registro de 16 bits puntero, o la cuenta de
-     desplazamiento). ComposeState (verb, mode, reg, dst, src, cond, imm,
-     addr16, ptr, shift, step) vive en ui.compose.
+     A CAMPO: verbo (uno de 21: ADD AND CALL CMP HALT IN JMP LDA MOV NOP NOT
+     OR OUT POP PUSH RET SHL SHR STA SUB XOR -- ORDEN ALFABÉTICO por nombre,
+     ver kVerbAlpha/verbName en editor.cpp; el enum Verb interno sigue
+     agrupado por familia de opcode, pero eso ya no importa a quien teclea)
+     -> mode, si el verbo tiene varios (MOV/CMP: reg,reg | reg,#imm ;
+     ADD/SUB/AND/OR/XOR: + reg,[dir] ; LDA/STA/IN/OUT: [dir] con
+     addr16/port16 inmediato | [reg16] indirecto por AX/BX/CX/DX ; SHR/SHL:
+     desplaza 1 bit | reg,#N con N=1..8) -> operandos (condición,
+     registro(s), inmediato, dirección/puerto bajo y alto por separado, el
+     registro de 16 bits puntero, o la cuenta de desplazamiento).
+     ComposeState (verb, mode, reg, dst, src, cond, imm, addr16, ptr, shift,
+     step) vive en ui.compose.
+
+     Mientras se está eligiendo el verbo (fieldAt(...) == EField::Verb), la
+     cabecera de la pantalla (display.cpp) muestra el nombre y el tamaño ya
+     ensamblado en bytes -- p.ej. "0004 NOP (size 1)" -- usando instrLen()
+     sobre lo que assemble() ya escribió en vivo en el cursor con la forma
+     por defecto de ese verbo (mode 0); así se puede comparar el tamaño de
+     cada opción sin tener que confirmarla y mirar el listado de abajo. En
+     cualquier otro campo, la cabecera sigue mostrando la etiqueta corta del
+     campo (editFieldLabel: MODE/COND/REG/DST/SRC/IMM/LO/HI/PTR/N), como
+     antes.
 
      DATA  girar   -> cambia el valor del campo activo (fieldAt(verb,mode,step)),
-                       con wrap; escribe en el sitio con assemble() (en vivo,
+                       con wrap (en el campo Verb, el wrap recorre
+                       kVerbAlpha, el orden alfabético de arriba, no el
+                       enum); escribe en el sitio con assemble() (en vivo,
                        como antes: nunca desplaza bytes, solo sobreescribe)
      DATA  pulsar  -> confirma el campo y step++; en el último campo
                        (step == lastStep(verb,mode)) esa misma pulsación ya
                        avanza cursor += longitud de la instrucción compuesta,
                        y vuelve a decodeAt() en la nueva dirección (step=0)
-     ADDR girar  -> cursor = clamp(cursor + detentes, 0, 0xFFFF) ;
-                       decodeAt() en el nuevo cursor (step=0) — sigue
-                       navegando libre, byte a byte, como antes
-     ADDR pulsar -> siempre salta a la instrucción ANTERIOR entera, sea cual
-                       sea el step actual: cursor = prevInstrStart(cursor)
-                       (recorre desde 0, como listBase, para encontrar el
-                       límite de instrucción real -- cursor-1 a secas
-                       aterrizaría en mitad de una instrucción de 2/3 bytes)
-                       y decodeAt() ahí (step=0)
+     ADDR girar  -> avanza/retrocede INSTRUCCIÓN A INSTRUCCIÓN, no byte a
+                       byte: cada detente adelante suma instrLen(cursor)
+                       (el cursor siempre está alineado a un límite real,
+                       así que instrLen() nunca se equivoca); cada detente
+                       atrás hace cursor = prevInstrStart(cursor) (recorre
+                       desde 0, como listBase, para no caer nunca en mitad
+                       de una instrucción de 2/3 bytes). Varios detentes de
+                       golpe repiten el paso esa cantidad de veces. No hay
+                       forma de aterrizar a mitad de una instrucción: para
+                       tocar su segundo/tercer byte hay que convertirla en
+                       NOP (1 byte) y avanzar a la línea siguiente, que
+                       pasa a empezar ahí. decodeAt() en el nuevo cursor
+                       (step=0) tras cada movimiento.
+     ADDR pulsar CORTA -> insertByteAt(cursor): inserta un NOP suelto en el
+                       cursor sin moverlo. Se dispara al SOLTAR si no llegó
+                       a cumplirse DIR_LONG_PRESS_MS (500 ms) desde que se
+                       pulsó (main.cpp: dirBtnHeld/dirBtnPressMs/
+                       dirBtnLongFired).
+     ADDR pulsar LARGA -> deleteByteAt(cursor): borra el byte del cursor,
+                       tampoco lo mueve. Se dispara en cuanto se cumplen los
+                       500 ms, sin esperar a soltar (feedback inmediato de
+                       que ya entró en "modo borrar"); soltar después no
+                       hace nada más.
+                       Antes (antes de este gesto corta/larga) había DOS
+                       formas de insertar y ninguna de borrar con un solo
+                       botón: ADDR pulsar corto insertaba, y manteniendo
+                       pulsado ADDR mientras se giraba DATOS se podía
+                       insertar o borrar según el sentido del giro -- se
+                       quitó esa combinación porque pisaba el giro de DATOS
+                       (que ya tiene su propio significado, cambiar de
+                       campo) y porque un único pulsador con corta/larga
+                       basta para las dos operaciones y dice más rápido cuál
+                       es cuál. decodeAt() en el cursor (step=0) tras
+                       cualquiera de las dos.
+
+     insertByteAt(cursor) / deleteByteAt(cursor) (main.cpp):
+                         insertar: [cursor, sp-2] -> [cursor+1, sp-1] ;
+                                   mem[cursor] = 0x00 (NOP, listo para teclear)
+                         borrar:   [cursor+1, sp-1] -> [cursor, sp-2] ;
+                                   mem[sp-1] = 0x00 (NOP, hueco que queda arriba)
+                       sp = cpu.sp() EN ESE INSTANTE. Ninguna de las dos
+                       escribe nunca en [sp, 0xFFFF] (ahí vive la pila,
+                       crece hacia abajo desde 0xFFFF): si cursor >= sp no
+                       hay hueco libre por encima sin pisarla y no hacen
+                       nada.
 
      decodeAt(mem, len, cursor) reconstruye verb/mode/campos a partir de lo
      que YA hay en memoria (arranca la edición "en lo que ya hay", igual que
@@ -812,9 +900,60 @@ BUCLE
                          la imagen (g_preview) para la previsualización.
 
   ExecPaso
-     DATA     pulsar  -> cpu.step()   (si !halted)
-     ADDR pulsar  -> cpu.reset() + borrar framebuffer/texto + resetPositions()
-     encoders girar    -> alimentan dirPos_/datPos_ (puertos IN); no navegan
+     ADDR (DIRECCIÓN) elige una dirección OBJETIVO sin ejecutar nada; su
+     pulsador (corta/larga, DIR_LONG_PRESS_MS, igual gesto que ya usa
+     EditMem para insertar/borrar) es lo que ejecuta hasta ella o resetea.
+     DATOS sigue paso a paso como antes, pero solo hacia ADELANTE (no hay
+     forma de "deshacer" una instrucción ya ejecutada). ui.cursor hace de
+     dirección objetivo aquí (mismo campo que la dirección editada en
+     EditMem -- las dos vistas son mutuamente excluyentes).
+
+     ui.cursor (el #) se RESINCRONIZA a cpu.pc() cada vez que algo mueve el
+     PC por su cuenta -- al entrar en la vista, tras cada paso de DATOS
+     (pulsar o girar adelante), al terminar una carrera (llegue o la corte
+     un HALT) y tras un reset -- así nunca se queda "atrás" señalando una
+     dirección vieja que ya no pintaría nada como objetivo. Solo diverge de
+     cpu.pc() mientras se gira ADDR para elegir un objetivo distinto a
+     propósito.
+
+     ADDR girar        -> stepCursorByInstr(ui.cursor, detentes): navega
+                         INSTRUCCIÓN A INSTRUCCIÓN, igual que en EditMem
+                         (misma función, compartida) -- NO ejecuta nada, solo
+                         mueve dónde apunta ADDR. Pone ui.pasoFollowCursor a
+                         true, así que el listado sigue este cursor (para
+                         poder elegir el destino viendo el código) hasta que
+                         se toque DATOS o arranque/termine una carrera -- el
+                         PC debe verse SIEMPRE mientras se ejecuta algo (ver
+                         "VISTA EditMem / ExecPaso" más abajo, renderEditMem).
+     ADDR pulsar CORTA -> arranca una carrera hacia ADELANTE (pasoRunning=true,
+                         pasoTargetPC=ui.cursor) hasta que el PC llegue a esa
+                         dirección. Si ui.cursor queda "detrás" del PC actual
+                         (no se puede ejecutar hacia atrás), simplemente da
+                         una vuelta completa antes de llegar -- útil p.ej.
+                         para volver a ver la línea actual tras una vuelta de
+                         bucle, apuntando ADDR ahí mismo antes de pulsar. Se
+                         ejecuta a trozos de EXEC_BATCH pasos por vuelta de
+                         loop() (no de un tirón) para no bloquear el panel ni
+                         la pantalla; el listado pasa a seguir al PC mientras
+                         dura, viéndolo avanzar solo. Si el PC nunca llega (o
+                         el programa hace HALT antes), la carrera no termina
+                         sola -- una pulsación larga (o volver a EDIT) la
+                         corta. No dispara nada si ya hay una en marcha.
+     ADDR pulsar LARGA -> cpu.reset() + borrar framebuffer/texto +
+                         resetPositions() + cancela una carrera en marcha
+                         (pasoRunning=false) -- antes esto lo hacía CUALQUIER
+                         pulsación de ADDR; se movió a la larga en cuanto la
+                         corta pasó a significar "ejecutar hasta aquí".
+     DATA pulsar       -> cpu.step()  (si !halted y no hay una carrera en marcha)
+     DATA girar adelante (d>0) -> cpu.step() d veces (una por detente, para
+                         poder pasar varias de golpe girando rápido en vez de
+                         pulsar una a una); para en seco si halted
+     DATA girar atrás (d<0)    -> NADA, a propósito: el "volver atrás" ya lo
+                         cubre ADDR (apuntar+pulsar), de forma más explícita
+                         (se elige el destino ANTES de arrancar, en vez de
+                         "vuelve a donde estabas" sin poder elegir otro sitio)
+     encoders girar    -> ADEMÁS alimentan dirPos_/datPos_ (puertos IN),
+                         igual que en el resto de vistas
 
   ExecCont
      ejecuta hasta EXEC_BATCH instrucciones por vuelta (o hasta HALT)
@@ -896,7 +1035,15 @@ AHORRO DE ENERGÍA (batería, ver §16):
 
 VISTA EditMem / ExecPaso — renderEditMem(cpu, ui)
   paso   = (ui.view == ExecPaso)
-  anchor = paso ? cpu.pc() : ui.cursor
+  anchor = (!paso || ui.pasoFollowCursor) ? ui.cursor : cpu.pc()
+           -- en EditMem, ui.cursor es la dirección editada, como siempre. En
+           ExecPaso, ui.cursor es la dirección OBJETIVO elegida con ADDR
+           (§12); el PC debe verse SIEMPRE mientras se ejecuta algo (DATOS, o
+           una carrera en marcha), así que el listado solo sigue al cursor
+           en el breve momento de elegir un objetivo girando ADDRESS
+           (ui.pasoFollowCursor=true, puesto ahí mismo en main.cpp) -- en
+           cuanto se toca DATOS o arranca/termina la carrera, vuelve a false
+           y el listado sigue al PC otra vez.
   base   = listBase(cpu.ram(), 65536, anchor)
   fl     = 4 chars "NVZC" (letra si activa, '-' si no)
 
@@ -906,14 +1053,17 @@ VISTA EditMem / ExecPaso — renderEditMem(cpu, ui)
                               -- abreviaturas en inglés, como el resto del
                               editor (registros, mnemónicos); interfaz
                               internacional)
-    ExecPaso : "STEP %sPC=%04X"            ("HLT " si halted, si no "")
+    ExecPaso : "PC=%04X A=%04X%s"     (pc, ui.cursor = objetivo de ADDR,
+                              " HLT" si halted o "" si no)
 
   FILAS 1..5 — LISTADO
     a = base ; por línea:
       len = disassemble(cpu.ram(), 65536, a, mnem)
-      marca = '>' si contiene el cursor (solo EditMem)
+      marca = '>' si contiene el cursor de EDICIÓN (solo EditMem)
               '*' si contiene el PC
-              ' ' si no                    ('>' tiene prioridad)
+              '#' si contiene el objetivo de ADDR (solo ExecPaso, y solo si
+                  no es ya el PC -- '*' gana)
+              ' ' si ninguna              (orden de prioridad: '>' > '*' > '#')
       "%c%04X %s" (marca, a, mnem) ; a += len
 
   FILAS 6 y 7 — ESTADO   (AX BX CX DX PC SP + flags, todos visibles)
@@ -999,7 +1149,7 @@ MENSAJE A PANTALLA COMPLETA — message(texto)
   Pines            src/main.cpp        (sección 9)
   PIN_LED / PIN_LED_ACTIVE_LOW  src/main.cpp   IO8 / true  (LED de a bordo)
   PORT_LED          include/iomap.h    0x0610
-  PORT_TIMER_BASE / TIMER_COUNT / TIMER_BASE_MS  include/iomap.h  0x0620 / 8 / 1 ms
+  PORT_TIMER_BASE / TIMER_COUNT / TIMER_BASE_MS  include/iomap.h  0x0620 / 10 / 1 ms
   PORT_SND_BASE / SND_PORT_COUNT  include/iomap.h    0x0630 / 4  (piezo en GPIO3)
   ATTR_PORT_BASE / ATTR_PORT_SPAN  include/iomap.h   0x0500 / 0x0100
   ATTR_INVERSE/BLINK/UNDERLINE/STRIKE/SUBSCRIPT/SUPERSCRIPT/ROT_MASK  include/iomap.h  bits 0-7
@@ -1078,11 +1228,11 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
 portRead(port):  port < 1024 -> g_fb[port] ; celda de texto -> g_text[i] ;
   celda de atributos -> g_attr[i] ;
   0x0600/0x0602 -> dirPos/datPos ; 0x0601/0x0603 -> dirDown/datDown ;
-  0x0610 -> g_led ; 0x0620..0627 -> g_timer[i] ;
+  0x0610 -> g_led ; 0x0620..0629 -> g_timer[i] ;
   0x0630..0633 -> eco de sonido (DUR = tiempo restante) ; resto -> 0.
 portWrite(port, v):  port < 1024 -> g_fb[port] = v ; celda de texto -> g_text[i] = v ;
   celda de atributos -> g_attr[i] = v ;
-  0x0610 -> LED ; 0x0620..0627 -> arma el temporizador ;
+  0x0610 -> LED ; 0x0620..0629 -> arma el temporizador ;
   0x0630..0633 -> sonido (0x0631 y 0x0632 aplican el tono) ; resto -> nada.
   "celda de texto" = textIndex(port) >= 0  (0x0400 + fila*32 + col, fila<8, col<21).
   "celda de atributos" = attrIndex(port) >= 0  (0x0500 + fila*32 + col, misma

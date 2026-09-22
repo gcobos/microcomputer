@@ -86,7 +86,34 @@ uint8_t memFamilyOf(uint8_t verb) {
     }
 }
 
+// Nombre de cada verbo, indexado por su valor de enum (V_NOP..V_CMP, ver
+// editor.h) -- para pantalla (verbName) y para construir el orden
+// alfabético de abajo.
+const char* const kVerbNames[VERB_COUNT] = {
+    "NOP", "HALT", "MOV", "LDA", "STA", "ADD", "SUB", "AND", "OR", "XOR",
+    "NOT", "SHR", "SHL", "IN", "OUT", "PUSH", "POP", "JMP", "CALL", "RET", "CMP",
+};
+
+// Orden en que DATOS los va ofreciendo al girar en el campo Verb: alfabético
+// por nombre (kVerbNames), no el orden interno del enum (que agrupa por
+// familia de opcode y es irrelevante para quien teclea).
+const uint8_t kVerbAlpha[VERB_COUNT] = {
+    V_ADD, V_AND, V_CALL, V_CMP, V_HALT, V_IN, V_JMP, V_LDA, V_MOV, V_NOP,
+    V_NOT, V_OR, V_OUT, V_POP, V_PUSH, V_RET, V_SHL, V_SHR, V_STA, V_SUB, V_XOR,
+};
+
+uint8_t alphaIndexOf(uint8_t verb) {
+    for (uint8_t i = 0; i < VERB_COUNT; ++i) {
+        if (kVerbAlpha[i] == verb) return i;
+    }
+    return 0;
+}
+
 } // namespace
+
+const char* verbName(uint8_t verb) {
+    return (verb < VERB_COUNT) ? kVerbNames[verb] : "?";
+}
 
 EField fieldAt(uint8_t verb, uint8_t mode, uint8_t step) {
     if (step == 0) return EField::Verb;
@@ -112,9 +139,9 @@ void applyDelta(ComposeState& st, int16_t delta) {
     EField f = fieldAt(st.verb, st.mode, st.step);
     switch (f) {
         case EField::Verb: {
-            int16_t v = (int16_t)(((int16_t)st.verb + delta) % (int16_t)VERB_COUNT);
-            if (v < 0) v += VERB_COUNT;
-            st.verb = (uint8_t)v;
+            int16_t idx = (int16_t)(((int16_t)alphaIndexOf(st.verb) + delta) % (int16_t)VERB_COUNT);
+            if (idx < 0) idx += VERB_COUNT;
+            st.verb = kVerbAlpha[idx];
             // El verbo nuevo no hereda campos del anterior: evita mezclas raras
             // (p. ej. un registro/condición que por casualidad coincidiera).
             st.mode = 0; st.reg = 0; st.dst = 0; st.src = 0; st.cond = 0;

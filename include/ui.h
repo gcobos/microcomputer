@@ -20,11 +20,24 @@ enum class PrgAction : uint8_t { Cargar, Guardar, Nuevo };
 // renderizador. No lo toca el FrontPanel (que es solo lectura de hardware).
 struct UiState {
     View view = View::EditMem;
-    uint16_t cursor = 0;          // dirección editada (EditMem)
+    // Dirección editada (EditMem) O dirección objetivo elegida con ADDRESS
+    // para ejecutar hasta ella (ExecPaso, ver main.cpp) -- las dos vistas
+    // son mutuamente excluyentes, así que basta un solo campo.
+    uint16_t cursor = 0;
     ComposeState compose;         // instrucción en construcción en `cursor` (EditMem)
     uint8_t slot = 0;             // slot seleccionado (EditPrg)
     bool slotUsed = false;        // ¿el slot tiene programa? (EditPrg)
     PrgAction prgAction = PrgAction::Cargar;
+
+    // ExecPaso: ¿el listado debe seguir a `cursor` (se está eligiendo un
+    // objetivo con ADDRESS) en vez de al PC? Por defecto false -- el PC
+    // SIEMPRE debe verse mientras se ejecuta algo con DATOS o corre una
+    // carrera; solo se pone a true justo al girar ADDRESS (para poder ver
+    // el código mientras se elige un destino lejos del PC actual), y vuelve
+    // a false en cuanto se toca DATOS, arranca/termina una carrera, se
+    // resetea, o se entra en la vista -- ver main.cpp y renderEditMem en
+    // display.cpp.
+    bool pasoFollowCursor = false;
 
     // Previsualización del slot seleccionado (EditPrg): primeros bytes de la
     // imagen leídos de la flash. previewLen 0 = slot vacío / sin datos.

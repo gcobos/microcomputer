@@ -150,10 +150,10 @@ periféricos va en `0x06xx`.
   0x0603 = bit 0 = pulsador.
 - **LED de a bordo** (`OUT`/`IN`): `PORT_LED` 0x0610, bit 0 controla el LED
   azul del SuperMini (GPIO8). Se apaga al (re)iniciar una ejecución.
-- **Temporizadores** (`OUT`/`IN`): `PORT_TIMER_BASE` 0x0620..0x0627, 8 cuentas
+- **Temporizadores** (`OUT`/`IN`): `PORT_TIMER_BASE` 0x0620..0x0629, 10 cuentas
   atrás. `OUT` arma con 0–255; decrecen solas de 1 en 1 hasta 0. El timer `i`
-  baja 1 cada `TIMER_BASE_MS << i` ms (1, 2, 4, 8, 16, 32, 64, 128 ms). `IN`
-  lee el valor actual. `tickTimers()` corre una vez por vuelta de `loop()` solo
+  baja 1 cada `TIMER_BASE_MS << i` ms (1, 2, 4, 8, 16, 32, 64, 128, 256, 512 ms).
+  `IN` lee el valor actual. `tickTimers()` corre una vez por vuelta de `loop()` solo
   en `ExecCont`; en `ExecPaso` están congelados. `resetTimers()` los pone a 0
   al (re)iniciar una ejecución. `IN` **no** toca flags: para un bucle de espera
   hay que `CMP reg,#0` antes del `JMPNZ`.

@@ -48,6 +48,10 @@ constexpr int EXEC_BATCH = 4000;
 // animaciones rápidas como cubo.asm). Medido con programs/benchmark.asm.
 constexpr unsigned long FB_FLUSH_MS = 125;
 
+// EditMem: umbral para distinguir pulsación corta (insertar NOP) de larga
+// (borrar byte) en el pulsador de DIRECCIÓN -- ver el bloque EditMem.
+constexpr unsigned long DIR_LONG_PRESS_MS = 500;
+
 // --- Ahorro de energía (funcionamiento con batería) --------------------
 // El panel se muestrea desde un esp_timer, NO desde loop(), así que sigue
 // respondiendo aunque la OLED esté volcando (~30 ms) o se esté grabando la
@@ -97,7 +101,15 @@ UiState ui;
 bool prevExec = false;
 bool prevAbajo = false;
 View prevView = View::EditMem;
+// EditMem: estado del pulsador de DIRECCIÓN para lo de arriba (DIR_LONG_PRESS_MS).
+bool dirBtnHeld = false;
+unsigned long dirBtnPressMs = 0;
+bool dirBtnLongFired = false;
 uint8_t prevSlot = 0xFF;
+// ExecPaso: giro de DATOS hacia atras ("ejecutar hasta volver aqui") -- ver
+// el bloque ExecPaso mas abajo.
+bool pasoRunning = false;
+uint16_t pasoTargetPC = 0;
 bool running = false;
 unsigned long lastFlush = 0;
 uint8_t g_led = 0;                          // estado del LED (puerto PORT_LED)
@@ -258,6 +270,27 @@ static uint16_t clamp16(long v) {
     return v < 0 ? 0 : (v > 0xFFFF ? 0xFFFF : (uint16_t)v);
 }
 
+// Mueve `cursor` detentes instrucciones enteras (no bytes sueltos): adelante,
+// instrLen() del opcode actual (asume que cursor ya está alineado a un
+// límite real, como garantiza siempre este mismo navegador); atrás,
+// prevInstrStart() (recorre desde 0, como listBase, para no caer nunca en
+// mitad de una instrucción de 2/3 bytes). Compartido por EditMem (ADDR
+// girar) y ExecPaso (ADDR girar, para elegir la dirección objetivo).
+static void stepCursorByInstr(uint16_t& cursor, int16_t detentes) {
+    int16_t steps = detentes;
+    while (steps > 0) {
+        uint8_t len = instrLen(cpu.ram(), 65536u, cursor);
+        long next = (long)cursor + len;
+        if (next > 0xFFFF) break;   // no cabe otra instruccion entera
+        cursor = (uint16_t)next;
+        --steps;
+    }
+    while (steps < 0 && cursor) {
+        cursor = prevInstrStart(cpu.ram(), 65536u, cursor);
+        ++steps;
+    }
+}
+
 // --- Muestreo del panel (esp_timer) y gestión de energía ---------------
 esp_timer_handle_t g_sampler = nullptr;
 volatile uint32_t  g_lastActivity = 0;     // millis() de la última actividad del panel
@@ -326,11 +359,44 @@ void newSlot() {
     ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // resincroniza el editor
 }
 
+// --- Insertar/borrar un byte en EditMem (desplaza el resto de la RAM) ------
+// Ninguna de las dos toca nunca nada en [SP, 0xFFFF]: ahí vive la pila
+// (crece hacia abajo desde 0xFFFF, ver cpu.h), y desplazarla sin darse
+// cuenta la corromperia. Si el cursor ya esta en la pila o mas alla
+// (cursor >= sp), no hay hueco libre por encima donde desplazar sin
+// pisarla: la operacion no hace nada.
+
+// Abre un hueco de 1 byte en `cursor`, desplazando [cursor, sp-2] a
+// [cursor+1, sp-1] (el byte que hubiera en sp-1 se pierde: es el ultimo
+// libre antes de la pila, no queda otro sitio donde meterlo) y deja
+// mem[cursor] = 0x00 (NOP) listo para teclear.
+void insertByteAt(uint16_t cursor) {
+    uint16_t sp = cpu.sp();
+    if (cursor >= sp) return;
+    uint8_t* mem = cpu.ram();
+    for (uint32_t i = (uint32_t)sp - 1; i > cursor; --i) {
+        mem[i] = mem[i - 1];
+    }
+    mem[cursor] = 0x00;
+}
+
+// Borra mem[cursor], desplazando [cursor+1, sp-1] a [cursor, sp-2] y
+// rellenando el hueco que queda arriba (sp-1) con 0x00 (NOP).
+void deleteByteAt(uint16_t cursor) {
+    uint16_t sp = cpu.sp();
+    if (cursor >= sp) return;
+    uint8_t* mem = cpu.ram();
+    for (uint32_t i = cursor; i + 1 < sp; ++i) {
+        mem[i] = mem[i + 1];
+    }
+    mem[sp - 1] = 0x00;
+}
+
 // --- Provisioning por USB-CDC ----------------------------------------------
-// Recibe una imagen de RAM (<= 64 KiB) por el puerto serie y la graba en un
-// slot de la flash, sin tener que teclearla byte a byte en el panel.
+// Mete o saca una imagen de RAM (64 KiB) por el puerto serie, en un slot de
+// la flash, sin tener que teclearla byte a byte en el panel.
 //
-// Protocolo  (host -> aparato):
+// Protocolo LOAD (host -> aparato, provisionLoad()):
 //     "COMPI LOAD <slot> <len>\n"     cabecera ASCII (slot 0..59, len 0..65536)
 //     <len> bytes crudos, EN BLOQUES DE COMPI_CHUNK bytes (el ultimo puede
 //     ser mas corto); el host espera el "COMPI CHUNK <total>" de cada bloque
@@ -343,35 +409,36 @@ void newSlot() {
 //                                     modulo 2^32 (para verificar en el host)
 //     "COMPI ERR <motivo>\n"          error
 //
-// Por que a trozos y con eco: el USB-CDC nativo del C3 (USBCDC.cpp, core de
-// Arduino) mete los bytes que llegan en una cola de software de solo 256
-// bytes por defecto; si se llena, LOS DESCARTA SIN AVISAR (no hay control de
-// flujo a nivel de aplicacion). Ya se agranda esa cola en setup(), pero
+// Por que a trozos y con eco en LOAD: el USB-CDC nativo del C3 (USBCDC.cpp,
+// core de Arduino) mete los bytes que llegan en una cola de software de solo
+// 256 bytes por defecto; si se llena, LOS DESCARTA SIN AVISAR (no hay control
+// de flujo a nivel de aplicacion). Ya se agranda esa cola en setup(), pero
 // exigir un "COMPI CHUNK" por cada bloque obliga al host a ir al ritmo del
 // aparato pase lo que pase, en vez de fiarlo todo al tamaño del buffer.
 //
+// Protocolo DUMP (aparato -> host, provisionDump()): la mitad "sacar" --
+// ver ahi mismo por que no le hace falta trocear con eco como a LOAD.
+//     "COMPI DUMP <slot> [<len>]\n"   pide el slot (0..59); <len> opcional
+//                                     (0..65536) para no mandar mas que los
+//                                     primeros <len> bytes -- sin el, la
+//                                     imagen entera (PROGRAM_SIZE), que es
+//                                     lo unico que guarda la flash (no hay
+//                                     "longitud de programa" que recordar,
+//                                     solo imagenes completas de 64 KiB)
+//     "COMPI READY <len>\n"           cabecera aceptada; <len> = el pedido,
+//                                     o PROGRAM_SIZE si no se pidio ninguno
+//     <len> bytes crudos, de un tiron (sin trocear)
+//     "COMPI OK <sum>\n"              enviado; <sum> = checksum de esos <len>
+//                                     bytes (mismo cálculo que LOAD, pero
+//                                     solo sobre el trozo mandado)
+//     "COMPI ERR <motivo>\n"          error (slot/len fuera de rango o vacio)
+//
 // Se sondea al principio de cada loop(). Las lineas que no empiezan por
-// "COMPI LOAD " se ignoran (se puede seguir usando el monitor serie).
+// "COMPI LOAD " o "COMPI DUMP " se ignoran (se puede seguir usando el
+// monitor serie).
 constexpr size_t COMPI_CHUNK = 1024;
-void provisionPoll() {
-    if (!Serial.available()) return;
 
-    char line[48];
-    size_t n = 0;
-    unsigned long t0 = millis();
-    while (millis() - t0 < 1000) {
-        if (!Serial.available()) continue;
-        char c = (char)Serial.read();
-        if (c == '\n') break;
-        if (c == '\r') continue;
-        if (n < sizeof(line) - 1) line[n++] = c;
-        t0 = millis();
-    }
-    line[n] = '\0';
-
-    int slot = -1;
-    long len = -1;
-    if (sscanf(line, "COMPI LOAD %d %ld", &slot, &len) != 2) return;
+void provisionLoad(int slot, long len) {
     if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS ||
         len < 0 || len > (long)PROGRAM_SIZE) {
         Serial.println("COMPI ERR header");
@@ -430,6 +497,84 @@ void provisionPoll() {
     }
     noteActivity();
     oled.render(cpu, ui);
+}
+
+void provisionDump(int slot, long len) {
+    if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS ||
+        len < 0 || len > (long)PROGRAM_SIZE) {
+        Serial.println("COMPI ERR header");
+        return;
+    }
+    if (!flash.slotUsed(slot)) {
+        Serial.println("COMPI ERR empty");
+        return;
+    }
+
+    noteActivity();
+    char m[24];
+    snprintf(m, sizeof(m), "SENDING slot %02d", slot);
+    oled.message(m);
+
+    // cpu.ram() de scratch para leer la imagen, igual que provisionLoad() lo
+    // usa de scratch para recibirla -- ya se acepta que el provisioning
+    // pisa lo que hubiera en RAM (ver cpu.clearMemory() de arriba), no hace
+    // falta un buffer de 64 KiB aparte solo para esto. Se lee siempre la
+    // imagen ENTERA (loadProgram no admite leer solo un trozo), <len> solo
+    // decide cuanto de ella se manda.
+    flash.loadProgram(slot, cpu.ram());
+
+    uint32_t sum = 0;
+    const uint8_t* img = cpu.ram();
+    for (long i = 0; i < len; ++i) sum += img[i];
+
+    Serial.print("COMPI READY ");
+    Serial.println((unsigned long)len);
+    // Sin trocear ni esperar eco: eso hacia falta en LOAD porque la cola de
+    // RECEPCION del USB-CDC del C3 es de solo 256 bytes y descarta en
+    // silencio si se llena (ver arriba). Para ENVIAR no hay ese problema --
+    // Serial.write() ya bloquea lo que haga falta hasta que cabe.
+    Serial.write(cpu.ram(), (size_t)len);
+    Serial.print("COMPI OK ");
+    Serial.println((unsigned long)sum);
+
+    cpu.reset();
+    ui.cursor = 0;
+    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+    running = false;
+    noteActivity();
+    oled.render(cpu, ui);
+}
+
+void provisionPoll() {
+    if (!Serial.available()) return;
+
+    char line[48];
+    size_t n = 0;
+    unsigned long t0 = millis();
+    while (millis() - t0 < 1000) {
+        if (!Serial.available()) continue;
+        char c = (char)Serial.read();
+        if (c == '\n') break;
+        if (c == '\r') continue;
+        if (n < sizeof(line) - 1) line[n++] = c;
+        t0 = millis();
+    }
+    line[n] = '\0';
+
+    int slot = -1;
+    long len = -1;
+    if (sscanf(line, "COMPI LOAD %d %ld", &slot, &len) == 2) {
+        provisionLoad(slot, len);
+        return;
+    }
+    if (sscanf(line, "COMPI DUMP %d %ld", &slot, &len) == 2) {
+        provisionDump(slot, len);
+        return;
+    }
+    if (sscanf(line, "COMPI DUMP %d", &slot) == 1) {
+        provisionDump(slot, (long)PROGRAM_SIZE);   // sin <len>: la imagen entera
+        return;
+    }
 }
 
 void setup() {
@@ -519,49 +664,70 @@ void loop() {
         // Selector de mnemónico (editor.h): DATOS gira cambia el campo activo
         // (verbo -> mode -> operandos); DATOS pulsa confirma y pasa al
         // siguiente, o -si ya era el último campo- avanza el cursor la
-        // longitud de la instrucción ya compuesta. DIRECCIÓN sigue navegando
-        // libremente byte a byte; su pulsador retrocede una instrucción
-        // ENTERA de golpe (al OPCODE de la anterior), sea cual sea el campo
-        // en el que estés -- no hace falta salir campo a campo de la actual.
+        // longitud de la instrucción ya compuesta. DIRECCIÓN navega
+        // INSTRUCCIÓN A INSTRUCCIÓN (cada detente = una línea del listado,
+        // no un byte): adelante, instrLen() del opcode actual (el cursor
+        // siempre está alineado a un límite real, así que instrLen() nunca
+        // se equivoca); atrás, prevInstrStart() -- para acceder a un byte
+        // suelto DENTRO de la instrucción actual (p. ej. su segundo byte)
+        // hace falta convertirla en NOP y avanzar a la línea siguiente, ya
+        // no se puede aterrizar a mitad byte a byte. Su pulsador distingue
+        // pulsación corta de larga (DIR_LONG_PRESS_MS): corta inserta un NOP
+        // suelto en el cursor (insertByteAt), larga borra el byte del cursor
+        // (deleteByteAt) -- ninguna de las dos mueve el cursor. Antes esto se
+        // hacía manteniendo pulsado DIRECCIÓN mientras se giraba DATOS; se
+        // sustituyó por el gesto de pulsación corta/larga, que no roba el
+        // giro de DATOS para nada más (ver más abajo).
         if (changed) {
             // vista recién entrada (o venimos de otra): re-decodifica en lo
             // que ya haya en memoria en el cursor actual.
             ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+            dirBtnHeld = false; // por si veníamos de otra vista a media pulsación
         }
 
-        int16_t d = panel.takeDirDelta();
-        if (d) {
-            ui.cursor = clamp16((long)ui.cursor + d);
+        if (int16_t d = panel.takeDirDelta()) {
+            stepCursorByInstr(ui.cursor, d);
             ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
             changed = true;
         }
 
-        int16_t v = panel.takeDatDelta();
-        if (v) {
+        if (int16_t v = panel.takeDatDelta()) {
             applyDelta(ui.compose, v);
             assemble(cpu.ram(), 65536u, ui.cursor, ui.compose);   // en vivo
             changed = true;
         }
 
         if (panel.takeDirPress()) {
-            if (ui.cursor) {
-                // Salta a la instrucción anterior ENTERA, no campo a campo:
-                // sea cual sea ui.compose.step ahora mismo, una pulsación de
-                // DIRECCIÓN siempre lleva al OPCODE de la instrucción de
-                // antes. No puede ser simplemente cursor-1: la instrucción
-                // anterior puede ocupar 2 o 3 bytes, y aterrizar en mitad de
-                // ella (p. ej. en el byte alto de una dirección) hace que
-                // decodeAt() la reinterprete como un opcode nuevo -- el
-                // selector diría que edita "OP" pero el listado (que sí ve
-                // la instrucción real, alineada desde 0x0000) no lo
-                // reflejaría, y escribir ahí corrompería el operando de la
-                // instrucción anterior en vez de crear una nueva. prevInstrStart()
-                // recorre desde 0 (como el propio listado) para encontrar el
-                // límite de instrucción real inmediatamente anterior.
-                ui.cursor = prevInstrStart(cpu.ram(), 65536u, ui.cursor);
-                ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+            // Flanco de bajada: arranca el cronómetro. Todavía no se sabe si
+            // será corta o larga -- eso se decide más abajo, mientras se
+            // mantiene pulsado (larga) o al soltar (corta).
+            dirBtnHeld = true;
+            dirBtnPressMs = millis();
+            dirBtnLongFired = false;
+        }
+        if (dirBtnHeld) {
+            if (panel.dirDown()) {
+                if (!dirBtnLongFired && millis() - dirBtnPressMs >= DIR_LONG_PRESS_MS) {
+                    // Pulsación larga: se dispara en cuanto se cumple el
+                    // umbral, sin esperar a soltar (feedback inmediato de
+                    // que ya entró en "modo borrar"). deleteByteAt() ya para
+                    // sola antes de tocar la pila (cursor >= sp).
+                    deleteByteAt(ui.cursor);
+                    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+                    dirBtnLongFired = true;
+                    changed = true;
+                }
+            } else {
+                // Soltado sin llegar al umbral: pulsación corta -> inserta
+                // un NOP suelto en el cursor sin moverlo (insertByteAt,
+                // misma frontera de la pila que deleteByteAt).
+                if (!dirBtnLongFired) {
+                    insertByteAt(ui.cursor);
+                    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+                    changed = true;
+                }
+                dirBtnHeld = false;
             }
-            changed = true;
         }
 
         if (panel.takeDatPress()) {
@@ -627,20 +793,111 @@ void loop() {
         break;
     }
     case View::ExecPaso: {
-        if (panel.takeDatPress() && !cpu.halted()) { cpu.step(); changed = true; }
-        if (panel.takeDirPress()) {
-            cpu.reset();
-            panel.resetPositions();
-            memset(g_fb, 0, sizeof(g_fb));
-            memset(g_text, 0, sizeof(g_text));
-            memset(g_attr, 0, sizeof(g_attr));
-            g_led = 0; setLed(false);
-            resetTimers();
-            resetSound();
+        // DIRECCIÓN aquí NO ejecuta nada al girar: solo elige una dirección
+        // (ui.cursor, navegado instrucción a instrucción igual que en
+        // EditMem -- ver stepCursorByInstr) para usarla como objetivo. Su
+        // pulsador distingue corta de larga (mismo gesto y umbral que ya usa
+        // EditMem para insertar/borrar, DIR_LONG_PRESS_MS): corta arranca
+        // una carrera hacia ADELANTE hasta que el PC llegue a esa dirección
+        // (no hay forma de "ir hacia atrás" en la ejecución, así que apuntar
+        // detrás del PC actual da una vuelta completa antes de llegar);
+        // larga resetea, igual que antes hacía cualquier pulsación de
+        // DIRECCIÓN. DATOS sigue ejecutando (girar adelante = varios pasos
+        // de golpe, pulsar = un paso); girar DATOS hacia atrás NO hace nada
+        // por ahora (queda para DIRECCIÓN, que lo hace de forma más lógica:
+        // eliges destino y lo ves llegar, en vez de volver "a donde estabas").
+        if (changed) {
+            dirBtnHeld = false;          // por si veníamos de otra vista a media pulsación
+            ui.pasoFollowCursor = false; // al entrar, el listado sigue al PC
+            ui.cursor = cpu.pc();        // y el # arranca coincidiendo con él
+        }
+
+        // Sigue una carrera ya en marcha ANTES de leer más entrada de este
+        // fotograma: a trozos de EXEC_BATCH pasos, para no bloquear ni el
+        // sondeo del panel ni el refresco de pantalla mientras dura -- el
+        // listado (siguiendo al PC, ver ui.pasoFollowCursor/display.cpp) se
+        // ve avanzar solo, fotograma a fotograma, hasta llegar o pararse.
+        if (pasoRunning) {
+            for (int i = 0; i < EXEC_BATCH; ++i) {
+                if (cpu.halted()) { pasoRunning = false; break; }
+                cpu.step();
+                if (cpu.pc() == pasoTargetPC) { pasoRunning = false; break; }
+            }
+            ui.cursor = cpu.pc();         // el # sigue al PC (nunca se queda atrás)
+            ui.pasoFollowCursor = false;   // termine como termine, a ver el PC
             changed = true;
         }
-        panel.takeDirDelta();
-        panel.takeDatDelta();
+
+        if (panel.takeDatPress() && !pasoRunning && !cpu.halted()) {
+            cpu.step();
+            ui.cursor = cpu.pc();         // el # sigue al PC (nunca se queda atrás)
+            ui.pasoFollowCursor = false;   // el PC se movió: que se vea
+            changed = true;
+        }
+
+        if (int16_t d = panel.takeDirDelta()) {
+            stepCursorByInstr(ui.cursor, d);
+            // Girar ADDRESS SÍ hace que el listado siga al cursor en vez de
+            // al PC -- para poder ver el código mientras se elige un
+            // objetivo lejos de donde está el PC ahora mismo. En cuanto se
+            // toque DATOS (arriba/abajo) o arranque/termine una carrera,
+            // vuelve a seguir al PC: la garantía de "el PC siempre se ve"
+            // solo cede mientras se está eligiendo, nunca mientras se
+            // ejecuta algo.
+            ui.pasoFollowCursor = true;
+            changed = true;
+        }
+
+        if (panel.takeDirPress()) {
+            dirBtnHeld = true;
+            dirBtnPressMs = millis();
+            dirBtnLongFired = false;
+        }
+        if (dirBtnHeld) {
+            if (panel.dirDown()) {
+                if (!dirBtnLongFired && millis() - dirBtnPressMs >= DIR_LONG_PRESS_MS) {
+                    // Larga: reset, sin esperar a soltar (igual que el resto
+                    // de gestos corta/larga de este firmware).
+                    cpu.reset();
+                    pasoRunning = false;   // un reset a medio camino invalida el objetivo
+                    ui.cursor = cpu.pc();  // el # sigue al PC (que vuelve a 0)
+                    ui.pasoFollowCursor = false;   // PC vuelve a 0: que se vea
+                    panel.resetPositions();
+                    memset(g_fb, 0, sizeof(g_fb));
+                    memset(g_text, 0, sizeof(g_text));
+                    memset(g_attr, 0, sizeof(g_attr));
+                    g_led = 0; setLed(false);
+                    resetTimers();
+                    resetSound();
+                    dirBtnLongFired = true;
+                    changed = true;
+                }
+            } else {
+                // Corta: arranca la carrera hacia ui.cursor. Si el PC nunca
+                // llega ahí (o el programa hace HALT antes), no termina sola
+                // -- una pulsación larga (reset) o volver a EDIT la corta.
+                if (!dirBtnLongFired && !pasoRunning && !cpu.halted()) {
+                    pasoTargetPC = ui.cursor;
+                    pasoRunning = true;
+                    ui.pasoFollowCursor = false;   // arranca la carrera: a ver el PC moverse
+                    changed = true;
+                }
+                dirBtnHeld = false;
+            }
+        }
+
+        if (int16_t d = panel.takeDatDelta()) {
+            // Adelante: cada detente ejecuta una instruccion mas, igual que
+            // pulsar DATOS pero contando los detentes de golpe (para poder
+            // pasar varias de un tiron girando rapido, sin pulsar una a
+            // una). Atras: nada (ver el comentario de arriba).
+            if (!pasoRunning && !cpu.halted() && d > 0) {
+                for (int16_t i = 0; i < d && !cpu.halted(); ++i) cpu.step();
+                ui.cursor = cpu.pc();         // el # sigue al PC (nunca se queda atrás)
+                ui.pasoFollowCursor = false;   // el PC se movió: que se vea
+                changed = true;
+            }
+        }
         break;
     }
     case View::ExecCont: {

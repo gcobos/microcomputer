@@ -12,7 +12,7 @@ namespace compi {
 //   0x0500 .. 0x05FF   PANTALLA - atributos de texto (1 puerto = 1 celda)
 //   0x0600 .. 0x0603   encoders y pulsadores (solo IN)
 //   0x0610             LED de a bordo
-//   0x0620 .. 0x0627   temporizadores
+//   0x0620 .. 0x0629   temporizadores
 //   0x0630 .. 0x0633   sonido (piezo)
 //   resto              IN -> 0 ; OUT -> nada
 //
@@ -117,19 +117,19 @@ constexpr uint16_t PORT_DAT_BTN = 0x0603; // encoder DATOS: bit0 = pulsado
 // IN: devuelve el último valor escrito. Se apaga al (re)iniciar una ejecución.
 constexpr uint16_t PORT_LED = 0x0610;
 
-// --- Temporizadores (8 puertos, 0x0620 .. 0x0627) -------------------
+// --- Temporizadores (10 puertos, 0x0620 .. 0x0629) -------------------
 // OUT carga el temporizador con un valor (0-255). A partir de ahí decrece
 // solo, 1 cada cierto tiempo, hasta llegar a 0 y quedarse ahí. IN lee el
 // valor actual (0 = terminado).
 //
 // El temporizador i decrece 1 cada (TIMER_BASE_MS << i) milisegundos:
 //   t0 = TIMER_BASE_MS ms/paso (el más rápido)
-//   t1 = el doble de lento que t0 ... t7 = el más lento.
+//   t1 = el doble de lento que t0 ... t9 = 512 ms/paso (el más lento).
 //
 // Solo corren en EJECUTAR + CONTINUO. Se ponen a 0 al (re)arrancar una
 // ejecución. En PASO están congelados (para poder depurar bucles de espera).
 constexpr uint16_t PORT_TIMER_BASE = 0x0620;
-constexpr uint8_t  TIMER_COUNT     = 8;
+constexpr uint8_t  TIMER_COUNT     = 10;
 constexpr unsigned long TIMER_BASE_MS = 1;   // periodo de t0 (ajustable)
 
 // --- Sonido: zumbador piezo PASIVO en GPIO3 (0x0630 .. 0x0633) ------

@@ -28,6 +28,7 @@ FLAG_C, FLAG_Z, FLAG_N, FLAG_V = 1, 2, 4, 8
 F_EXT = 31
 
 CLICK_LEN = 12000  # instrucciones que dura un "click" de pulsador
+TIMER_COUNT = 10    # ver include/iomap.h
 
 
 class Ports:
@@ -35,8 +36,8 @@ class Ports:
         self.fb = bytearray(1024)
         self.text = bytearray(21 * 8)
         self.attr = bytearray(21 * 8)  # atributos de texto (puertos 0x0500+)
-        self.timer = [0] * 8
-        self.timer_set_ns = [0] * 8
+        self.timer = [0] * TIMER_COUNT
+        self.timer_set_ns = [0] * TIMER_COUNT
         self.led = 0
         self.dir_pos = 0
         self.dat_pos = 0
@@ -50,7 +51,7 @@ class Ports:
 
     def tick(self):
         self.now_ns += self.instr_ns
-        for i in range(8):
+        for i in range(TIMER_COUNT):
             if self.timer[i] == 0:
                 self.timer_set_ns[i] = self.now_ns
                 continue
@@ -70,7 +71,7 @@ class Ports:
         ai = self._attr_index(port)
         if ai is not None:
             return self.attr[ai]
-        if 0x0620 <= port < 0x0628:
+        if 0x0620 <= port < 0x0620 + TIMER_COUNT:
             return self.timer[port - 0x0620]
         if port == 0x0630:
             return self.snd_lo
@@ -105,7 +106,7 @@ class Ports:
         if ai is not None:
             self.attr[ai] = val
             return
-        if 0x0620 <= port < 0x0628:
+        if 0x0620 <= port < 0x0620 + TIMER_COUNT:
             i = port - 0x0620
             self.timer[i] = val
             self.timer_set_ns[i] = self.now_ns

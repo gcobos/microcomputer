@@ -290,7 +290,7 @@ de periféricos en `0x06xx`.
 | `0x0602` | IN | Encoder **DATA**: posición. |
 | `0x0603` | IN | Encoder DATA: bit 0 = pulsado. |
 | `0x0610` | E/S | **LED** azul de a bordo: `OUT` bit 0 = 1 lo enciende. `IN` = eco. |
-| `0x0620` … `0x0627` | E/S | **Temporizadores** t0…t7. `OUT` arma con 0–255; decrece solo hasta 0. `IN` lee el valor actual. |
+| `0x0620` … `0x0629` | E/S | **Temporizadores** t0…t9. `OUT` arma con 0–255; decrece solo hasta 0. `IN` lee el valor actual. |
 | `0x0630` | E/S | **Sonido** – frecuencia, byte bajo (solo se engancha). |
 | `0x0631` | E/S | **Sonido** – frecuencia, byte alto; al escribirlo suena `Hz = alto·256 + bajo` (0 = silencio). |
 | `0x0632` | E/S | **Sonido** – nota MIDI 0–127 (0 = silencio). 69 = LA4 = 440 Hz, +12 = octava. La forma fácil. |
@@ -332,11 +332,11 @@ el hardware, no gasta tiempo de CPU. Lo más simple: `OUT (0x0632),reg` con una
 nota MIDI. Para efectos (sirenas, barridos) usa la frecuencia de 16 bits
 (`0x0630` bajo, luego `0x0631` alto).
 
-**Temporizadores** (`0x0620`–`0x0627`): 8 cuentas atrás. Cada `t_i` baja 1
+**Temporizadores** (`0x0620`–`0x0629`): 10 cuentas atrás. Cada `t_i` baja 1
 cada `1 << i` ms → t0 = 1 ms/paso, t1 = 2, t2 = 4, t3 = 8, t4 = 16, t5 = 32,
-t6 = 64, t7 = 128 ms (t7: 255 → 0 en ~33 s). Solo corren en **CONTINUOUS**; en
-paso a paso están congelados. `IN` **no** cambia los flags: para esperar a que
-llegue a 0 hay que `CMP reg,#0` antes del `JMPNZ`.
+t6 = 64, t7 = 128, t8 = 256, t9 = 512 ms (t9: 255 → 0 en ~131 s). Solo corren
+en **CONTINUOUS**; en paso a paso están congelados. `IN` **no** cambia los
+flags: para esperar a que llegue a 0 hay que `CMP reg,#0` antes del `JMPNZ`.
 
 ---
 
@@ -411,7 +411,7 @@ Dir  Bytes        Instrucción
 0010 70 10 06     OUT (0x0610),AL     ; enciende el LED
 0013 08           HALT
 ```
-Cambia el temporizador (`0x0620`–`0x0627`) o el valor inicial para ajustar el
+Cambia el temporizador (`0x0620`–`0x0629`) o el valor inicial para ajustar el
 retardo. Recuerda: en paso a paso los temporizadores no avanzan.
 
 ### Dos notas: DO4 y luego SOL4  *(RUN ▼ continuo)*

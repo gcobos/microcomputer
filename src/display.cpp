@@ -106,12 +106,16 @@ void OledPanel::render(const Cpu& cpu, const UiState& ui) {
     else                          renderEditMem(cpu, ui); // EditMem o ExecPaso
 }
 
-// Listado desensamblado + registros. Ancla = cursor (EditMem) o PC (ExecPaso).
+// Listado desensamblado + registros. Ancla = cursor (EditMem); en ExecPaso,
+// el PC SIEMPRE (debe verse pase lo que pase), salvo el breve momento en que
+// se está eligiendo un objetivo lejano girando ADDRESS (ui.pasoFollowCursor,
+// ver main.cpp) -- en cuanto se ejecuta algo (DATOS, o arranca/termina una
+// carrera), vuelve a seguir al PC.
 void OledPanel::renderEditMem(const Cpu& cpu, const UiState& ui) {
     char buf[32], mnem[24], fl[5];
     const bool paso = (ui.view == View::ExecPaso);
     const uint16_t pc = cpu.pc();
-    const uint16_t anchor = paso ? pc : ui.cursor;
+    const uint16_t anchor = (!paso || ui.pasoFollowCursor) ? ui.cursor : pc;
     const uint16_t base = listBase(cpu.ram(), 65536u, anchor);
     const Registers& rg = cpu.regs();
     flagsStr(cpu.flags(), fl);
@@ -119,10 +123,19 @@ void OledPanel::renderEditMem(const Cpu& cpu, const UiState& ui) {
     display_.clearDisplay();
 
     display_.setCursor(0, 0);
-    if (paso)
-        snprintf(buf, sizeof(buf), "STEP %sPC=%04X", cpu.halted() ? "HLT " : "", pc);
-    else
+    if (paso) {
+        snprintf(buf, sizeof(buf), "PC=%04X A=%04X%s", pc, ui.cursor,
+                 cpu.halted() ? " HLT" : "");
+    } else if (fieldAt(ui.compose.verb, ui.compose.mode, ui.compose.step) == EField::Verb) {
+        // Eligiendo el verbo: nombre + tamaño ya asemblado (assemble() ya
+        // escribió en vivo la forma por defecto de este verbo en el cursor,
+        // ver main.cpp), para poder comparar opciones sin tener que confirmar
+        // cada una y mirar el listado de abajo.
+        uint8_t len = instrLen(cpu.ram(), 65536u, ui.cursor);
+        snprintf(buf, sizeof(buf), "%04X %s (size %u)", ui.cursor, verbName(ui.compose.verb), (unsigned)len);
+    } else {
         snprintf(buf, sizeof(buf), "%04X %s", ui.cursor, editFieldLabel(ui));
+    }
     display_.print(buf);
 
     uint16_t a = base;
@@ -130,7 +143,11 @@ void OledPanel::renderEditMem(const Cpu& cpu, const UiState& ui) {
         uint8_t len = disassemble(cpu.ram(), 65536u, a, mnem, sizeof(mnem));
         bool onCur = (!paso && ui.cursor >= a && ui.cursor < (uint16_t)(a + len));
         bool onPc  = (pc >= a && pc < (uint16_t)(a + len));
-        char mark = onCur ? '>' : (onPc ? '*' : ' ');
+        // Dirección objetivo elegida con ADDRESS en ExecPaso (ui.cursor ahí
+        // no es una posición de edición, ver ui.h): '#', salvo que además
+        // sea el PC (entonces gana '*', más informativo).
+        bool onTarget = (paso && !onPc && ui.cursor >= a && ui.cursor < (uint16_t)(a + len));
+        char mark = onCur ? '>' : (onPc ? '*' : (onTarget ? '#' : ' '));
         display_.setCursor(0, (int16_t)(ROW_H + i * ROW_H));
         snprintf(buf, sizeof(buf), "%c%04X %s", mark, a, mnem);
         display_.print(buf);
