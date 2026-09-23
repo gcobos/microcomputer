@@ -817,7 +817,13 @@ void loop() {
         // sondeo del panel ni el refresco de pantalla mientras dura -- el
         // listado (siguiendo al PC, ver ui.pasoFollowCursor/display.cpp) se
         // ve avanzar solo, fotograma a fotograma, hasta llegar o pararse.
+        // tickTimers() aquí, una vez por fotograma, igual que en CONTINUO:
+        // una carrera SÍ es "tiempo real corriendo" (tarda fotogramas de
+        // verdad en completarse), así que los temporizadores tienen que
+        // avanzar de verdad para que un bucle de espera con IN/CMP/JMPNZ
+        // pueda llegar a terminar por sí solo durante la carrera.
         if (pasoRunning) {
+            tickTimers();
             for (int i = 0; i < EXEC_BATCH; ++i) {
                 if (cpu.halted()) { pasoRunning = false; break; }
                 cpu.step();
@@ -829,6 +835,17 @@ void loop() {
         }
 
         if (panel.takeDatPress() && !pasoRunning && !cpu.halted()) {
+            // tickTimers() justo antes del paso: pone los temporizadores al
+            // día con el tiempo real transcurrido desde el ÚLTIMO paso
+            // ejecutado (no mientras se está quieto sin pulsar nada -- eso
+            // seguiría siendo "congelado" de verdad, para poder mirar la
+            // pantalla el rato que haga falta sin que nada avance solo).
+            // Los rápidos (t0..t7, <=128 ms/paso) van a dar casi siempre 0,
+            // porque hasta la pulsación más rápida de un humano tarda más
+            // que eso; los lentos (t8/t9, 256/512 ms) sí pueden reflejar de
+            // verdad el tiempo que ha pasado entre una pulsación y la
+            // siguiente.
+            tickTimers();
             cpu.step();
             ui.cursor = cpu.pc();         // el # sigue al PC (nunca se queda atrás)
             ui.pasoFollowCursor = false;   // el PC se movió: que se vea
@@ -892,6 +909,10 @@ void loop() {
             // pasar varias de un tiron girando rapido, sin pulsar una a
             // una). Atras: nada (ver el comentario de arriba).
             if (!pasoRunning && !cpu.halted() && d > 0) {
+                // tickTimers() una vez para todo el grupo de pasos de este
+                // giro (mismo motivo que en el pulsador de arriba): son
+                // pasos "de un tirón" en tiempo real, no uno por cada uno.
+                tickTimers();
                 for (int16_t i = 0; i < d && !cpu.halted(); ++i) cpu.step();
                 ui.cursor = cpu.pc();         // el # sigue al PC (nunca se queda atrás)
                 ui.pasoFollowCursor = false;   // el PC se movió: que se vea

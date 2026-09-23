@@ -116,11 +116,11 @@
 
   <!-- TEMPORIZADORES -->
   <rect x="360" y="504" width="6" height="60" fill="#0d9488"/>
-  <text x="372" y="517" class="grp" fill="#0f766e">TEMPORIZADORES  ·  8 cuentas atrás</text>
-  <text x="372" y="538" class="adr">0x0620–0x0627</text><text x="520" y="538" class="nm">PORT_TIMER_BASE + i</text>
+  <text x="372" y="517" class="grp" fill="#0f766e">TEMPORIZADORES  ·  10 cuentas atrás</text>
+  <text x="372" y="538" class="adr">0x0620–0x0629</text><text x="520" y="538" class="nm">PORT_TIMER_BASE + i</text>
   <rect x="696" y="528" width="24" height="13" rx="2" fill="#0d9488"/><text x="700" y="538" class="ac">IO</text>
   <text x="752" y="538" class="fn">OUT arma (0–255); decrece solo hasta 0 y se queda · IN lee el valor actual</text>
-  <text x="752" y="556" class="fn">tᵢ baja 1 cada (1 &lt;&lt; i) ms  →  t0..t7 = 1, 2, 4, 8, 16, 32, 64, 128 ms/paso</text>
+  <text x="752" y="556" class="fn">tᵢ baja 1 cada (1 &lt;&lt; i) ms  →  t0..t9 = 1,2,4,8,16,32,64,128,256,512 ms/paso</text>
 
   <!-- SONIDO -->
   <rect x="360" y="574" width="6" height="108" fill="#db2777"/>
@@ -153,7 +153,7 @@
   <!-- notas -->
   <text x="372" y="750" class="grp">Notas</text>
   <text x="372" y="770" class="note">•  Gráficos, texto, atributos de texto, encoders, LED, temporizadores y sonido se ponen a 0 al (re)arrancar una ejecución.</text>
-  <text x="372" y="788" class="note">•  Temporizadores y sonido solo avanzan en modo CONTINUO; en PASO A PASO están congelados. El sonido también calla al HALT.</text>
+  <text x="372" y="788" class="note">•  Sonido solo avanza en CONTINUO (calla en PASO y al HALT). En PASO A PASO los temporizadores avanzan según el tiempo real entre pasos, no en reposo.</text>
   <text x="372" y="806" class="note">•  IN no modifica los flags: para esperar a que un contador/temporizador llegue a 0, haz  CMP reg,#0  antes del salto condicional.</text>
   <text x="372" y="824" class="note">•  Codificación:  IN reg,(port16) = 0x68+r , lo , hi   ·   OUT (port16),reg = 0x70+r , lo , hi   (puerto de 16 bits, little-endian).</text>
 

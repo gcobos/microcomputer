@@ -42,7 +42,11 @@ direcciones de 16 bits (no imita a ningún micro real). Corre sobre un ESP32-C3.
 - Una flash SPI donde se guardan/cargan programas (bloques de memoria).
 
 CONTROLES: 2 encoders con pulsador (ADDR, DATA) + 2 interruptores
-(SW_MODE, SW_STEP). Nada más. Sin botones sueltos, sin pulsación larga.
+(SW_MODE, SW_STEP). Nada más, sin botones sueltos -- el hardware en sí (la
+clase PushButton, panel.h) solo distingue pulsación/nivel, sin pulsación
+larga propia; la distinción corta/larga que usan EditMem (insertar/borrar,
+ADDR) y ExecPaso (ejecutar hasta aquí/resetear, ADDR) se construye por
+encima en main.cpp cronometrando ese mismo nivel, ver sección 12.
 
 CUATRO VISTAS, derivadas de los dos interruptores (ver sección 12):
 
@@ -484,7 +488,8 @@ ENCODERS Y PULSADORES (puertos 0x0600..0x0603, solo IN)
   desplazamiento restando la lectura anterior.
   El pulsador devuelve el nivel instantáneo (con antirrebote): 1 mientras
   está pulsado. En STEP, los pulsadores los usa el firmware (DATA = avanzar,
-  ADDR = reset), así que el programa los verá a 1 en ese instante.
+  ADDR = elegir/ejecutar objetivo o resetear, ver §12), así que el programa
+  los verá a 1 en ese instante.
 
 LED DE A BORDO (puerto PORT_LED = 0x0610)
   OUT bit 0 = 1 -> enciende el LED azul del SuperMini (GPIO8). IN devuelve el
@@ -511,14 +516,31 @@ TEMPORIZADORES (puertos 0x0620 .. 0x0629, PORT_TIMER_BASE = 0x0620)
     t8 = 0x0628   256 ms/paso
     t9 = 0x0629   512 ms/paso  (el más lento; 255 -> 0 en ~130,6 s)
 
-  Solo corren en RUN + CONTINUOUS (tickTimers() se llama una vez por vuelta
-  de loop()). En STEP están congelados, para poder depurar bucles de espera
-  instrucción a instrucción. Se ponen todos a 0 al (re)iniciar una ejecución
-  (igual que el framebuffer, los encoders y el LED).
+  En RUN + CONTINUOUS, tickTimers() se llama una vez por vuelta de loop() --
+  avanzan en tiempo real todo el rato, se ejecute lo que se ejecute.
+
+  En STEP (ExecPaso, main.cpp) NO están congelados del todo: tickTimers() se
+  llama justo ANTES de cada paso que de verdad ejecuta algo -- un pulsador de
+  DATOS, un grupo de pasos de un giro hacia adelante, o cada fotograma de una
+  carrera lanzada con ADDR (§12) -- con el tiempo REAL transcurrido desde la
+  última vez que se llamó (mirando milisegundos de verdad, no una cuenta de
+  pasos). Si no ha pasado nada entremedias (no se ha ejecutado ni un paso),
+  el reloj de cada temporizador no se toca, así que mirar la pantalla el
+  rato que haga falta sin tocar nada sigue sin mover nada. La consecuencia:
+  los temporizadores rápidos (t0..t7, <=128 ms/paso) casi siempre leen 0 en
+  cuanto se pulsa DATOS otra vez (ninguna pulsación humana es más rápida que
+  eso), pero los lentos (t8/t9, 256/512 ms/paso) sí pueden reflejar de verdad
+  el tiempo transcurrido entre una pulsación y la siguiente -- y una carrera
+  de ADDR, que sí tarda fotogramas reales en completarse, puede atravesar un
+  bucle de espera de cualquiera de los diez con total normalidad.
+
+  Se ponen todos a 0 al (re)iniciar una ejecución (igual que el framebuffer,
+  los encoders y el LED).
 
   Si el programa pierde varios periodos entre dos IN (lote de instrucciones
-  largo, HALT, etc.), el temporizador se pone al día: descuenta todos los
-  pasos transcurridos de una vez (nunca por debajo de 0).
+  largo, HALT, etc., o -en STEP- un buen rato sin tocar el panel), el
+  temporizador se pone al día: descuenta todos los pasos transcurridos de
+  una vez (nunca por debajo de 0).
 
 SONIDO (puertos 0x0630 .. 0x0633, PORT_SND_BASE = 0x0630)
   Zumbador PIEZO PASIVO en GPIO3. El firmware genera un tono de onda cuadrada
@@ -709,10 +731,12 @@ RotaryEncoder
   Tabla de cuadratura estándar de 16 entradas. Acumula en `raw_`. takeDelta()
   devuelve raw_ / ENC_DIVISOR (detentes) y guarda el resto.
 
-PushButton  (antirrebote; solo pulsación corta)
+PushButton  (antirrebote; solo pulsación corta y nivel, aquí mismo)
   update(pressed): pressed = nivel bajo. Al estabilizarse a pulsado -> evento
   "pulsación" (una vez, takePress()). down() = nivel actual (puertos IN).
-  NO hay pulsación larga.
+  Esta clase NO distingue pulsación larga -- eso lo construye main.cpp por
+  encima, cronometrando down() con millis() (DIR_LONG_PRESS_MS, §12): el
+  gesto corta/larga de ADDR en EditMem/ExecPaso vive ahí, no aquí.
 
 ToggleSwitch  (nivel con antirrebote)
   update(closed): closed = nivel bajo. on() = estable y cerrado.
@@ -756,20 +780,26 @@ cursor, slot: eso vive en main.cpp / UiState).
  12. MÁQUINA DE ESTADOS DE LA INTERFAZ (src/main.cpp, loop())
 --------------------------------------------------------------------------------
 
-  EXEC_BATCH   = 4000    instrucciones por vuelta de loop() en CONTINUOUS
-  FB_FLUSH_MS  = 50      volcado del framebuffer a la OLED en CONTINUOUS
+  EXEC_BATCH   = 4000    instrucciones por vuelta de loop() en CONTINUOUS (y
+                         por tanda de una carrera de ADDR en STEP, §12 más abajo)
+  FB_FLUSH_MS  = 125     volcado del framebuffer a la OLED en CONTINUOUS
   PREVIEW_BYTES = 48     bytes de la imagen del slot leídos para la previsualización
+  DIR_LONG_PRESS_MS = 500   umbral corta/larga del pulsador de ADDR (EditMem, ExecPaso)
 
 La VISTA es función de los dos interruptores (nada oculto):
 
   SW_MODE   SW_STEP   Vista        Pantalla
   EDIT    ▲         EditMem      listado desensamblado + registros
   EDIT    ▼         EditPrg      selector de slot + previsualización
-  RUN  ▲         ExecPaso     listado + registros, * en el PC
+  RUN  ▲         ExecPaso     listado + registros, * en el PC, # en el objetivo de ADDR
   RUN  ▼         ExecCont     pantalla del programa (gráficos + texto)
 
-Estado en main.cpp (UiState + globales): view, cursor + compose (EditMem),
-slot y prgAction (EditPrg), running, prevExec/prevAbajo/prevView, prevSlot.
+Estado en main.cpp (UiState + globales): view, cursor + compose (EditMem) /
+cursor + pasoFollowCursor (ExecPaso, mismo campo cursor que EditMem), slot y
+prgAction (EditPrg), running, prevExec/prevAbajo/prevView, prevSlot,
+dirBtnHeld/dirBtnPressMs/dirBtnLongFired (gesto corta/larga de ADDR,
+compartido por EditMem y ExecPaso), pasoRunning/pasoTargetPC (carrera de
+ADDR en ExecPaso).
 
 BUCLE
   1. provisionPoll()  (§7)   ;   el panel lo muestrea un esp_timer, NO loop() (§16)
@@ -1129,8 +1159,9 @@ MENSAJE A PANTALLA COMPLETA — message(texto)
   DEBOUNCE_MS       include/panel.h     20 ms
   ENC_DIVISOR       include/panel.h     4
   EXEC_BATCH        src/main.cpp        4000 instrucciones/vuelta
-  FB_FLUSH_MS       src/main.cpp        50 ms
-  SAMPLE_ACTIVE_MS / SAMPLE_SCREENON_MS / SAMPLE_IDLE_MS  src/main.cpp  2 / 20 / 100 ms
+  FB_FLUSH_MS       src/main.cpp        125 ms
+  DIR_LONG_PRESS_MS src/main.cpp        500 ms  (corta/larga del pulsador de ADDR)
+  SAMPLE_ACTIVE_MS / SAMPLE_SCREENON_MS / SAMPLE_IDLE_MS  src/main.cpp  2 / 4 / 8 ms
   ACTIVE_WINDOW_MS  src/main.cpp        2000 ms  (sigue a 2 ms tras la actividad)
   SCREEN_DIM_MS / SCREEN_OFF_MS / LIGHT_SLEEP_MS  src/main.cpp  20000 / 45000 / 45000 ms
   OLED_CONTRAST_FULL / OLED_CONTRAST_DIM  src/main.cpp  0xCF / 0x10
@@ -1182,8 +1213,8 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
 
   RITMO ADAPTATIVO (según t = ms desde la última actividad del panel):
     programa ejecutando en CONTINUOUS, o t < ACTIVE_WINDOW_MS  -> 2 ms
-    t < SCREEN_DIM_MS (pantalla encendida, sin tocar)        -> 20 ms
-    resto (pantalla atenuada/apagada)                        -> 100 ms
+    t < SCREEN_DIM_MS (pantalla encendida, sin tocar)        -> 4 ms
+    resto (pantalla atenuada/apagada)                        -> 8 ms
   panel.update() devuelve true si hubo actividad -> reinicia t.
 
   PANTALLA (applyScreenPower, según t):
@@ -1196,11 +1227,12 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
   LIGHT SLEEP:
     si  t >= LIGHT_SLEEP_MS  y  no hay programa ejecutando  y  !Serial
         (sin host USB-CDC conectado):
-      pone BUZZER y LED a 0 ; esp_sleep_enable_timer_wakeup(100 ms) ;
+      pone BUZZER y LED a 0 ; esp_sleep_enable_timer_wakeup(SAMPLE_IDLE_MS) ;
       esp_light_sleep_start()
     Light sleep (no deep): conserva los 64 KiB de RAM emulada y despierta en
-    <1 ms. Despierta cada 100 ms (o antes por la alarma del sampler, que corre
-    al despertar y refresca el panel). Al detectar actividad, la siguiente
+    <1 ms. Despierta cada SAMPLE_IDLE_MS (8 ms), o antes por la alarma del
+    sampler, que corre al despertar y refresca el panel. Al detectar
+    actividad, la siguiente
     vuelta de loop() reenciende la pantalla y vuelve al muestreo de 2 ms.
     -DCOMPI_NO_LIGHT_SLEEP lo desactiva.
 
@@ -1249,9 +1281,13 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
 --------------------------------------------------------------------------------
 
 - INTERFAZ: solo 2 encoders con pulsador + 2 interruptores (8 entradas, 1 chip).
-  Sin botones sueltos, sin pulsación larga. El "modo" está en los interruptores
-  (visible), no oculto en un pulsador. Los dos pulsadores son simétricos en
-  criterio: ADDR = retroceder/reiniciar, DATA = avanzar/hacer.
+  Sin botones sueltos; el hardware (PushButton) solo da pulsación/nivel, sin
+  larga propia -- la corta/larga de EditMem y ExecPaso se construye encima en
+  main.cpp (ver sección 12). El "modo" está en los interruptores (visible),
+  no oculto en un pulsador. DATA siempre "avanza/hace" (confirma campo,
+  ejecuta un paso); ADDR es el que más ha cambiado de criterio según la
+  vista (navegar, insertar/borrar, elegir+ejecutar destino, resetear) --
+  ya no es un simple "retroceder" simétrico a DATA.
 - LAS 5 RUTINAS COMUNES:
   1) Cargar y ejecutar: SW_STEP ▼ (EditPrg), girar ADDR al slot, con
      prgAction en LOAD pulsar DATA o ADDR (los dos hacen lo mismo).
@@ -1265,7 +1301,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
      SW_STEP ▲, pulsar DATA repetidamente.
 - Encoders leídos por sondeo (no hay interrupción de flanco posible: las señales
   van por el 74HC165, no por GPIOs). El '165 se muestrea desde un esp_timer
-  independiente de loop() a 2/20/100 ms según la actividad (§16), así que un
+  independiente de loop() a 2/4/8 ms según la actividad (§16), así que un
   giro DURANTE el volcado de la OLED (~30 ms de I2C) ya NO se pierde: la tarea
   de esp_timer tiene prioridad alta y el I2C cede al planificador.
   Alternativas de hardware descartadas para no complicar la placa:

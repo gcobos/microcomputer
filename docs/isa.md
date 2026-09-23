@@ -10,17 +10,27 @@ mismo en versión práctica. Todos los bytes están comprobados en el emulador.
 
 1. `SW_MODE` = **EDIT**, `SW_STEP` = **▲** (vista EDIT MEMORY).
 2. El cursor empieza en `0x0000`. La fila 0 dice qué **campo** estás rellenando
-   ahora mismo (`OP`, `MODE`, `COND`, `REG`, `DST`, `SRC`, `IMM`, `LO`, `HI` —
-   abreviaturas en inglés, como los mnemónicos y los registros).
+   ahora mismo (`OP`, `MODE`, `COND`, `REG`, `DST`, `SRC`, `IMM`, `LO`, `HI`,
+   `PTR`, `N` — abreviaturas en inglés, como los mnemónicos y los registros).
+   Mientras el campo es `OP` (eligiendo el verbo), la cabecera muestra
+   además el tamaño ya ensamblado, p. ej. `NOP (size 1)`, para comparar
+   opciones sin confirmar cada una.
    **Giras DATA** para cambiar el valor de ese campo — el listado de abajo
-   muestra la instrucción formándose en directo. **Pulsas DATA** para
-   confirmar el campo y pasar al siguiente; en el último campo, esa misma
-   pulsación ya te deja en la dirección siguiente, lista para la próxima
-   instrucción. Pulsas ADDR para retroceder un campo (o una dirección
-   entera si ya estás en el primero).
+   muestra la instrucción formándose en directo; en el campo `OP` el giro
+   recorre los 21 verbos en **orden alfabético** (no por familia de opcode).
+   **Pulsas DATA** para confirmar el campo y pasar al siguiente; en el
+   último campo, esa misma pulsación ya te deja en la dirección siguiente,
+   lista para la próxima instrucción.
+   **Giras ADDR** para moverte INSTRUCCIÓN A INSTRUCCIÓN (nunca a mitad de
+   una de 2/3 bytes): adelante o atrás, un detente = una línea del listado.
+   **Pulsas ADDR** corto para insertar un `NOP` suelto en el cursor
+   (desplazando el resto de la RAM un byte adelante); una pulsación
+   **larga** (~medio segundo) borra el byte del cursor en su lugar
+   (desplazando el resto un byte atrás). Ninguna de las dos toca la pila.
 3. Cada instrucción se compone así:
-   - **OP** (verbo): uno de 21 (`NOP HALT MOV LDA STA ADD SUB AND OR XOR NOT
-     SHR SHL IN OUT PUSH POP JMP CALL RET CMP`).
+   - **OP** (verbo): uno de 21, ofrecidos en orden alfabético (`ADD AND CALL
+     CMP HALT IN JMP LDA MOV NOP NOT OR OUT POP PUSH RET SHL SHR STA SUB
+     XOR`).
    - **MODE** (forma; solo `MOV`/`CMP`/`ADD`/`SUB`/`AND`/`OR`/`XOR`/`LDA`/`STA`/
      `IN`/`OUT`): `reg,reg` / `reg,#imm` / `reg,[dir]` (las dos primeras no
      existen para `LDA`/`STA`/`IN`/`OUT`; la memoria/puerto no existe para
@@ -36,7 +46,14 @@ mismo en versión práctica. Todos los bytes están comprobados en el emulador.
      en lo que ya haya (como la edición de byte crudo de antes): si solo
      quieres cambiar un campo, ve pulsando DATA sin girar por los demás.
 4. Para ejecutar: `SW_MODE` = **RUN** (▲ paso a paso, ▼ continuo). Siempre
-   arranca en `PC = 0`.
+   arranca en `PC = 0`. En paso a paso (STEP), **DATA** sigue ejecutando
+   (girar adelante = varios pasos de golpe, uno por detente; pulsar = un
+   paso; girar atrás no hace nada, no hay forma de deshacer). **ADDR**
+   gira para elegir una dirección objetivo sin ejecutar nada (el listado la
+   sigue mientras eliges); pulsarlo **corto** ejecuta hacia adelante hasta
+   llegar a esa dirección, y **largo** resetea. Los temporizadores (§8) no
+   están del todo congelados en STEP: avanzan según el tiempo real
+   transcurrido entre un paso ejecutado y el siguiente.
 
 Detalle completo del selector: [`../specs.txt`](../specs.txt) §12
 (`include/editor.h`, `src/editor.cpp`).
@@ -298,7 +315,7 @@ de periféricos en `0x06xx`.
 
 Gráficos, texto, atributos de texto, encoders, LED, temporizadores y sonido
 se ponen a 0 cada vez que arranca una ejecución. En CONTINUOUS la pantalla es
-el gráfico + el texto (refresco cada 50 ms).
+el gráfico + el texto (refresco cada 125 ms, `FB_FLUSH_MS`).
 
 **Texto** (`0x0400`–`0x04FF`): fuente monospace de 6×8 (5×7 de Adafruit GFX),
 21 columnas × 8 filas. Para escribir una cadena, `OUT` carácter a carácter
@@ -334,9 +351,12 @@ nota MIDI. Para efectos (sirenas, barridos) usa la frecuencia de 16 bits
 
 **Temporizadores** (`0x0620`–`0x0629`): 10 cuentas atrás. Cada `t_i` baja 1
 cada `1 << i` ms → t0 = 1 ms/paso, t1 = 2, t2 = 4, t3 = 8, t4 = 16, t5 = 32,
-t6 = 64, t7 = 128, t8 = 256, t9 = 512 ms (t9: 255 → 0 en ~131 s). Solo corren
-en **CONTINUOUS**; en paso a paso están congelados. `IN` **no** cambia los
-flags: para esperar a que llegue a 0 hay que `CMP reg,#0` antes del `JMPNZ`.
+t6 = 64, t7 = 128, t8 = 256, t9 = 512 ms (t9: 255 → 0 en ~131 s). En
+**CONTINUOUS** corren siempre; en **paso a paso** NO están del todo
+congelados: avanzan según el tiempo real transcurrido entre un paso
+ejecutado y el siguiente (nada mientras no se pulsa nada) — ver sección 1.
+`IN` **no** cambia los flags: para esperar a que llegue a 0 hay que
+`CMP reg,#0` antes del `JMPNZ`.
 
 ---
 
