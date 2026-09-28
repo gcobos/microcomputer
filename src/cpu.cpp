@@ -72,9 +72,7 @@ bool Cpu::testCond(uint8_t cond) const {
 // Version sin ramas: cada flag (0/1) se desplaza directamente a su bit y se
 // combina con OR, en vez de una cadena de "if (cond) flags_ |= BIT". Un
 // salto condicional cuesta ciclos de pipeline en el RV32IMC del ESP32-C3;
-// esto se ejecuta en CADA instruccion ADD/SUB/CMP. Verificado por fuerza
-// bruta contra la version anterior en las 131072 combinaciones de (a,b,
-// isSub) -- ver el historial de esta sesion.
+// esto se ejecuta en CADA instruccion ADD/SUB/CMP.
 uint8_t Cpu::updateFlagsArith(uint8_t a, uint8_t b, bool isSub) {
     int full = isSub ? (int)a - (int)b : (int)a + (int)b;
     uint8_t result = (uint8_t)(full & 0xFF);

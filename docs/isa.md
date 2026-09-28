@@ -43,8 +43,8 @@ mismo en versión práctica. Todos los bytes están comprobados en el emulador.
      `0x1234` son los campos `34` y luego `12`), salvo en el modo `[reg16]`,
      que es un único campo **`PTR`** (gira entre `AX`/`BX`/`CX`/`DX`).
    - Al aterrizar en una dirección con algo ya escrito, el selector arranca
-     en lo que ya haya (como la edición de byte crudo de antes): si solo
-     quieres cambiar un campo, ve pulsando DATA sin girar por los demás.
+     en lo que ya haya: si solo quieres cambiar un campo, ve pulsando DATA
+     sin girar por los demás.
 4. Para ejecutar: `SW_MODE` = **RUN** (▲ paso a paso, ▼ continuo). Siempre
    arranca en `PC = 0`. En paso a paso (STEP), **DATA** sigue ejecutando
    (girar adelante = varios pasos de golpe, uno por detente; pulsar = un
@@ -312,6 +312,8 @@ de periféricos en `0x06xx`.
 | `0x0631` | E/S | **Sonido** – frecuencia, byte alto; al escribirlo suena `Hz = alto·256 + bajo` (0 = silencio). |
 | `0x0632` | E/S | **Sonido** – nota MIDI 0–127 (0 = silencio). 69 = LA4 = 440 Hz, +12 = octava. La forma fácil. |
 | `0x0633` | E/S | **Sonido** – duración automática = valor × 10 ms (0 = sostenida). "Pegajosa": cada nota la re-arma. |
+| `0x0640` | E/S | **Cargar programa**: `OUT` con un número de slot (0–59) carga esa imagen entera en la RAM de la CPU y la reinicia (PC=0, SP=0xFFFF); también deja pantalla, LED y sonido apagados y los encoders a 0, igual que al entrar en una ejecución nueva por el panel — un salto a otro programa, sin vuelta atrás. Slot vacío o fuera de rango: no hace nada. `IN` = 1 si el último intento falló (solo tiene sentido leerlo tras un fallo: si la carga sale bien, quien iba a leerlo ya no es el programa que sigue corriendo). |
+| `0x0641` | E/S | **Grabar programa**: `OUT` con un número de slot (0–59) graba ahí la RAM actual entera (equivale a "Guardar" del panel). El programa sigue corriendo después. `IN` = 1 si la última grabación salió bien. |
 
 Gráficos, texto, atributos de texto, encoders, LED, temporizadores y sonido
 se ponen a 0 cada vez que arranca una ejecución. En CONTINUOUS la pantalla es
@@ -324,10 +326,9 @@ devuelve el último carácter escrito en esa celda.
 
 **Atributos de texto** (`0x0500`–`0x05FF`): un byte por celda, en la misma
 disposición fila×32+col que el propio texto, justo a continuación de
-`0x0400`–`0x04FF` (encoders/LED/temporizadores/sonido se desplazaron a
-`0x0600`+ para dejarle el hueco pegado al texto). Se aplican al dibujar el
-carácter de esa celda; una celda con carácter `0` (transparente) no dibuja
-nada aunque tenga atributos puestos.
+`0x0400`–`0x04FF`. Se aplican al dibujar el carácter de esa celda; una
+celda con carácter `0` (transparente) no dibuja nada aunque tenga atributos
+puestos.
 
 | Bit | Atributo | Efecto |
 |---|---|---|
@@ -348,6 +349,34 @@ leyendo, así que solo se desplaza, a tamaño normal.
 el hardware, no gasta tiempo de CPU. Lo más simple: `OUT (0x0632),reg` con una
 nota MIDI. Para efectos (sirenas, barridos) usa la frecuencia de 16 bits
 (`0x0630` bajo, luego `0x0631` alto).
+
+**Orden importante para un pitido con duración automática: `0x0633` SIEMPRE
+antes que `0x0632`/`0x0631`.** `PORT_SND_DUR` es "pegajoso" pero no retroactivo:
+al escribir la nota/frecuencia, el firmware arma el apagado automático con
+el valor de `0x0633` que hubiera **en ese instante** (`sndApply()` en
+`src/main.cpp`); escribirlo después no reprograma el pitido que ya empezó a
+sonar, solo el siguiente. Si el orden es nota-luego-duración, el primer
+pitido de la sesión suena sostenido para siempre (arranca con la duración a
+0, su valor inicial) y, a partir de ahí, cada pitido usa por error la
+duración del ANTERIOR en vez de la suya. Patrón correcto:
+```
+    MOV AL,#4          ; duración primero
+    OUT (0x0633),AL    ; PORT_SND_DUR
+    MOV AL,#69         ; luego la nota (o la frecuencia)
+    OUT (0x0632),AL    ; PORT_SND_NOTE -- ya suena con la duración correcta
+```
+
+**Carga y grabado de programas** (`0x0640`–`0x0641`): dan acceso a los
+mismos 60 slots de la flash (`storage.h`, `MAX_PROGRAM_SLOTS`) que usan el
+panel físico y `compi_send.py`/`compi_recv.py`, pero desde el propio programa
+en ejecución — sirve para hacer un "menú" en un slot (típicamente el 0) que
+liste y arranque otros: `OUT (0x0640),reg` con el número de slot salta a él
+(carga sus 64 KiB en la RAM de la CPU y la reinicia, y de paso deja
+pantalla/LED/sonido apagados y los encoders a 0, para que el programa que
+arranca no herede nada del que lo cargó); `OUT (0x0641),reg` graba la RAM
+actual en el slot dado y sigue ejecutando el mismo programa.
+Igual que el resto de puertos, un slot vacío o un número ≥ 60 simplemente no
+hace nada, no cuelga ni corrompe memoria.
 
 **Temporizadores** (`0x0620`–`0x0629`): 10 cuentas atrás. Cada `t_i` baja 1
 cada `1 << i` ms → t0 = 1 ms/paso, t1 = 2, t2 = 4, t3 = 8, t4 = 16, t5 = 32,
@@ -416,8 +445,7 @@ Dir  Bytes        Instrucción
 0005 8A 02 00     JMPNZ 0x0002        ; repite mientras AL != 0
 0008 08           HALT
 ```
-Míralo en **paso a paso** (`SW_STEP ▲`): AL va 3 → 2 → 1 → 0 y para. (Antes
-hacía falta guardar el `1` en memoria; ahora `SUB AL,#1` lo hace directo.)
+Míralo en **paso a paso** (`SW_STEP ▲`): AL va 3 → 2 → 1 → 0 y para.
 
 ### Espera con temporizador y enciende el LED  *(RUN ▼ continuo)*
 ```

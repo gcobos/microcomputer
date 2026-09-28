@@ -3,10 +3,20 @@
 ;
 ;  Un circulo sin rellenar por encoder (izquierda = DIRECCION, derecha =
 ;  DATOS), con una aguja que apunta a una de 20 posiciones alrededor del
-;  circulo (el encoder tiene 20 detentes por vuelta: posicion_cruda mod 20).
-;  El circulo se rellena mientras el pulsador de ese encoder este pulsado.
-;  Debajo de cada circulo, la posicion cruda (0..255) en decimal, para
-;  depurar sentido de giro/inversion sin ambiguedad.
+;  circulo (el encoder tiene 20 detentes por vuelta). El pulsador de cada
+;  encoder rellena su circulo mientras este pulsado.
+;
+;  La posicion de cada encoder NO se toma directamente del puerto (P_DIR_POS/
+;  P_DAT_POS, crudo 0..255): esa lectura vuelve a 0 cada 256 pasos, y como
+;  256 no es multiplo de 20 (256 mod 20 = 16), la aguja (posicion_cruda mod
+;  20) daba un salto de varios detentes de golpe en cada vuelta -- muy visible
+;  girando hacia atras y cruzando el cero. En su lugar se lleva una posicion
+;  VIRTUAL de 0..199 (multiplo exacto de 20, ver VPOS_MOD) que solo avanza o
+;  retrocede por el DELTA real entre dos lecturas consecutivas del puerto
+;  (vpos_apply_delta) -- nunca por su valor absoluto -- asi que jamas salta,
+;  por muchas vueltas que de el encoder en cualquier sentido. Debajo de cada
+;  circulo, esa misma posicion virtual (0..199) en decimal, para depurar
+;  sentido de giro/inversion sin ambiguedad.
 ;
 ;  No hay salida por boton (los dos pulsadores son justo lo que se esta
 ;  depurando): se sale cambiando el interruptor SW_MODE a EDIT, como
@@ -19,7 +29,7 @@
 ;  La ISA y los puertos: ../docs/isa.md
 ; ============================================================================
 
-    .slot 0
+    .slot 14
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -36,6 +46,10 @@ DAT_CX    = 96           ; centro del circulo derecho (DATOS)
 CIRC_CY   = 36           ; misma fila para los dos
 CIRC_R    = 17           ; radio
 NEEDLE_TBL_STEP = 2       ; 2 bytes por entrada (dx,dy) en needle_off
+VPOS_MOD  = 200           ; techo de la posicion virtual -- multiplo exacto
+                          ; de 20 (a diferencia de 256, la lectura cruda del
+                          ; encoder): ver la nota de cabecera y
+                          ; vpos_apply_delta.
 
 ; ============================================================================
 ;  ARRANQUE: rotulos fijos (no se vuelven a tocar en el bucle)
@@ -53,20 +67,52 @@ start:
     MOV CH,#0
     CALL puts
 
+    ; siembra la lectura "anterior" con la actual, para que el primer delta
+    ; sea 0 (no hay fotograma previo en pantalla con el que pudiera
+    ; desentonar de todas formas, pero asi el bucle no arrastra un salto
+    ; grande de arranque sin necesidad) -- la posicion virtual siempre
+    ; empieza en 0, un origen arbitrario igual de valido que cualquier otro
+    ; para una cifra que solo tiene sentido en relativo.
+    IN  AL,(P_DIR_POS)
+    STA [dir_prev_raw],AL
+    IN  AL,(P_DAT_POS)
+    STA [dat_prev_raw],AL
+    MOV AL,#0
+    STA [dir_pos],AL
+    STA [dat_pos],AL
+
 ; ============================================================================
 ;  BUCLE PRINCIPAL: lee los dos encoders, redibuja los dos circulos+aguja,
 ;  actualiza las dos cifras -- sin condicion de salida (ver cabecera).
 ; ============================================================================
 main_l:
     IN  AL,(P_DIR_POS)
-    STA [dir_pos],AL
+    STA [dir_raw],AL
+    LDA BL,[dir_prev_raw]
+    SUB AL,BL                  ; delta con signo desde el ultimo fotograma
+    STA [vad_delta],AL
+    LDA AL,[dir_raw]
+    STA [dir_prev_raw],AL
+    MOV BL,#lo(dir_pos)
+    MOV BH,#hi(dir_pos)
+    CALL vpos_apply_delta
+    LDA AL,[dir_pos]
     CALL mod20
     STA [dir_slot],AL
     IN  AL,(P_DIR_BTN)
     STA [dir_btn],AL
 
     IN  AL,(P_DAT_POS)
-    STA [dat_pos],AL
+    STA [dat_raw],AL
+    LDA BL,[dat_prev_raw]
+    SUB AL,BL
+    STA [vad_delta],AL
+    LDA AL,[dat_raw]
+    STA [dat_prev_raw],AL
+    MOV BL,#lo(dat_pos)
+    MOV BH,#hi(dat_pos)
+    CALL vpos_apply_delta
+    LDA AL,[dat_pos]
     CALL mod20
     STA [dat_slot],AL
     IN  AL,(P_DAT_BTN)
@@ -132,7 +178,7 @@ main_l:
 
     CALL blit
 
-    ; --- cifras de posicion cruda (0..255), fila 7 --------------------------
+    ; --- cifras de posicion virtual (0..199), fila 7 ------------------------
     LDA AL,[dir_pos]
     MOV CL,#3
     MOV CH,#7
@@ -156,6 +202,52 @@ m20_l:
     SUB AL,#20
     JMP m20_l
 m20_d:
+    RET
+
+; ============================================================================
+;  vpos_apply_delta: aplica [vad_delta] (con signo, complemento a 2) a la
+;  posicion virtual apuntada por BX, avanzando o retrocediendo detente a
+;  detente y envolviendo en 0..VPOS_MOD-1 en cada paso -- ver la nota de
+;  cabecera sobre por que VPOS_MOD=200 y no los 256 pasos crudos del puerto.
+; ============================================================================
+vpos_apply_delta:
+    LDA AL,[vad_delta]
+    CMP AL,#0
+    JMPZ vad_done
+    JMPN vad_neg
+
+    STA [vad_cnt],AL           ; delta positivo: avanza [BX] esas veces
+vad_pos_l:
+    LDA AL,[BX]
+    ADD AL,#1
+    CMP AL,#VPOS_MOD
+    JMPNZ vad_pos_store
+    MOV AL,#0
+vad_pos_store:
+    STA [BX],AL
+    LDA AL,[vad_cnt]
+    SUB AL,#1
+    STA [vad_cnt],AL
+    JMPNZ vad_pos_l
+    JMP vad_done
+
+vad_neg:
+    NOT AL
+    ADD AL,#1                  ; magnitud = |delta| (complemento a 2)
+    STA [vad_cnt],AL
+vad_neg_l:
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPNZ vad_neg_dec
+    MOV AL,#VPOS_MOD
+vad_neg_dec:
+    SUB AL,#1
+    STA [BX],AL
+    LDA AL,[vad_cnt]
+    SUB AL,#1
+    STA [vad_cnt],AL
+    JMPNZ vad_neg_l
+vad_done:
     RET
 
 ; ============================================================================
@@ -700,12 +792,19 @@ fw_l:
 ; ============================================================================
 ;  DATOS  (justo despues del codigo -- ver programs/README.md)
 ; ============================================================================
-dir_pos:    .space 1
-dir_slot:   .space 1
-dir_btn:    .space 1
-dat_pos:    .space 1
-dat_slot:   .space 1
-dat_btn:    .space 1
+dir_pos:      .space 1   ; posicion VIRTUAL (0..199), no la cruda del puerto
+dir_raw:      .space 1   ; lectura cruda de este fotograma (escalón previo)
+dir_prev_raw: .space 1   ; lectura cruda del fotograma anterior (para el delta)
+dir_slot:     .space 1
+dir_btn:      .space 1
+dat_pos:      .space 1
+dat_raw:      .space 1
+dat_prev_raw: .space 1
+dat_slot:     .space 1
+dat_btn:      .space 1
+
+vad_delta:    .space 1   ; escalón de vpos_apply_delta
+vad_cnt:      .space 1
 
 circ_cx:    .space 1
 circ_cy:    .space 1
@@ -744,8 +843,8 @@ ln_xmaj:    .space 1
 
 pd_v:       .space 1
 
-h_dir:      .asciiz "DIRECCION"
-h_dat:      .asciiz "DATOS"
+h_dir:      .asciiz "DIRECTION"
+h_dat:      .asciiz "DATA"
 
 ; --- needle_off: 20 pares (dx,dy), uno por detente (18 grados cada uno),
 ; con longitud de aguja 14 px. La posicion 0 apunta "arriba" (12 en punto) y

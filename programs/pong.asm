@@ -75,6 +75,8 @@ P_DIR_BTN = 0x0601   ; encoder izquierdo: pulsador -> saque desde la izquierda
 P_DAT_POS = 0x0602   ; encoder derecho: posicion -> paleta derecha
 P_DAT_BTN = 0x0603   ; encoder derecho: pulsador -> saque desde la derecha
 P_T3      = 0x0623   ; ritmo del bucle principal
+P_SND_NOTE = 0x0632  ; nota MIDI (pitido corto) -- rebote en pala vs. punto
+P_SND_DUR  = 0x0633  ; duracion automatica (x10 ms)
 
 ; ============================================================================
 ;  ARRANQUE + BUCLE PRINCIPAL
@@ -88,6 +90,14 @@ start:
     STA [score_r],AL
     STA [ball_active],AL
     STA [serve_turn],AL     ; 0 = puede sacar cualquiera (solo al empezar)
+
+    IN  AL,(P_DIR_POS)          ; siembra el LFSR con algo poco predecible
+    ADD AL,#0x5D
+    STA [seed],AL
+    JMPNZ seed_ok
+    MOV AL,#0x5D
+    STA [seed],AL
+seed_ok:
 
     IN  AL,(P_DIR_POS)
     STA [dir_prev],AL
@@ -130,7 +140,11 @@ update_pad_l:
     LDA CL,[tmp0]
     STA [dir_prev],CL
     CMP AL,#0
-    JMPZ upl_done
+    JMPNZ upl_moved
+    MOV AL,#0
+    STA [pad_l_spd],AL       ; quieta este fotograma -> velocidad 0 (ver
+    JMP upl_done             ; calc_bounce_vy)
+upl_moved:
     STA [tmp1],AL
     AND AL,#0x80
     JMPZ upl_pos
@@ -142,6 +156,9 @@ update_pad_l:
     ADD AL,#1                ; AL = |delta|
     SHL AL                   ; paso = |delta|*2
     STA [tmp1],AL
+    NOT AL
+    ADD AL,#1
+    STA [pad_l_spd],AL       ; velocidad con signo (negativa = sube)
     LDA AL,[pad_l_y]
     LDA BL,[tmp1]
     CMP AL,BL
@@ -159,6 +176,7 @@ upl_pos:
     LDA AL,[tmp1]
     SHL AL
     STA [tmp1],AL
+    STA [pad_l_spd],AL       ; velocidad con signo (positiva = baja)
     LDA AL,[pad_l_y]
     LDA BL,[tmp1]
     ADD AL,BL
@@ -184,7 +202,11 @@ update_pad_r:
     NOT AL
     ADD AL,#1
     CMP AL,#0
-    JMPZ upr_done
+    JMPNZ upr_moved
+    MOV AL,#0
+    STA [pad_r_spd],AL       ; quieta este fotograma -> velocidad 0
+    JMP upr_done
+upr_moved:
     STA [tmp1],AL
     AND AL,#0x80
     JMPZ upr_pos
@@ -195,6 +217,9 @@ update_pad_r:
     ADD AL,#1
     SHL AL
     STA [tmp1],AL
+    NOT AL
+    ADD AL,#1
+    STA [pad_r_spd],AL       ; velocidad con signo (negativa = sube)
     LDA AL,[pad_r_y]
     LDA BL,[tmp1]
     CMP AL,BL
@@ -212,6 +237,7 @@ upr_pos:
     LDA AL,[tmp1]
     SHL AL
     STA [tmp1],AL
+    STA [pad_r_spd],AL       ; velocidad con signo (positiva = baja)
     LDA AL,[pad_r_y]
     LDA BL,[tmp1]
     ADD AL,BL
@@ -341,13 +367,22 @@ bp_yok:
     LDA BL,[ball_y]
     CMP BL,AL
     JMPNC bp_l_miss              ; ball_y >= pad_l_y+PAD_H -> por debajo, no solapa
-    ; SOLAPA: rebota
+    ; SOLAPA: rebota -- angulo segun donde golpeo en la paleta y hacia donde
+    ; se estaba moviendo (calc_bounce_vy), para que no sea siempre el mismo
+    ; rebote sosote
     LDA AL,[ball_vx]
     NOT AL
     ADD AL,#1
     STA [ball_vx],AL
     MOV AL,#LEFT_SERVE_X
     STA [ball_x],AL
+    LDA AL,[pad_l_y]
+    STA [bp_pad_y],AL
+    LDA AL,[pad_l_spd]
+    STA [bp_pad_spd],AL
+    CALL calc_bounce_vy
+    STA [ball_vy],AL
+    CALL snd_bounce
     JMP bp_done
 bp_l_miss:
     LDA AL,[ball_x]
@@ -361,6 +396,7 @@ bp_l_miss:
     MOV AL,#2
     STA [serve_turn],AL      ; punto de la derecha -> saca la derecha
     CALL draw_scores
+    CALL snd_point
     JMP bp_done
 
 bp_right:
@@ -383,6 +419,13 @@ bp_right:
     STA [ball_vx],AL
     MOV AL,#RIGHT_SERVE_X
     STA [ball_x],AL
+    LDA AL,[pad_r_y]
+    STA [bp_pad_y],AL
+    LDA AL,[pad_r_spd]
+    STA [bp_pad_spd],AL
+    CALL calc_bounce_vy
+    STA [ball_vy],AL
+    CALL snd_bounce
     JMP bp_done
 bp_r_miss:
     LDA AL,[ball_x]
@@ -396,7 +439,181 @@ bp_r_miss:
     MOV AL,#1
     STA [serve_turn],AL      ; punto de la izquierda -> saca la izquierda
     CALL draw_scores
+    CALL snd_point
 bp_done:
+    RET
+
+; --- snd_bounce/snd_point: pitidos cortos para distinguir un rebote normal
+; en una pala (agudo y muy corto) de anotar un punto (mas grave y largo).
+; La duracion se escribe SIEMPRE antes que la nota: PORT_SND_DUR es
+; "pegajoso" (arma la duracion de la SIGUIENTE nota que suene, no la que
+; se acaba de escribir) -- al reves, el primer pitido de la partida sonaria
+; sostenido hasta el segundo, sin respetar ninguna duracion. --------------
+snd_bounce:
+    MOV AL,#3            ; ~30 ms
+    OUT (P_SND_DUR),AL
+    MOV AL,#76           ; nota alta
+    OUT (P_SND_NOTE),AL
+    RET
+snd_point:
+    MOV AL,#18           ; ~180 ms
+    OUT (P_SND_DUR),AL
+    MOV AL,#50           ; nota mas grave
+    OUT (P_SND_NOTE),AL
+    RET
+
+; ============================================================================
+;  calc_bounce_vy: nuevo angulo de la bola al rebotar en una paleta. Entra
+;  con [bp_pad_y] (la Y de esa paleta) y [bp_pad_spd] (su velocidad de ESTE
+;  fotograma, con signo -- ver pad_l_spd/pad_r_spd) ya puestos por el
+;  llamador; usa tambien [ball_y]. Sale con AL = nuevo ball_vy.
+;
+;  Combina dos componentes (sin multiplicacion: solo comparaciones de
+;  magnitud, como el resto del programa):
+;    - offset: donde golpeo la bola respecto al CENTRO de la paleta (arriba
+;      del centro = negativo = rebota hacia arriba, abajo = positivo).
+;      Recortado a -1..1 (a proposito mas suave que el empuje: un golpe
+;      descentrado con la paleta quieta no debe desviar mucho la bola, o
+;      el rebote se siente exagerado).
+;    - empuje: hacia donde se estaba moviendo la paleta en el momento del
+;      golpe (quieta = no empuja). Recortado a -2..2: el jugador puede
+;      buscarlo a proposito moviendo la paleta al ritmo de la bola.
+;  La suma (-3..3) no hace falta recortarla mas: ya cae dentro de lo que
+;  cabe en un byte con signo pequeño.
+; ============================================================================
+calc_bounce_vy:
+    ; offset = ball_y - pad_y - 6 (centro pelota - centro paleta: PAD_H/2 -
+    ; BALL_H/2 = 7-1 = 6)
+    LDA AL,[ball_y]
+    LDA BL,[bp_pad_y]
+    SUB AL,BL
+    SUB AL,#6
+    AND AL,#0x80
+    STA [bp_offsign],AL
+    LDA AL,[ball_y]
+    LDA BL,[bp_pad_y]
+    SUB AL,BL
+    SUB AL,#6
+    STA [bp_tmp],AL
+    LDA BL,[bp_offsign]
+    CMP BL,#0
+    JMPZ cbv_off_abs
+    LDA AL,[bp_tmp]
+    NOT AL
+    ADD AL,#1
+    STA [bp_tmp],AL
+cbv_off_abs:
+    LDA AL,[bp_tmp]           ; |offset|
+    CMP AL,#4
+    JMPNC cbv_off_1
+    MOV AL,#0
+    JMP cbv_off_signed
+cbv_off_1:
+    MOV AL,#1
+cbv_off_signed:
+    LDA BL,[bp_offsign]
+    CMP BL,#0
+    JMPZ cbv_off_done
+    NOT AL
+    ADD AL,#1
+cbv_off_done:
+    STA [bp_offc],AL
+
+    ; empuje = velocidad de la paleta (misma idea: magnitud -> -2..2 con
+    ; el mismo signo que el movimiento)
+    LDA AL,[bp_pad_spd]
+    AND AL,#0x80
+    STA [bp_velsign],AL
+    LDA AL,[bp_pad_spd]
+    STA [bp_tmp],AL
+    LDA BL,[bp_velsign]
+    CMP BL,#0
+    JMPZ cbv_vel_abs
+    LDA AL,[bp_tmp]
+    NOT AL
+    ADD AL,#1
+    STA [bp_tmp],AL
+cbv_vel_abs:
+    LDA AL,[bp_tmp]           ; |velocidad|
+    CMP AL,#8
+    JMPNC cbv_vel_2
+    CMP AL,#2
+    JMPNC cbv_vel_1
+    MOV AL,#0
+    JMP cbv_vel_signed
+cbv_vel_1:
+    MOV AL,#1
+    JMP cbv_vel_signed
+cbv_vel_2:
+    MOV AL,#2
+cbv_vel_signed:
+    LDA BL,[bp_velsign]
+    CMP BL,#0
+    JMPZ cbv_vel_done
+    NOT AL
+    ADD AL,#1
+cbv_vel_done:
+    STA [bp_velc],AL
+
+    ; total = offc (-1..1) + velc (-2..2) + un empujon al azar (-1..1, ver
+    ; rnd/rnd_raw): sin esto, la misma pareja offset/velocidad da SIEMPRE el
+    ; mismo angulo exacto, y un jugador aprende enseguida a "programar" el
+    ; rebote con precision -- demasiado predecible. El azar es pequeño (no
+    ; ahoga el control del offset/velocidad, solo evita que sea 100% exacto)
+    LDA AL,[bp_offc]
+    LDA BL,[bp_velc]
+    ADD AL,BL
+    STA [bp_tmp],AL
+
+    CALL rnd
+    AND AL,#0x03
+    CMP AL,#0
+    JMPNZ cbv_rnd_1
+    MOV AL,#0xFF               ; -1
+    JMP cbv_rnd_apply
+cbv_rnd_1:
+    CMP AL,#3
+    JMPNZ cbv_rnd_0
+    MOV AL,#1
+    JMP cbv_rnd_apply
+cbv_rnd_0:
+    MOV AL,#0
+cbv_rnd_apply:
+    LDA BL,[bp_tmp]
+    ADD AL,BL
+
+    ; recorte a -3..3 (offc+velc ya cabia ahi; el empujon de +-1 puede sacarlo
+    ; a +-4 como mucho, los unicos casos que hace falta mirar)
+    CMP AL,#4
+    JMPNZ cbv_notmax
+    MOV AL,#3
+    RET
+cbv_notmax:
+    CMP AL,#0xFC               ; -4 en complemento a 2
+    JMPNZ cbv_ret
+    MOV AL,#0xFD               ; -3
+cbv_ret:
+    RET
+
+; --- rnd/rnd_raw: LFSR de 8 bits (mismo patron que shamus.asm/raycast.asm:
+; taps 0xB8, 3 pasos mezclados con XOR) -- solo para el empujon al azar de
+; calc_bounce_vy, nada mas en este programa lo necesita ---------------------
+rnd:
+    CALL rnd_raw
+    MOV DL,AL
+    CALL rnd_raw
+    XOR DL,AL
+    CALL rnd_raw
+    XOR DL,AL
+    MOV AL,DL
+    RET
+rnd_raw:
+    LDA AL,[seed]
+    SHR AL
+    JMPNC rr_n
+    XOR AL,#0xB8
+rr_n:
+    STA [seed],AL
     RET
 
 ; ============================================================================
@@ -676,6 +893,19 @@ dir_btn_prev: .space 1
 dat_btn_prev: .space 1
 last_dir_l:   .space 1    ; 0x01/0xFF/0x00: hacia donde se movio por ultimo
 last_dir_r:   .space 1    ; la paleta -- se copia tal cual a ball_vy al sacar
+pad_l_spd:    .space 1    ; delta con signo de ESTE fotograma (0 si no se
+pad_r_spd:    .space 1    ; movio) -- ver calc_bounce_vy, el "empuje" del rebote
+
+; --- calc_bounce_vy: escalares de trabajo (ver el comentario de la rutina) --
+bp_pad_y:     .space 1
+bp_pad_spd:   .space 1
+bp_off:       .space 1
+bp_offsign:   .space 1
+bp_offc:      .space 1
+bp_velsign:   .space 1
+bp_velc:      .space 1
+bp_tmp:       .space 1
+seed:         .space 1    ; semilla del LFSR (ver rnd/rnd_raw), nunca 0
 
 ball_x:       .space 1
 ball_y:       .space 1

@@ -13,7 +13,7 @@
 ;  ninguna lo esta -> parpadea al ritmo del cielo.
 ;
 ;  Controles en EJECUTAR + CONTINUO:
-;     encoder DIRECCION pulsa -> termina (apaga pantalla y LED, HALT)
+;     encoder DIRECCION pulsa -> termina (apaga pantalla y LED y vuelve al slot 0)
 ;
 ;  Ensamblar y enviar al slot 5:
 ;     python3 tools/casm.py programs/estrellas.asm -o programs/estrellas.bin
@@ -39,6 +39,7 @@ P_TEXT    = 0x0400      ; rejilla de texto
 P_DAT_POS = 0x0602      ; encoder DATOS: posicion (solo para sembrar el LFSR)
 P_DIR_BTN = 0x0601      ; encoder DIRECCION: pulsado
 P_LED     = 0x0610      ; LED azul de a bordo
+P_PROG_LOAD = 0x0640     ; cargar slot (OUT nº de slot): salto a otro programa
 P_T3      = 0x0623      ; temporizador 3 (8 ms/paso)
 
 ; ============================================================================
@@ -57,7 +58,7 @@ init:
     CALL clst
     MOV BL,#lo(h_title)
     MOV BH,#hi(h_title)
-    MOV CL,#2
+    MOV CL,#6
     MOV CH,#0
     CALL puts
     MOV AL,#0
@@ -162,7 +163,9 @@ main_x:
     CALL clsg
     CALL clst
     CALL wait_dir_release
-    HALT
+    MOV AL,#0
+    OUT (P_PROG_LOAD),AL       ; vuelve al sistema (sisop, slot 0)
+    HALT                       ; solo si el slot 0 estuviera vacio (la carga no hace nada)
 
 ; ============================================================================
 ;  do_star:  avanza y dibuja la estrella [idx]
@@ -541,4 +544,4 @@ star_y:     .space 16   ; y de cada estrella (0..63)  -- NSTARS
 star_state: .space 16   ; 0 apagada / 1 punto / 2 cruz / 3 punto
 star_timer: .space 16   ; ticks que faltan para el proximo cambio
 
-h_title:    .asciiz "CIELO ESTRELLADO"
+h_title:    .asciiz "STARRY SKY"

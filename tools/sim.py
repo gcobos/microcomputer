@@ -16,6 +16,7 @@ donde <accion> es una de:
     frame                       vuelca la pantalla en ese punto
 """
 import argparse
+import os
 import sys
 
 MASK = 0xFFFF
@@ -30,9 +31,18 @@ F_EXT = 31
 CLICK_LEN = 12000  # instrucciones que dura un "click" de pulsador
 TIMER_COUNT = 10    # ver include/iomap.h
 
+# --- almacen de slots (0x0640/0x0641, ver include/iomap.h) ---------------
+# Reproduce storage.h/spi_flash_storage.cpp SIN flash real: cada slot es un
+# fichero de 65536 bytes (PROGRAM_SIZE) en --slots-dir, nombrado NN.bin
+# (00..59, MAX_PROGRAM_SLOTS). "Usado" = el fichero existe; no hay marca de
+# cabecera aparte como en el aparato real porque aqui no hace falta (no
+# convive con nada mas en el fichero).
+MAX_PROGRAM_SLOTS = 60
+PROGRAM_SIZE = 65536
+
 
 class Ports:
-    def __init__(self, instr_ns=20_000):
+    def __init__(self, instr_ns=20_000, slots_dir=None):
         self.fb = bytearray(1024)
         self.text = bytearray(21 * 8)
         self.attr = bytearray(21 * 8)  # atributos de texto (puertos 0x0500+)
@@ -48,6 +58,12 @@ class Ports:
         self.now_ns = 0
         self.instr_ns = instr_ns
         self.sound_log = []
+        # carga/grabado de programas (0x0640/0x0641) -- self.cpu lo rellena
+        # Cpu.__init__ (necesita acceso a la RAM para volcarla/reemplazarla).
+        self.slots_dir = slots_dir
+        self.cpu = None
+        self.last_load_ok = 0
+        self.last_save_ok = 0
 
     def tick(self):
         self.now_ns += self.instr_ns
@@ -91,6 +107,10 @@ class Ports:
             return self.dat_btn
         if port == 0x0610:
             return self.led
+        if port == 0x0640:
+            return self.last_load_ok
+        if port == 0x0641:
+            return self.last_save_ok
         return 0
 
     def write(self, port, val):
@@ -127,6 +147,68 @@ class Ports:
             return
         if port == 0x0610:
             self.led = val & 1
+            return
+        if port == 0x0640:
+            self._prog_load(val)
+            return
+        if port == 0x0641:
+            self._prog_save(val)
+            return
+
+    def _slot_path(self, slot):
+        if self.slots_dir is None or not (0 <= slot < MAX_PROGRAM_SLOTS):
+            return None
+        return os.path.join(self.slots_dir, f"{slot:02d}.bin")
+
+    def _prog_load(self, slot):
+        # espejo de PORT_PROG_LOAD (iomap.h): carga el slot entero en la RAM
+        # de la CPU y la reinicia -- "salto" a otro programa, sin vuelta
+        # atras salvo que el programa cargado use este mismo puerto. Slot
+        # inexistente/fuera de rango: no toca nada, sigue el que llamo (ni
+        # siquiera se limpia pantalla/LED/sonido en ese caso).
+        path = self._slot_path(slot)
+        if path is None or not os.path.isfile(path):
+            self.last_load_ok = 0
+            return
+        with open(path, "rb") as f:
+            data = f.read(PROGRAM_SIZE)
+        if len(data) < PROGRAM_SIZE:
+            data = data + bytes(PROGRAM_SIZE - len(data))
+        self.cpu.m[:] = data
+        self.cpu.r = [0] * 8
+        self.cpu.pc = 0
+        self.cpu.sp = 0xFFFF
+        self.cpu.flags = 0
+        self.cpu.halted = False
+        # igual que clearRuntimeOutputs() en main.cpp: el programa que
+        # arranca no debe heredar pantalla/LED/sonido/encoders del que lo
+        # cargo (p.ej. un "sistema operativo" en un slot que encadena
+        # varios programas, ver programs/sisop.asm).
+        self.fb[:] = bytes(len(self.fb))
+        self.text[:] = bytes(len(self.text))
+        self.attr[:] = bytes(len(self.attr))
+        self.led = 0
+        self.dir_pos = 0
+        self.dat_pos = 0
+        for i in range(TIMER_COUNT):
+            self.timer[i] = 0
+            self.timer_set_ns[i] = self.now_ns
+        self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
+        self._snd(0)
+        self.last_load_ok = 1
+
+    def _prog_save(self, slot):
+        # espejo de PORT_PROG_SAVE: vuelca la RAM ACTUAL entera (65536 bytes,
+        # igual que saveProgram en el aparato real -- no solo la parte
+        # "usada" por el programa) en el slot pedido; sigue ejecutandose el
+        # mismo programa despues.
+        path = self._slot_path(slot)
+        if path is None:
+            self.last_save_ok = 0
+            return
+        with open(path, "wb") as f:
+            f.write(bytes(self.cpu.m))
+        self.last_save_ok = 1
 
     def _snd(self, hz):
         if hz != self.snd_hz:
@@ -175,6 +257,7 @@ class Cpu:
         self.flags = 0
         self.halted = False
         self.steps = 0
+        ports.cpu = self   # 0x0640/0x0641 necesitan leer/reemplazar la RAM
 
     # registros de 8 bits (r[] ya es plano)
     def _f8(self):
@@ -437,12 +520,16 @@ def main(argv=None):
     ap.add_argument("--frame-every", type=int, default=0,
                     help="vuelca la pantalla cada N instrucciones")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--slots-dir",
+                    help="directorio con los slots de flash simulados "
+                         "(NN.bin) para los puertos 0x0640/0x0641 -- ver "
+                         "tools/slots.py para poblarlo desde .asm/.bin")
     args = ap.parse_args(argv)
 
     with open(args.image, "rb") as f:
         image = f.read()
 
-    ports = Ports(instr_ns=args.instr_ns)
+    ports = Ports(instr_ns=args.instr_ns, slots_dir=args.slots_dir)
     cpu = Cpu(image, ports)
     events = load_script(args.script)
     ev_i = 0

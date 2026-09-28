@@ -377,10 +377,17 @@ PROVISIONING POR USB-CDC (meter o sacar un slot del PC, sin teclear)
   lo necesita: ese problema es de RECEPCIÓN; para ENVIAR, Serial.write() ya
   bloquea lo que haga falta hasta que cabe, no hay cola que desborde.
 
-  Las dos usan cpu.ram() como buffer de paso (LOAD la recibe ahí antes de
-  flash.saveProgram(); DUMP la lee ahí con flash.loadProgram() antes de
-  mandarla) -- el provisioning ya asume que puede pisar lo que hubiera en
-  RAM sin guardar, igual en los dos sentidos. En el PC:
+  Las dos usan g_provisionBuf (búfer de 64 KiB dedicado, NO cpu.ram()) como
+  paso: LOAD la recibe ahí antes de flash.saveProgram(); DUMP la lee ahí con
+  flash.loadProgram() antes de mandarla. Antes reutilizaban cpu.ram(), así
+  que mandar o pedir CUALQUIER slot por USB borraba y paraba lo que
+  estuviera corriendo en ese momento, aunque fuera un slot distinto del
+  transmitido -- con el búfer aparte, ninguna de las dos toca cpu/running/ui:
+  un programa en ExecCont sigue corriendo sin enterarse. forceRedraw() (pone
+  g_forceRender=true y lastFlush=0) se llama al terminar cada una para que
+  el mensaje transitorio de oled.message() no se quede colgado en pantalla
+  (se pinta directo al panel OLED, sin pasar por g_fb/oled.render()). En el
+  PC:
     python3 tools/casm.py programs/demo.asm -o programs/demo.bin
     python3 tools/compi_send.py --port /dev/ttyACM0 --slot 4 programs/demo.bin
     python3 tools/compi_recv.py --port /dev/ttyACM0 --slot 4 -o vuelta.bin
@@ -415,6 +422,8 @@ MAPA DE PUERTOS
   0x0631            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
   0x0632            PORT_SND_NOTE      sonido: nota MIDI 0..127 (0 = silencio)
   0x0633            PORT_SND_DUR       sonido: duración auto = valor * 10 ms (0 = sostenida)
+  0x0640            PORT_PROG_LOAD     carga un slot de flash en la RAM y reinicia la CPU (OUT slot; IN = 1 si el ultimo intento fallo)
+  0x0641            PORT_PROG_SAVE     graba la RAM actual en un slot de flash (OUT slot; IN = 1 si la ultima grabacion salio bien)
   resto            IN -> 0 ; OUT -> nada
 
 FRAMEBUFFER · gráficos (puertos 0x0000..0x03FF)
@@ -462,9 +471,7 @@ ATRIBUTOS DE TEXTO (puertos 0x0500..0x05FF, ATTR_PORT_BASE = 0x0500)
   iomap.h. Se aplican al dibujar el carácter de esa celda; una celda con
   carácter 0 (transparente) no dibuja nada aunque tenga atributos puestos.
 
-  Va pegado a 0x0400..0x04FF (justo detrás del texto); encoders/LED/
-  temporizadores/sonido se desplazaron en bloque a 0x0600+ para dejarle
-  el hueco.
+  Va pegado a 0x0400..0x04FF (justo detrás del texto).
 
     bit 0  ATTR_INVERSE      vídeo inverso (fondo y trazo intercambiados)
     bit 1  ATTR_BLINK        parpadea (deja de dibujarse la mitad del ciclo,
@@ -560,10 +567,80 @@ SONIDO (puertos 0x0630 .. 0x0633, PORT_SND_BASE = 0x0630)
                               armar esta misma duración. IN: tiempo restante en
                               unidades de 10 ms (0 = ya callado).
 
+  OJO CON EL ORDEN: 0x0633 (DUR) hay que escribirlo SIEMPRE antes que 0x0632/
+  0x0631 (NOTE/FREQ_HI). sndApply() arma el apagado automático con el valor
+  de DUR que hubiera EN ESE INSTANTE; escribir DUR despues de la nota no
+  reprograma el pitido que ya sonó, solo el siguiente -- si el orden es
+  nota-luego-duración, el primer pitido de la sesión suena sostenido para
+  siempre (arranca con DUR a 0) y los demás usan por error la duración del
+  ANTERIOR. Visto en fzero.asm y pong.asm (ya corregido): "el primer sonido
+  se queda sonando hasta el segundo" es la firma de este fallo.
+
   Suena SOLO en RUN + CONTINUOUS. Se calla (y se ponen los 4 registros a 0)
   al (re)arrancar una ejecución, al pasar a STEP o EDIT, y al llegar a HALT.
   tickSound() corre una vez por vuelta de loop() (aplica el auto-apagado).
   El piezo pasivo va directo entre GPIO3 y GND (opcional 100 Ω en serie).
+
+  MUTE/UNMUTE general (botón BOOT, GPIO9, ver docs/hardware.md): corta la
+  salida FÍSICA del zumbador sin tocar el estado emulado de sonido -- el
+  programa en curso sigue escribiendo/leyendo estos 4 puertos con total
+  normalidad, solo se salta la llamada a tone()/noTone() real mientras esté
+  muteado (g_soundMuted en main.cpp). Empieza DESACTIVADO (sonido audible)
+  al encender. tickBootButton() se sondea lo primero en cada loop(), antes
+  de mirar el interruptor de modo -- por eso el mute funciona en las 4
+  vistas (EDITAR/PASO/CONTINUO/menú de programas) y con cualquier programa
+  cargado, no solo durante una ejecución. Antirrebote por tiempo
+  (BOOT_BTN_DEBOUNCE_MS = 30 ms). Al desmutear suena un jingle de 2 notas
+  (880/1175 Hz) NO bloqueante (tickMuteJingle(), un paso por loop(), nunca
+  detiene la emulación de la CPU) que confirma que el sonido ha vuelto;
+  mientras suena, sndApply(0) sigue actualizando el estado emulado pero NO
+  llama a noTone() de verdad, para no cortarlo (ver el comentario de
+  g_muteJingleActive en main.cpp).
+
+CARGA Y GRABADO DE PROGRAMAS (puertos 0x0640 / 0x0641)
+  Dan acceso a los mismos slots de la flash (0..59, MAX_PROGRAM_SLOTS) que
+  usan el panel físico (EditPrg: Cargar/Guardar) y el protocolo de serie
+  (COMPI LOAD/DUMP), pero desde el propio programa en ejecución -- pensado
+  para un "sistema operativo" en un slot (típicamente el 0, ver más abajo)
+  que arranque otros programas sin pasar por el panel cada vez.
+
+    0x0640  PORT_PROG_LOAD  OUT: numero de slot -> flash.loadProgram(slot,
+                             cpu.ram()) + cpu.reset() + clearRuntimeOutputs().
+                             Sustituye la RAM entera (65536 bytes), reinicia
+                             PC/SP/flags/registros, y deja pantalla (gráfico+
+                             texto+atributos)/LED/sonido apagados y los
+                             encoders a 0 -- LO MISMO que ya hace el
+                             firmware al entrar en una ejecución nueva por
+                             el interruptor del panel (ver "Arranque
+                             automático" más abajo y clearRuntimeOutputs()
+                             en main.cpp): el programa que arranca no debe
+                             heredar nada del que lo cargó. La SIGUIENTE
+                             instrucción ejecutada ya es la primera del
+                             programa cargado -- un salto, no un CALL, sin
+                             vuelta atrás salvo que el programa cargado use
+                             este mismo puerto.
+                             Slot vacío o >= 60: no hace nada, sigue el
+                             programa que hizo el OUT (pantalla/LED/sonido
+                             de éste NO se tocan en ese caso).
+                             IN: 1 si el ÚLTIMO intento de carga falló (0 si
+                             salió bien o no se ha pedido ninguna todavía --
+                             en la práctica solo tiene sentido leerlo tras
+                             un fallo, porque si la carga sale bien quien
+                             iba a leerlo ya no es el programa que sigue
+                             corriendo).
+    0x0641  PORT_PROG_SAVE  OUT: numero de slot -> flash.saveProgram(slot,
+                             cpu.ram()) (equivale a "Guardar" del panel).
+                             El programa sigue ejecutándose después -- esto
+                             es un volcado, no un salto. Tarda unos ms
+                             (borra flash antes de escribir), igual que al
+                             grabar desde el panel.
+                             IN: 1 si la ÚLTIMA grabación salió bien.
+
+  Arranque automático del slot 0: setup() intenta flash.loadProgram(0,
+  cpu.ram()) antes del primer cpu.reset(); si el slot 0 está vacío, arranca
+  con la RAM limpia (todo NOP) como hasta ahora. Así, un "sistema operativo"
+  grabado en el slot 0 (ver programs/sisop.asm) aparece nada más encender el
+  aparato, sin esperar a que el usuario entre en EDITAR y pulse Cargar.
 
   A esta resolución (glifos de 5x7 en una celda de 8 px de alto) no hay
   margen para además encoger el carácter en subíndice/superíndice y que se
@@ -572,13 +649,12 @@ SONIDO (puertos 0x0630 .. 0x0633, PORT_SND_BASE = 0x0630)
   El firmware guarda las 168 celdas en g_attr (main.cpp), NO en la RAM. Se
   ponen a 0 en los mismos momentos que g_text (arranque de una ejecución).
 
-  drawTextCell() (display.cpp) sustituye al Adafruit_GFX::drawChar() que se
-  usaba antes: esa función no puede rotar UN carácter suelto (solo rota la
-  pantalla entera), así que drawTextCell() recorre el bitmap de font5x7.h
-  (copia propia de glcdfont.c de Adafruit GFX, recortada a 0x20..0x7F, ver el
-  propio fichero) píxel a píxel, y lo coloca ya rotado/desplazado/invertido.
-  Con atributos a 0 el resultado es idéntico, píxel a píxel, al drawChar()
-  de antes.
+  drawTextCell() (display.cpp) no usa Adafruit_GFX::drawChar(): esa función
+  no puede rotar UN carácter suelto (solo rota la pantalla entera), así que
+  drawTextCell() recorre el bitmap de font5x7.h (copia propia de glcdfont.c
+  de Adafruit GFX, recortada a 0x20..0x7F, ver el propio fichero) píxel a
+  píxel, y lo coloca ya rotado/desplazado/invertido. Con atributos a 0 el
+  resultado es idéntico, píxel a píxel, al de un drawChar() normal.
 
 EJEMPLO (escribir "HI" arriba a la izquierda):
   MOV AL,#0x48      ; 'H'
@@ -648,15 +724,20 @@ PINES USADOS (constantes en src/main.cpp)
                           (aviso de fallo en el arranque) y salida del
                           ordenador emulado (puerto PORT_LED, sección 8).
                           Strapping: el firmware lo pone en alto al arrancar.
+  IO9   PIN_BOOT_BTN      Botón BOOT de a bordo, reutilizado como MUTE/UNMUTE
+                          general (entrada, pull-up interno, activo a nivel
+                          bajo). Strapping, pero la ROM ya sampleó su nivel
+                          en el reset ANTES de que corra setup()/loop() --
+                          leerlo despues como entrada normal no interfiere
+                          con eso, asi que sigue sirviendo igual de bien
+                          para la recuperacion manual de flasheo (mantenerlo
+                          pulsado al enchufar).
   IO10  PIN_HC165_LOAD    74HC165 PL (carga paralela, activo bajo)
   IO20  PIN_I2C_SDA       OLED SDA
   IO21  PIN_I2C_SCL       OLED SCL
 
-  Libres para expansión: IO3 (y IO20/IO21 si se comparte el reloj del '165
-  con SCK).
-
 PINES PROHIBIDOS
-  IO2, IO9         strapping. IO9 = botón BOOT del SuperMini.
+  IO2              strapping.
   IO8             strapping también, pero se usa para el LED de a bordo (OK).
   IO11..IO17       flash SPI interna del módulo.
   IO18, IO19       USB nativo (no salen a los pads del SuperMini).
@@ -869,18 +950,11 @@ BUCLE
                        tampoco lo mueve. Se dispara en cuanto se cumplen los
                        500 ms, sin esperar a soltar (feedback inmediato de
                        que ya entró en "modo borrar"); soltar después no
-                       hace nada más.
-                       Antes (antes de este gesto corta/larga) había DOS
-                       formas de insertar y ninguna de borrar con un solo
-                       botón: ADDR pulsar corto insertaba, y manteniendo
-                       pulsado ADDR mientras se giraba DATOS se podía
-                       insertar o borrar según el sentido del giro -- se
-                       quitó esa combinación porque pisaba el giro de DATOS
-                       (que ya tiene su propio significado, cambiar de
-                       campo) y porque un único pulsador con corta/larga
+                       hace nada más. Un único pulsador con corta/larga
                        basta para las dos operaciones y dice más rápido cuál
-                       es cuál. decodeAt() en el cursor (step=0) tras
-                       cualquiera de las dos.
+                       es cuál, sin pisar el giro de DATOS (que tiene su
+                       propio significado, cambiar de campo). decodeAt() en
+                       el cursor (step=0) tras cualquiera de las dos.
 
      insertByteAt(cursor) / deleteByteAt(cursor) (main.cpp):
                          insertar: [cursor, sp-2] -> [cursor+1, sp-1] ;
@@ -971,9 +1045,7 @@ BUCLE
                          corta. No dispara nada si ya hay una en marcha.
      ADDR pulsar LARGA -> cpu.reset() + borrar framebuffer/texto +
                          resetPositions() + cancela una carrera en marcha
-                         (pasoRunning=false) -- antes esto lo hacía CUALQUIER
-                         pulsación de ADDR; se movió a la larga en cuanto la
-                         corta pasó a significar "ejecutar hasta aquí".
+                         (pasoRunning=false).
      DATA pulsar       -> cpu.step()  (si !halted y no hay una carrera en marcha)
      DATA girar adelante (d>0) -> cpu.step() d veces (una por detente, para
                          poder pasar varias de golpe girando rápido en vez de
@@ -1109,9 +1181,8 @@ VISTA EditPrg — renderEditPrg(cpu, ui)
   FILA 7 : "ADDR=slot DATA:turn/go"
 
 VISTA ExecCont — renderFramebuffer(g_fb, g_text, g_attr, halted)
-  0) display_.clearDisplay() -- IMPRESCINDIBLE, no solo por borrar el búfer
-     (bug corregido: antes era un memset(buffer,0,...) a pelo). Adafruit_
-     GrayOLED (base de Adafruit_SH110X) manda por I2C, en display(), solo el
+  0) display_.clearDisplay() -- IMPRESCINDIBLE, no solo por borrar el búfer.
+     Adafruit_GrayOLED (base de Adafruit_SH110X) manda por I2C, en display(), solo el
      rectángulo "sucio" que hayan tocado drawPixel/drawChar/fillRect/etc.
      (window_x1/y1/x2/y2, con min/max en cada trazo), y esa ventana se
      resetea a VACÍA tras cada display(). La escritura directa al búfer
@@ -1135,7 +1206,7 @@ VISTA ExecCont — renderFramebuffer(g_fb, g_text, g_attr, halted)
      opaco (borra la celda 6x8), pinta el glifo de font5x7.h píxel a píxel
      (no drawChar(): no puede rotar un carácter suelto) aplicando sus
      atributos (sección 8, ATTR_*). Con atributos a 0 el resultado es
-     idéntico, píxel a píxel, al drawChar(..., WHITE, BLACK) de antes.
+     idéntico, píxel a píxel, al de un drawChar(..., WHITE, BLACK) normal.
      Celda 0 = transparente (se ve el gráfico).
   3) Si halted, superpone "HALT" en una esquina (encima del texto).
   display_.display(). Se invoca cada FB_FLUSH_MS ms.
@@ -1261,18 +1332,34 @@ portRead(port):  port < 1024 -> g_fb[port] ; celda de texto -> g_text[i] ;
   celda de atributos -> g_attr[i] ;
   0x0600/0x0602 -> dirPos/datPos ; 0x0601/0x0603 -> dirDown/datDown ;
   0x0610 -> g_led ; 0x0620..0629 -> g_timer[i] ;
-  0x0630..0633 -> eco de sonido (DUR = tiempo restante) ; resto -> 0.
+  0x0630..0633 -> eco de sonido (DUR = tiempo restante) ;
+  0x0640 -> g_lastLoadOk ; 0x0641 -> g_lastSaveOk ; resto -> 0.
 portWrite(port, v):  port < 1024 -> g_fb[port] = v ; celda de texto -> g_text[i] = v ;
   celda de atributos -> g_attr[i] = v ;
   0x0610 -> LED ; 0x0620..0629 -> arma el temporizador ;
-  0x0630..0633 -> sonido (0x0631 y 0x0632 aplican el tono) ; resto -> nada.
+  0x0630..0633 -> sonido (0x0631 y 0x0632 aplican el tono) ;
+  0x0640 -> flash.loadProgram(v, cpu.ram()) + cpu.reset() + clearRuntimeOutputs() si sale bien ;
+  0x0641 -> flash.saveProgram(v, cpu.ram()) ; resto -> nada.
   "celda de texto" = textIndex(port) >= 0  (0x0400 + fila*32 + col, fila<8, col<21).
   "celda de atributos" = attrIndex(port) >= 0  (0x0500 + fila*32 + col, misma
   formula que el texto, comprobado DESPUES de textIndex en el orden de
   despacho -- ver el orden real de los if en src/main.cpp).
 
-setup() también hace pinMode(PIN_LED, OUTPUT)/setLed(false) y
-pinMode(PIN_BUZZER, OUTPUT)/LOW lo primero.
+setup() lee los interruptores (panel.begin() + ejecutar()/swAbajo()) ANTES
+que cualquier otra cosa, incluido oled.begin() -- el '165 es puro bit-bang
+por GPIO (ShiftRegister165), sin dependencia de Serial/Wire/OLED, así que
+no hay motivo para tocar la pantalla antes de saber si el aparato arranca
+en EJECUTAR+CONTINUO. Esto importa especialmente con el arranque automático
+del slot 0 (ver más abajo): si los interruptores ya están en EJECUTAR+
+CONTINUO, el programa autocargado se pone a correr nada más encender, así
+que su estado hay que conocerlo desde el instante cero, no después de
+inicializar la pantalla.
+
+Después: pinMode(PIN_LED, OUTPUT)/setLed(false) y pinMode(PIN_BUZZER,
+OUTPUT)/LOW. Justo antes del primer cpu.reset(), intenta
+flash.loadProgram(0, cpu.ram()) (arranque automático del slot 0, ver
+PORT_PROG_LOAD más arriba); si falla (slot 0 vacío), cpu.clearMemory() deja
+la RAM a 0x00 (todo NOP) como arrancaba antes.
 failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
 
 
@@ -1339,8 +1426,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   texto es una rejilla de caracteres 21x8 (fuente 6x8) que se compone ENCIMA
   del gráfico; una celda a 0 es transparente. Facilita imprimir texto desde
   el ensamblador (OUT del código de carácter a la celda), sin tener que
-  dibujar píxeles. El resto de periféricos se movió a 0x06xx para dejar ese
-  hueco contiguo a los atributos.
+  dibujar píxeles. El resto de periféricos vive en 0x06xx.
 - En STEP los pulsadores de los encoders los usa el firmware (DATA avanza,
   ADDR resetea) y el programa los verá a 1 en ese instante (IN 0x0601 /
   0x0603). En CONTINUOUS todo va al programa.
@@ -1350,7 +1436,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   flash al cambiar de slot; puede cortar la última instrucción mostrada.
 - Un programa = imagen completa de 64 KiB. Guardar bloquea ~1 s (17 borrados
   de sector); se muestra "SAVING slot NN". Cargar es rápido (~70 ms).
-- 60 slots (antes 256): un slot de 64 KiB ocupa 17 sectores; caben 60 en 4 MiB.
+- 60 slots: un slot de 64 KiB ocupa 17 sectores; caben 60 en 4 MiB.
 - No hay borrado de slots desde el panel (IProgramStorage tiene deleteProgram).
 - Las 7 operaciones de la ALU (MOV ADD SUB CMP AND OR XOR) aceptan reg,src
   (OP_EXT) y reg,#imm (OP_ALUI); ADD/SUB/AND/OR/XOR además reg,[addr]. `MOV

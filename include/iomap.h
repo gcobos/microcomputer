@@ -14,15 +14,11 @@ namespace compi {
 //   0x0610             LED de a bordo
 //   0x0620 .. 0x0629   temporizadores
 //   0x0630 .. 0x0633   sonido (piezo)
+//   0x0640 .. 0x0641   carga/grabado de programas (slots de la flash)
 //   resto              IN -> 0 ; OUT -> nada
 //
-// ATTR_PORT_BASE (0x0500) va pegado a TEXT_PORT_BASE (0x0400 .. 0x04FF), tal
-// como se pidió: encoders/LED/temporizadores/sonido -antes en 0x0500..0x0533-
-// se han desplazado en bloque a 0x0600.. para dejarle sitio. Esto CAMBIA los
-// puertos que ya usaban programs/*.asm (todos actualizados a la vez que este
-// fichero); cualquier programa nuevo o de fuera del repo que siga usando las
-// direcciones antiguas (0x0500 = encoder, 0x0510 = LED, ...) hay que
-// migrarlo a mano.
+// ATTR_PORT_BASE (0x0500) va pegado a TEXT_PORT_BASE (0x0400 .. 0x04FF); el
+// resto de periféricos vive en 0x06xx.
 
 // --- PANTALLA · gráficos: framebuffer (puertos 0x0000 .. 0x03FF) -----
 // 128x64 monocromo. 1 puerto = 1 byte = 8 píxeles horizontales,
@@ -155,5 +151,49 @@ constexpr uint16_t PORT_SND_FREQ_HI = 0x0631;
 constexpr uint16_t PORT_SND_NOTE    = 0x0632;
 constexpr uint16_t PORT_SND_DUR     = 0x0633;
 constexpr uint8_t  SND_PORT_COUNT   = 4;
+
+// --- Carga y grabado de programas (slots de la flash SPI, 0x0640/0x0641) --
+// Para un "sistema operativo" en un slot que arranque otros: cargar y
+// grabar la RAM completa (64 KiB) en un slot de flash SIN pasar por el
+// panel físico ni el cable serie. Slots 0..59 (MAX_PROGRAM_SLOTS,
+// storage.h); un numero fuera de rango, o -en carga- un slot vacio, no
+// hace nada (falla en silencio, ver IN de cada puerto).
+//
+//   0x0640 PORT_PROG_LOAD  OUT: numero de slot -> lo carga entero en la RAM
+//                          de la CPU y la reinicia (PC=0, SP=0xFFFF, flags y
+//                          registros a 0) para que arranque a ejecutarlo en
+//                          la SIGUIENTE instruccion -- un "salto" a otro
+//                          programa, no un CALL: no hay vuelta atras salvo
+//                          que el propio programa cargado use este mismo
+//                          puerto otra vez. Si el slot esta vacio o fuera de
+//                          rango no pasa nada (sigue ejecutandose el
+//                          programa que hizo el OUT, tal cual iba). Si la
+//                          carga sale bien, ADEMAS deja pantalla (grafico +
+//                          texto + atributos), LED y sonido apagados, y los
+//                          encoders a 0 -- lo mismo que ya se hace al entrar
+//                          en una ejecucion nueva por el interruptor del
+//                          panel (ver clearRuntimeOutputs() en main.cpp):
+//                          el programa que arranca no debe heredar nada de
+//                          quien lo cargo.
+//                          IN: 1 si el ULTIMO intento de carga FALLO, 0 si
+//                          salio bien (o si todavia no se ha pedido ninguna).
+//                          Solo tiene sentido leerlo tras un fallo: si la
+//                          carga sale bien, el programa que iba a leerlo ya
+//                          no es el que esta corriendo.
+//   0x0641 PORT_PROG_SAVE  OUT: numero de slot -> graba ahi la RAM actual
+//                          entera (equivale a "Guardar" del panel, pero
+//                          disparado por el propio programa). SIGUE
+//                          ejecutandose el mismo programa despues -- esto es
+//                          un volcado, no un salto. Tarda unos cuantos ms
+//                          (borra flash antes de escribir): el resto de
+//                          puertos (temporizadores, sonido) no avanzan
+//                          mientras tanto porque el intérprete esta parado
+//                          en este OUT, igual que ya pasa al grabar desde el
+//                          panel.
+//                          IN: 1 si la ULTIMA grabacion salio bien, 0 si
+//                          fallo (numero de slot fuera de 0..59) o todavia
+//                          no se ha pedido ninguna.
+constexpr uint16_t PORT_PROG_LOAD = 0x0640;
+constexpr uint16_t PORT_PROG_SAVE = 0x0641;
 
 } // namespace compi

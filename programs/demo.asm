@@ -1496,28 +1496,28 @@ melody:
 ; las cadenas si pueden ir pegadas justo aqui, sin .org ni alineacion: se
 ; leen por etiqueta (puts/put_num), no por byte bajo parcheado.
 h_title:   .asciiz "COMPI  DEMO"
-m_i1:      .asciiz "1 GRAFICOS"
-m_i2:      .asciiz "2 TEXTO"
-m_i3:      .asciiz "3 SONIDO"
-m_i4:      .asciiz "4 ANIMACION"
-m_i5:      .asciiz "5 LUCES"
-m_i6:      .asciiz "6 JUEGO"
+m_i1:      .asciiz "1 GRAPHICS"
+m_i2:      .asciiz "2 TEXT"
+m_i3:      .asciiz "3 SOUND"
+m_i4:      .asciiz "4 ANIMATION"
+m_i5:      .asciiz "5 LIGHTS"
+m_i6:      .asciiz "6 GAME"
 m_mark:    .asciiz ">"
-h_gfx:     .asciiz "GRAFICOS"
-h_snd:     .asciiz "SONIDO"
-h_anim:    .asciiz "ANIMACION"
-h_light:   .asciiz "LUCES"
-h_game:    .asciiz "ESQUIVA  S:"
+h_gfx:     .asciiz "GRAPHICS"
+h_snd:     .asciiz "SOUND"
+h_anim:    .asciiz "ANIMATION"
+h_light:   .asciiz "LIGHTS"
+h_game:    .asciiz "DODGE  S:"
 str_over:  .asciiz "GAME OVER"
-str_score: .asciiz "PUNTOS:"
+str_score: .asciiz "SCORE:"
 txt_msg:
-    .db "COMPI ES UN MICRO", 10
-    .db "DE 8 BITS CON ISA", 10
-    .db "PROPIA. 64 KB DE", 10
-    .db "RAM, OLED 128X64", 10
-    .db "Y SONIDO PIEZO.", 10
+    .db "COMPI IS AN 8-BIT", 10
+    .db "MICRO WITH ITS OWN", 10
+    .db "ISA. 64 KB OF RAM,", 10
+    .db "128X64 OLED AND", 10
+    .db "PIEZO SOUND.", 10
     .db 10
-    .db "HECHO EN ENSAMBLADOR", 0
+    .db "MADE IN ASSEMBLY", 0
 
     .org 0xF300
 obarr:     .space 6

@@ -21,7 +21,11 @@
 ;  operacion, el acumulador pasa a ser el numero tecleado sin calcular
 ;  nada), se muestra, y esa operacion queda pendiente para la proxima vez
 ;  que se pulse una operacion. Con "=" se calcula y se muestra igual, pero
-;  no deja ninguna operacion pendiente nueva. Con "C" se borra todo.
+;  no deja ninguna operacion pendiente nueva -- eso si, la operacion Y EL
+;  NUMERO tecleado siguen ahi, así que pulsar "=" otra vez sin teclear nada
+;  repite esa misma cuenta sobre el resultado anterior (p.ej. "6 * 3 = = ="
+;  da 18, 54, 162 -- igual que en una calculadora de bolsillo real). Con "C"
+;  se borra todo.
 ;
 ;  Sin multiplicacion ni division de la CPU: la multiplicacion es suma-y-
 ;  desplaza sobre un intermedio de 48 bits (para detectar el desbordamiento
@@ -330,10 +334,14 @@ ao_show:
     LDA AL,[acc2]
     STA [pd4_2],AL
 ao_reset:
-    MOV AL,#0
-    STA [entry0],AL
-    STA [entry1],AL
-    STA [entry2],AL
+    ; OJO: [entry] NO se pone a 0 aqui a proposito -- [fresh]=1 ya basta
+    ; para que aplica_digito lo SOBRESCRIBA en cuanto se teclee el primer
+    ; digito del numero siguiente (ver su comprobacion de [fresh]), y dejar
+    ; el ultimo numero tecleado tal cual es lo que permite repetir "=" sin
+    ; teclear nada nuevo para encadenar la misma operacion con el mismo
+    ; numero (p.ej. "6 * 3 = = =" -> 18, 54, 162, como en una calculadora de
+    ; bolsillo real). Si se pusiera a 0 aqui, cada "=" de mas multiplicaria
+    ; o dividiria por 0 el resultado -- exactamente el fallo que se veia.
     MOV AL,#1
     STA [fresh],AL
     CALL actualiza_display

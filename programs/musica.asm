@@ -17,7 +17,7 @@
 ;  marcha generica en vez de a esto.
 ;
 ;  Controles:
-;     encoder DIRECCION pulsa -> termina (apaga pantalla, LED y sonido, HALT)
+;     encoder DIRECCION pulsa -> termina (apaga pantalla, LED y sonido y vuelve al slot 0)
 ;
 ;  Ensamblar y enviar al slot 8:
 ;     python3 tools/casm.py programs/musica.asm -o programs/musica.bin
@@ -40,6 +40,7 @@ P_DIR_BTN = 0x0601      ; encoder DIRECCION: pulsado
 P_LED     = 0x0610      ; LED azul de a bordo
 P_T3      = 0x0623      ; temporizador 3 (8 ms/paso)
 P_SND_N   = 0x0632      ; nota MIDI a sonar (0 = silencio)
+P_PROG_LOAD = 0x0640     ; cargar slot (OUT nº de slot): salto a otro programa
 
 ; ============================================================================
 ;  ARRANQUE
@@ -53,7 +54,7 @@ start:
     CALL puts
     MOV BL,#lo(h_t2)
     MOV BH,#hi(h_t2)
-    MOV CL,#3
+    MOV CL,#4
     MOV CH,#2
     CALL puts
     MOV AL,#0
@@ -114,7 +115,9 @@ ms_x:
     OUT (P_LED),AL
     CALL clst
     CALL wait_dir_release
-    HALT
+    MOV AL,#0
+    OUT (P_PROG_LOAD),AL       ; vuelve al sistema (sisop, slot 0)
+    HALT                       ; solo si el slot 0 estuviera vacio (la carga no hace nada)
 
 ; --- mel_inc:  suma 1 a mel_lo/mel_hi propagando el acarreo a mano ---------
 mel_inc:
@@ -221,8 +224,8 @@ cur_note:   .space 1    ; nota MIDI de la entrada en curso (0 = silencio)
 cur_dur:    .space 1    ; duracion de la entrada en curso (ticks de ~24 ms)
 fwn_n:      .space 1    ; contador de frame_wait_n
 
-h_t1:       .asciiz "OBERTURA"
-h_t2:       .asciiz "GUILLERMO TELL"
+h_t1:       .asciiz "OVERTURE"
+h_t2:       .asciiz "WILLIAM TELL"
 
 ; --- melody:  pares (nota MIDI, duracion en ticks de ~24 ms); nota 0 =
 ; silencio, nota 0xFF = fin de la tabla (vuelve a sonar desde el principio).

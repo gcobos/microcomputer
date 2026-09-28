@@ -22,9 +22,7 @@ constexpr size_t kMemSize = 65536;
 // (en la clase) quedan inline. Requiere little-endian (bytes[0] = byte bajo
 // de words[0] = AL, ver Reg8 en isa.h): tanto el ESP32-C3 (RISC-V) como
 // cualquier maquina x86_64 donde se compile nativo (docs/firmware.md) lo
-// son. Verificado por fuerza bruta contra la version anterior (switch sobre
-// AX/BX/CX/DX con nombre propio) en las 65536 combinaciones de registro x
-// valor -- ver el historial de esta sesion.
+// son.
 struct Registers {
     union {
         uint16_t words[4];  // 0=AX 1=BX 2=CX 3=DX (orden de Reg16, isa.h)

@@ -4,9 +4,9 @@
 ;  Pantalla estatica que enseña, una fila por atributo, lo que hace cada bit
 ;  del banco de atributos de texto (0x0500..0x05FF, pegado a la rejilla de
 ;  texto en 0x0400..0x04FF -- ver docs/isa.md §8). El programa dibuja una vez
-;  y hace HALT: el parpadeo (bit ATTR_BLINK) lo sigue animando el firmware al
-;  refrescar la OLED (renderFramebuffer se llama igual con la CPU parada), asi
-;  que no hace falta ningun bucle.
+;  y espera una pulsacion (DIRECCION o DATOS) para volver al sistema (slot
+;  0). El parpadeo (bit ATTR_BLINK) lo anima el firmware al refrescar la
+;  OLED, asi que no hace falta ningun bucle de dibujo.
 ;
 ;  Filas:
 ;     0  titulo
@@ -34,6 +34,11 @@
     .slot 6
     .org 0x0000
 
+; --- puertos (ver ../docs/isa.md) -------------------------------------------
+P_DIR_BTN  = 0x0601     ; encoder DIRECCION: pulsado
+P_DAT_BTN  = 0x0603     ; encoder DATOS: pulsado
+P_PROG_LOAD = 0x0640    ; cargar slot (OUT nº de slot): salto a otro programa
+
 ; --- atributos (ver include/iomap.h) ----------------------------------------
 ATTR_INVERSE     = 0x01
 ATTR_BLINK       = 0x02
@@ -50,7 +55,26 @@ ATTR_ROT270      = 0xC0
 ; ============================================================================
 start:
     CALL draw
-    HALT
+    ; fin: espera a que se pulse DIRECCION o DATOS, espera a que se suelten
+    ; los dos (para que el sistema no vea la pulsacion como suya) y vuelve al
+    ; sistema (sisop, slot 0)
+wk_p:
+    IN  AL,(P_DIR_BTN)
+    CMP AL,#0
+    JMPNZ wk_r
+    IN  AL,(P_DAT_BTN)
+    CMP AL,#0
+    JMPZ wk_p
+wk_r:
+    IN  AL,(P_DIR_BTN)
+    CMP AL,#0
+    JMPNZ wk_r
+    IN  AL,(P_DAT_BTN)
+    CMP AL,#0
+    JMPNZ wk_r
+    MOV AL,#0
+    OUT (P_PROG_LOAD),AL       ; vuelve al sistema (sisop, slot 0)
+    HALT                       ; solo si el slot 0 estuviera vacio (la carga no hace nada)
 
 ; ============================================================================
 ;  DIBUJO (una sola vez)
@@ -218,11 +242,11 @@ set_cell:
 ; ============================================================================
 ;  DATOS
 ; ============================================================================
-s_title: .asciiz "ATRIBUTOS DE TEXTO"
-s_inv:   .asciiz "INVERSO"
-s_blk:   .asciiz "PARPADEA"
-s_und:   .asciiz "SUBRAYADO"
-s_str:   .asciiz "TACHADO"
+s_title: .asciiz "TEXT ATTRIBUTES"
+s_inv:   .asciiz "INVERSE"
+s_blk:   .asciiz "BLINK"
+s_und:   .asciiz "UNDERLINE"
+s_str:   .asciiz "STRIKE"
 s_r0:    .asciiz "0"
 s_r90:   .asciiz "90"
 s_r180:  .asciiz "180"

@@ -145,16 +145,14 @@ periféricos va en `0x06xx`.
 - **Atributos de texto**: puertos `0x0500..0x05FF`, misma disposición que el
   texto (`attrIndex()` mapea a `g_attr[fila*21+col]`; `attrPort()`/`ATTR_*` en
   `iomap.h`, ver `docs/isa.md` §8 para el significado de cada bit). Va pegado
-  a `0x0400..0x04FF`; encoders/LED/temporizadores/sonido se desplazaron en
-  bloque a `0x0600+` para dejarle el hueco.
+  a `0x0400..0x04FF`.
   `renderFramebuffer(g_fb, g_text, g_attr, halted)` compone: blit del
   framebuffer + `drawTextCell()` (display.cpp) por celda no nula, aplicando
   sus atributos, + overlay "HALT". `drawTextCell()` no usa
   `Adafruit_GFX::drawChar()`: esa función no rota un carácter por separado
   (solo la pantalla entera), así que recorre `font5x7.h` píxel a píxel para
-  poder rotarlo, desplazarlo (sub/superíndice) e invertirlo. Con
-  atributos a 0 el resultado es idéntico, píxel a píxel, al `drawChar` de
-  antes.
+  poder rotarlo, desplazarlo (sub/superíndice) e invertirlo. Con atributos a
+  0 el resultado es idéntico, píxel a píxel, al de un `drawChar()` normal.
 - **Encoders** (solo `IN`): `PORT_DIR_POS` 0x0600 / `PORT_DAT_POS` 0x0602 =
   posición absoluta (0–255, envuelve); `PORT_DIR_BTN` 0x0601 / `PORT_DAT_BTN`
   0x0603 = bit 0 = pulsador.
@@ -182,6 +180,18 @@ periféricos va en `0x06xx`.
   `tone`/`noTone` y (re)arma `g_sndOffAt`. `tickSound()` aplica el auto-apagado
   en `ExecCont`; `resetSound()` calla y pone los 4 registros a 0. Se silencia
   también al salir de `ExecCont` y al `HALT` (`if (g_sndHz) sndApply(0)`).
+- **Carga y grabado de programas** (`OUT`/`IN`): `PORT_PROG_LOAD` 0x0640 y
+  `PORT_PROG_SAVE` 0x0641, sobre los mismos 60 slots de la flash que usan el
+  panel y el provisioning por USB. `OUT 0x0640, n` = `flash.loadProgram(n,
+  cpu.ram())` + `cpu.reset()` + `clearRuntimeOutputs()` (pantalla, LED, sonido,
+  temporizadores y encoders a 0): un salto a otro programa, sin vuelta atrás.
+  `OUT 0x0641, n` = `flash.saveProgram(n, cpu.ram())` y el programa sigue
+  ejecutándose (~1 s bloqueado mientras graba). Slot vacío o ≥ 60: no hace
+  nada. `IN` de cada uno devuelve 1 si el ÚLTIMO intento falló (`g_lastLoadOk`/
+  `g_lastSaveOk` guardan el éxito; la lectura tiene sentido tras un fallo,
+  porque tras una carga correcta ya no corre el programa que la pidió).
+  El slot 0 se carga solo al encender (ver `setup()`), pensado para un
+  "sistema operativo" (`programs/sisop.asm`) que arranque los demás.
 - `main` fija `cpu.setPortRead(portRead)` y `cpu.setPortWrite(portWrite)`.
   Los contadores de posición viven en `FrontPanel`.
 
@@ -196,11 +206,24 @@ puerto serie (115200 baudios). Dos protocolos, simétricos:
   + `<len>` bytes a trozos de `COMPI_CHUNK` (1024), con eco `"COMPI CHUNK
   <n>"` por bloque -- necesario porque la cola de RECEPCIÓN del USB-CDC
   nativo del C3 es de solo 256 B por defecto y descarta en silencio si se
-  llena. Escribe directo en `cpu.ram()` y de ahí a `flash.saveProgram()`.
+  llena. Escribe en `g_provisionBuf` (búfer de 64 KiB dedicado) y de ahí a
+  `flash.saveProgram()`.
 - **DUMP** (aparato → host, `provisionDump()`): `"COMPI DUMP <slot>
   [<len>]\n"` (`<len>` opcional, por defecto `PROGRAM_SIZE`) → lee el slot
-  con `flash.loadProgram()` y lo manda de un tirón (`Serial.write()`, sin
-  trocear: para ENVIAR no hay el problema de cola pequeña de LOAD).
+  con `flash.loadProgram()` en `g_provisionBuf` y lo manda de un tirón
+  (`Serial.write()`, sin trocear: para ENVIAR no hay el problema de cola
+  pequeña de LOAD).
+
+`g_provisionBuf` es un búfer aparte de `cpu.ram()` a propósito: antes,
+LOAD/DUMP reutilizaban la RAM de la CPU emulada como scratch, así que mandar
+o pedir CUALQUIER slot por USB borraba y paraba lo que estuviera corriendo
+en ese momento, aunque fuera un slot distinto del transmitido. Con el búfer
+dedicado, ninguna de las dos toca `cpu`/`running`/`ui`: un programa en
+`ExecCont` sigue corriendo sin enterarse. `forceRedraw()` (pone
+`g_forceRender=true` y `lastFlush=0`) se llama al terminar cada una para que
+el mensaje transitorio de `oled.message()` ("RECEIVING...", "WRITING slot
+NN") no se quede colgado en pantalla -- se pinta directo al panel, sin pasar
+por `g_fb`/`oled.render()`.
 
 Las dos terminan con `"COMPI OK <sum>"` (checksum de los bytes) o `"COMPI
 ERR <motivo>"`. Detalle completo del protocolo: `specs.txt` §7. Herramientas

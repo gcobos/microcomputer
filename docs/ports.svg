@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1050" font-family="'Segoe UI',system-ui,sans-serif">
-  <rect x="0" y="0" width="1260" height="1050" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1142" font-family="'Segoe UI',system-ui,sans-serif">
+  <rect x="0" y="0" width="1260" height="1142" fill="#ffffff"/>
   <style>
     .ttl   { font-size:18px; font-weight:700; fill:#0f172a; }
     .sub   { font-size:12px; fill:#475569; }
@@ -19,7 +19,7 @@
 
   <!-- ================= columna: espacio completo ================= -->
   <text x="70" y="96" class="grp">Espacio completo</text>
-  <rect x="70" y="110" width="150" height="860" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <rect x="70" y="110" width="150" height="952" fill="#f1f5f9" stroke="#cbd5e1"/>
   <!-- pantalla: graficos -->
   <rect x="70" y="110" width="150" height="130" fill="#dbeafe" stroke="#0969da"/>
   <text x="145" y="162" text-anchor="middle" class="nm" fill="#0969da">GRÁFICOS</text>
@@ -40,7 +40,7 @@
   <text x="62" y="245" text-anchor="end" class="adr">0x0400</text>
   <text x="62" y="285" text-anchor="end" class="adr">0x0500</text>
   <text x="62" y="332" text-anchor="end" class="adr">0x0600</text>
-  <text x="62" y="967" text-anchor="end" class="adr">0xFFFF</text>
+  <text x="62" y="1059" text-anchor="end" class="adr">0xFFFF</text>
   <text x="228" y="200" class="cap">PANTALLA</text>
   <text x="228" y="214" class="cap">(gráficos + texto</text>
   <text x="228" y="228" class="cap">+ atributos van</text>
@@ -143,6 +143,18 @@
     <text x="752" y="674" class="fn">duración automática = valor · 10 ms, luego se calla sola (0 = sostenida; "pegajosa")</text>
   </g>
 
+  <!-- CARGA Y GRABADO DE PROGRAMAS -->
+  <rect x="360" y="692" width="6" height="84" fill="#7c3aed"/>
+  <text x="372" y="705" class="grp" fill="#6d28d9">PROGRAMAS  ·  cargar y grabar slots de la flash (0–59)</text>
+  <text x="372" y="726" class="adr">0x0640</text><text x="520" y="726" class="nm">PORT_PROG_LOAD</text>
+  <rect x="696" y="716" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="726" class="ac">IO</text>
+  <text x="752" y="726" class="fn">OUT nº de slot → carga esa imagen en la RAM y reinicia la CPU (salto sin vuelta)</text>
+  <text x="752" y="744" class="fn">apaga pantalla/LED/sonido · slot vacío o ≥ 60: nada · IN = 1 si falló el último intento</text>
+  <text x="372" y="766" class="adr">0x0641</text><text x="520" y="766" class="nm">PORT_PROG_SAVE</text>
+  <rect x="696" y="756" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="766" class="ac">IO</text>
+  <text x="752" y="766" class="fn">OUT nº de slot → graba la RAM actual ahí y SIGUE ejecutando · IN = 1 si falló</text>
+
+  <g transform="translate(0,92)">
   <!-- resto -->
   <rect x="360" y="692" width="6" height="20" fill="#cbd5e1"/>
   <text x="372" y="706" class="adr">resto</text>
@@ -176,5 +188,6 @@
   <text x="820" y="958" class="mono">HALT</text>
   <text x="820" y="982" class="cap">se calla sola a los 100 ms</text>
 
-  <text x="40" y="1030" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8 e include/iomap.h</text>
+  </g>
+  <text x="40" y="1122" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8 e include/iomap.h</text>
 </svg>

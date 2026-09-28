@@ -3,45 +3,58 @@
 ;                (compi) -- pensado para poner a prueba la CPU emulada
 ;
 ;  Una carretera que se ve en perspectiva (fila 32..63 de la pantalla: cuanto
-;  mas abajo, mas cerca y mas ancha) con curvas que van cambiando solas, una
+;  mas abajo, mas cerca y mas ancha -- bastante mas ancha abajo del todo que
+;  arriba, para poder maniobrar) con curvas que van cambiando solas, una
 ;  nave que el jugador dirige, y obstaculos que bajan por la carretera y hay
-;  que esquivar. Musica de fondo por el zumbador. Doble buffer por software
-;  (como cubo.asm/pong.asm) para que no parpadee.
+;  que esquivar. Doble buffer por software (como cubo.asm/pong.asm) para que
+;  no parpadee.
 ;
 ;  MANEJO (en EJECUTAR + CONTINUO):
 ;     encoder DIRECCION (izquierdo) gira  -> dirige la nave (izq/dcha)
 ;     encoder DATOS      (derecho)  gira  -> acelerador (1..4, mas obstaculos
 ;                                            por segundo cuanto mas alto)
-;     encoder DIRECCION pulsa -> dispara (mata el obstaculo que alcance)
-;     encoder DATOS     pulsa -> salta (esquiva automaticamente el obstaculo
+;     encoder DIRECCION pulsa -> salta (esquiva automaticamente el obstaculo
 ;                                        que llegue mientras dura el salto)
+;     encoder DATOS     pulsa -> dispara (mata el obstaculo que alcance)
 ;     cualquier pulsador, en la pantalla de titulo o de "GAME OVER" -> empieza
 ;
 ;  COMO FUNCIONA LA CARRETERA (sin multiplicacion real, la CPU no tiene MUL):
 ;     - road_width[fila]: tabla fija (32 bytes), el ancho de la carretera en
 ;       cada una de las 32 filas (0=horizonte, 31=mas cerca). Se calculo una
-;       vez en Python (progresion lineal) y se guarda como datos.
+;       vez en Python (curva, no progresion lineal: crece poco a poco cerca
+;       del horizonte y mucho mas deprisa cerca de la nave -- de 6 px en la
+;       fila 0 a 100 px en la fila 31 -- para que la parte de abajo, donde de
+;       verdad hace falta maniobrar para esquivar, sea bastante mas ancha).
 ;     - row_center_cache[fila]: el centro (X) de cada fila, pero esta vez es
 ;       una tabla PERSISTENTE (no se recalcula desde cero cada fotograma):
 ;       cada vuelta del bucle, `scroll_road` la desplaza una posicion hacia
 ;       la camara (fila[i] = fila[i-1], de la 31 a la 1) e inyecta un valor
 ;       nuevo en la fila 0 (el horizonte), moviendolo `curve_slope` (con
-;       signo, -2..+2) respecto al que tenia. Como ese valor tarda ~31
-;       vueltas en "llegar" hasta la fila del jugador, una curva se ve venir
-;       desde lejos en vez de aparecer de golpe -- igual que en un juego de
-;       coches de verdad. `curve_slope` en si cambia muy despacio (un paso
-;       hacia un objetivo elegido al azar cada rato).
+;       signo, -2..+2) respecto al que tenia -- y esto se repite `speed`
+;       veces por vuelta (no una sola), para que la carretera "avance" al
+;       mismo ritmo (en filas por vuelta) que los obstaculos y los arboles:
+;       si no, a velocidad alta los obstaculos saltaban varias filas de golpe
+;       mientras la curva solo se desplazaba una, y se veian ir en linea
+;       recta sobre una carretera que curvaba por debajo de ellos. Como cada
+;       valor nuevo tarda ~31 filas en "llegar" hasta la fila del jugador,
+;       una curva se ve venir desde lejos en vez de aparecer de golpe --
+;       igual que en un juego de coches de verdad. `curve_slope` en si
+;       cambia muy despacio (un paso hacia un objetivo elegido al azar cada
+;       rato), independiente de `speed`.
 ;     - draw_road solo LEE row_center_cache fila a fila para dibujar los dos
 ;       bordes; los obstaculos (que "viven" en una fila concreta) la usan
-;       igual para saber donde esta el centro de SU fila sin recalcular nada.
+;       igual para saber donde esta el centro de SU fila sin recalcular nada
+;       -- y ahora que scroll_road avanza al mismo ritmo que ellos, ese
+;       centro es siempre el que de verdad les toca, así que curvan con la
+;       carretera en vez de atravesarla en línea recta.
 ;     - Los obstaculos van en uno de 3 carriles (izquierda/centro/derecha),
 ;       como offset de +-ancho/4 respecto al centro de su fila -- de nuevo,
 ;       ancho/4 es un simple SHR SHR, no una multiplicacion.
-;     - Fuera de los bordes, cada 4 filas, se dibuja un arbolito (alterna
-;       bajo/alto). Esas filas se calculan como (fila - tree_scroll) mod 4,
-;       y `tree_scroll` avanza `speed` unidades cada vuelta -- los arbolitos
-;       "fluyen" hacia la camara igual que la carretera, dando sensacion de
-;       movimiento (antes eran siempre las mismas 8 filas fijas).
+;     - Fuera de los bordes, cada 4 filas, se dibuja un pino de verdad (tronco
+;       + copa triangular), alternando uno pequeño y uno grande. Esas filas
+;       se calculan como (fila - tree_scroll) mod 4, y `tree_scroll` avanza
+;       `speed` unidades cada vuelta -- los pinos "fluyen" hacia la camara
+;       igual que la carretera, dando sensacion de movimiento.
 ;     - Si la nave llega a tocar un borde (el "clamping" de control_ship
 ;       tiene que corregirla), `speed` se resetea a SPEED_MIN de golpe: no
 ;       pierdes una vida, pero vas lento hasta que aceleras otra vez a mano
@@ -59,32 +72,30 @@
 ;       ella, como en un juego de coches de verdad.
 ;
 ;  ARMAS:
-;     - Disparo (boton DIRECCION): sale de la nave y viaja hacia el horizonte
+;     - Salto (boton DIRECCION): `jump_active` cuenta atras JUMP_TICKS vueltas;
+;       mientras dura, cualquier obstaculo que llegue a la fila de la nave se
+;       esquiva automaticamente (sin comprobar carril) y la nave se dibuja
+;       JUMP_RISE pixeles mas arriba, para que se note que esta en el aire.
+;     - Disparo (boton DATOS): sale de la nave y viaja hacia el horizonte
 ;       (SHOT_SPEED filas por vuelta, mas rapido que cualquier obstaculo).
 ;       Si pasa cerca de un obstaculo activo (misma comprobacion de distancia
 ;       que un choque), lo destruye y suma un punto. Solo un disparo a la vez
 ;       (hay que esperar a que acierte o llegue al horizonte para poder
 ;       disparar otra vez).
-;     - Salto (boton DATOS): `jump_active` cuenta atras JUMP_TICKS vueltas;
-;       mientras dura, cualquier obstaculo que llegue a la fila de la nave se
-;       esquiva automaticamente (sin comprobar carril) y la nave se dibuja
-;       JUMP_RISE pixeles mas arriba, para que se note que esta en el aire.
 ;
 ;  SEGURIDAD DE RANGO: cualquier coordenada X que se salga de 0..127 (por
-;  ejemplo si la curva es muy pronunciada varias filas seguidas) tiene el bit
-;  7 puesto; `plot` comprueba ese bit y simplemente no dibuja ese pixel en vez
-;  de arriesgarse a que `calc_pix` calcule un puerto invalido (ver el aviso de
-;  calc_pix en programs/cubo.asm). Ademas, `row_center_cache[0]` (el horizonte,
-;  el unico sitio donde se inyectan valores nuevos) se mantiene siempre dentro
-;  de [35,92] en `scroll_road`, asi que en la practica nunca hace falta.
+;  ejemplo si la curva es muy pronunciada varias filas seguidas, o -- ahora
+;  que la fila 31 es mucho mas ancha -- si un borde se sale de pantalla con
+;  una curva fuerte) tiene el bit 7 puesto; `plot` comprueba ese bit y
+;  simplemente no dibuja ese pixel en vez de arriesgarse a que `calc_pix`
+;  calcule un puerto invalido (ver el aviso de calc_pix en programs/cubo.asm).
+;  Ademas, `row_center_cache[0]` (el horizonte, el unico sitio donde se
+;  inyectan valores nuevos) se mantiene siempre dentro de [35,92] en cada
+;  paso de `scroll_road`.
 ;
-;  SONIDO: la mayor parte del tiempo suena un zumbido de motor cuya frecuencia
-;  depende de `speed` (mas rapido = mas agudo), con un ligero temblor de
-;  +-8 Hz cada vuelta para que no sea un pitido plano. Cada MUSIC_PERIOD
-;  vueltas ese zumbido se interrumpe un instante para tocar una nota de un
-;  riff corto y energico (PORT_SND_NOTE), y a la vuelta siguiente el motor
-;  retoma el canal -- el zumbador es monofonico, asi que no pueden sonar los
-;  dos a la vez, pero turnandose se nota tanto el motor como la musica.
+;  SONIDO: solo pitidos cortos y puntuales (PORT_SND_NOTE) al disparar, al
+;  acertar un disparo y al chocar -- sin zumbido de motor de fondo ni musica
+;  continua (resultaban molestos).
 ;
 ;  Ensamblar y enviar al slot 7:
 ;     python3 tools/casm.py programs/fzero.asm -o programs/fzero.bin
@@ -102,9 +113,7 @@ P_DIR_BTN = 0x0601
 P_DAT_POS = 0x0602
 P_DAT_BTN = 0x0603
 P_T3      = 0x0623      ; ritmo del bucle de juego (8 ms/paso)
-P_SND_FREQ_LO = 0x0630
-P_SND_FREQ_HI = 0x0631
-P_SND_NOTE = 0x0632
+P_SND_NOTE = 0x0632      ; pitidos cortos (disparo/choque/impacto), ver iomap.h
 P_SND_DUR  = 0x0633
 
 ; --- constantes de juego -----------------------------------------------------
@@ -117,9 +126,7 @@ LIVES_START  = 3
 INVULN_TICKS = 15
 SPAWN_PERIOD = 12
 CURVE_PERIOD = 45
-MUSIC_PERIOD = 10        ; vueltas de zumbido de motor entre cada nota del riff
 TICK_STEPS   = 15        ; pasos de P_T3 (8 ms) por vuelta del bucle -> 120 ms/vuelta
-MELODY_LEN   = 8
 SHIP_PIX_LEN = 21
 OBST_PIX_LEN = 5
 SHIP_BASE_Y  = 61        ; fila de referencia (dy=0) de SHIP_PIX
@@ -195,9 +202,6 @@ game_init:
     STA [curve_slope],AL
     STA [curve_target],AL
     STA [invuln],AL
-    STA [melody_i],AL
-    STA [music_countdown],AL
-    STA [engine_phase],AL
     STA [tree_scroll],AL
     STA [ship_lane],AL
     STA [shot_active],AL
@@ -255,7 +259,6 @@ game_l:
     CALL control_ship
     CALL control_weapons
     CALL update_curve
-    CALL update_sound
     CALL try_spawn
     CALL tick_invuln
     CALL tick_jump
@@ -445,9 +448,9 @@ cs_done:
     RET
 
 ; ============================================================================
-;  control_weapons: flanco de subida del boton DIRECCION -> dispara (si no
-;  hay ya un disparo en el aire); flanco de subida del boton DATOS -> salta
-;  (si no se esta saltando ya). Reutiliza dir_btn_prev/dat_btn_prev, las
+;  control_weapons: flanco de subida del boton DIRECCION -> salta (si no se
+;  esta saltando ya); flanco de subida del boton DATOS -> dispara (si no hay
+;  ya un disparo en el aire). Reutiliza dir_btn_prev/dat_btn_prev, las
 ;  mismas variables que read_start_press usa en las pantallas de titulo/fin
 ;  de partida -- no hace falta reiniciarlas al entrar en game_init, siguen
 ;  reflejando el ultimo estado real leido de los pulsadores.
@@ -458,6 +461,22 @@ control_weapons:
     LDA BL,[dir_btn_prev]
     LDA CL,[tmp0]
     STA [dir_btn_prev],CL
+    CMP CL,#0
+    JMPZ cw_jump_done
+    CMP BL,#0
+    JMPNZ cw_jump_done           ; ya estaba pulsado -> no es flanco
+    LDA AL,[jump_active]
+    CMP AL,#0
+    JMPNZ cw_jump_done           ; ya esta saltando
+    MOV AL,#JUMP_TICKS
+    STA [jump_active],AL
+cw_jump_done:
+
+    IN  AL,(P_DAT_BTN)
+    STA [tmp0],AL
+    LDA BL,[dat_btn_prev]
+    LDA CL,[tmp0]
+    STA [dat_btn_prev],CL
     CMP CL,#0
     JMPZ cw_fire_done
     CMP BL,#0
@@ -471,27 +490,11 @@ control_weapons:
     STA [shot_row],AL
     LDA AL,[ship_x]
     STA [shot_x],AL
-    MOV AL,#69
-    OUT (P_SND_NOTE),AL
-    MOV AL,#4
-    OUT (P_SND_DUR),AL
+    MOV AL,#4                ; PRIMERO la duracion: PORT_SND_DUR es "pegajoso"
+    OUT (P_SND_DUR),AL       ; (arma la duracion de la SIGUIENTE nota que
+    MOV AL,#69               ; suene) -- escrito despues de NOTE, este pitido
+    OUT (P_SND_NOTE),AL      ; sonaria sostenido hasta el siguiente sonido
 cw_fire_done:
-
-    IN  AL,(P_DAT_BTN)
-    STA [tmp0],AL
-    LDA BL,[dat_btn_prev]
-    LDA CL,[tmp0]
-    STA [dat_btn_prev],CL
-    CMP CL,#0
-    JMPZ cw_jump_done
-    CMP BL,#0
-    JMPNZ cw_jump_done
-    LDA AL,[jump_active]
-    CMP AL,#0
-    JMPNZ cw_jump_done           ; ya esta saltando
-    MOV AL,#JUMP_TICKS
-    STA [jump_active],AL
-cw_jump_done:
     RET
 
 ; ============================================================================
@@ -534,76 +537,6 @@ uc_inc:
     ADD AL,#1
     STA [curve_slope],AL
 uc_done:
-    RET
-
-; ============================================================================
-;  update_sound: casi siempre alimenta un zumbido de motor cuya frecuencia
-;  depende de `speed` (engine_freq_lo/hi, indexadas por speed); cada
-;  MUSIC_PERIOD vueltas lo interrumpe un instante para tocar la siguiente
-;  nota de un riff corto (PORT_SND_NOTE) -- el zumbador es monofonico, asi
-;  que turnan el mismo canal en vez de sonar a la vez.
-; ============================================================================
-update_sound:
-    LDA AL,[music_countdown]
-    CMP AL,#0
-    JMPNZ us_engine
-
-    MOV AL,#MUSIC_PERIOD
-    STA [music_countdown],AL
-
-    LDA AL,[melody_i]
-    ADD AL,#1
-    CMP AL,#MELODY_LEN
-    JMPNZ us_idx_ok
-    MOV AL,#0
-us_idx_ok:
-    STA [melody_i],AL
-
-    MOV CL,AL
-    MOV BL,#lo(melody_notes)
-    MOV BH,#hi(melody_notes)
-    CALL idx_ptr
-    LDA AL,[BX]
-    OUT (P_SND_NOTE),AL
-
-    LDA CL,[melody_i]
-    MOV BL,#lo(melody_durs)
-    MOV BH,#hi(melody_durs)
-    CALL idx_ptr
-    LDA AL,[BX]
-    OUT (P_SND_DUR),AL
-    RET
-
-us_engine:
-    SUB AL,#1
-    STA [music_countdown],AL
-
-    LDA CL,[speed]
-    MOV BL,#lo(engine_freq_lo)
-    MOV BH,#hi(engine_freq_lo)
-    CALL idx_ptr
-    LDA AL,[BX]
-    STA [tmp0],AL
-
-    ; tiembla +-8 Hz cada vuelta (alterna) para que suene a motor, no a pitido
-    LDA AL,[engine_phase]
-    XOR AL,#1
-    STA [engine_phase],AL
-    CMP AL,#0
-    JMPZ us_no_jitter
-    LDA AL,[tmp0]
-    ADD AL,#8
-    STA [tmp0],AL
-us_no_jitter:
-    LDA AL,[tmp0]
-    OUT (P_SND_FREQ_LO),AL
-
-    LDA CL,[speed]
-    MOV BL,#lo(engine_freq_hi)
-    MOV BH,#hi(engine_freq_hi)
-    CALL idx_ptr
-    LDA AL,[BX]
-    OUT (P_SND_FREQ_HI),AL
     RET
 
 ; ============================================================================
@@ -714,15 +647,41 @@ us2_done:
     RET
 
 ; ============================================================================
-;  scroll_road: desplaza row_center_cache[31..1] = row_center_cache[30..0] (la
-;  carretera "avanza" hacia la camara) e inyecta un valor nuevo en la fila 0
-;  (el horizonte), moviendolo curve_slope respecto al que tenia -- ver la nota
-;  de la cabecera. Se llama una vez por vuelta, antes de draw_road.
+;  scroll_road: repite scroll_road_once `speed` veces por vuelta (ver su
+;  comentario: los obstaculos avanzan `speed` filas/vuelta, asi que la
+;  carretera tiene que "avanzar" al mismo ritmo o dejan de curvar con ella),
+;  y luego hace avanzar tree_scroll una sola vez. Se llama una vez por
+;  vuelta, antes de draw_road.
 ; ============================================================================
 scroll_road:
+    LDA AL,[speed]
+    STA [scroll_n],AL
+sr_outer:
+    LDA AL,[scroll_n]
+    CMP AL,#0
+    JMPZ sr_outer_done
+    CALL scroll_road_once
+    LDA AL,[scroll_n]
+    SUB AL,#1
+    STA [scroll_n],AL
+    JMP sr_outer
+sr_outer_done:
+    ; los arbustos del arcen "fluyen" al mismo ritmo que se avanza
+    LDA AL,[tree_scroll]
+    LDA BL,[speed]
+    ADD AL,BL
+    STA [tree_scroll],AL
+    RET
+
+; --- scroll_road_once: UN paso de lo de arriba -- desplaza
+; row_center_cache[31..1] = row_center_cache[30..0] (la carretera "avanza"
+; una fila hacia la camara) e inyecta un valor nuevo en la fila 0 (el
+; horizonte), moviendolo curve_slope respecto al que tenia -- ver la nota de
+; la cabecera. --------------------------------------------------------------
+scroll_road_once:
     MOV AL,#31
     STA [row_i],AL
-sr_l:
+sro_l:
     LDA AL,[row_i]
     SUB AL,#1
     MOV CL,AL
@@ -742,27 +701,21 @@ sr_l:
     LDA AL,[row_i]
     SUB AL,#1
     STA [row_i],AL
-    JMPZ sr_done                  ; row_i llego a 0 -> ya copiamos [0]->[1]
-    JMP sr_l
-sr_done:
+    JMPZ sro_done                 ; row_i llego a 0 -> ya copiamos [0]->[1]
+    JMP sro_l
+sro_done:
     LDA AL,[row_center_cache]
     LDA BL,[curve_slope]
     ADD AL,BL
     CMP AL,#35
-    JMPNC sr_min_ok
+    JMPNC sro_min_ok
     MOV AL,#35
-sr_min_ok:
+sro_min_ok:
     CMP AL,#92
-    JMPC sr_max_ok
+    JMPC sro_max_ok
     MOV AL,#92
-sr_max_ok:
+sro_max_ok:
     STA [row_center_cache],AL
-
-    ; los arbustos del arcen "fluyen" al mismo ritmo que se avanza
-    LDA AL,[tree_scroll]
-    LDA BL,[speed]
-    ADD AL,BL
-    STA [tree_scroll],AL
     RET
 
 ; ============================================================================
@@ -812,11 +765,11 @@ dr_l:
     STA [px_x],AL
     CALL plot
 
-    ; arbolitos en el arcen: (fila - tree_scroll) mod 4 == 0 -- tree_scroll
+    ; pinos en el arcen: (fila - tree_scroll) mod 4 == 0 -- tree_scroll
     ; avanza `speed` unidades cada vuelta (ver scroll_road), asi que el
     ; patron "fluye" hacia la camara para dar sensacion de movimiento.
-    ; Ademas alterna alto/bajo segun el numero de arbusto, para que se note
-    ; que son arbustos distintos y no una raya continua.
+    ; Ademas alterna pequeño/grande segun el numero de pino, para que se note
+    ; que son arboles distintos y no una hilera continua.
     LDA AL,[row_i]
     LDA BL,[tree_scroll]
     SUB AL,BL
@@ -827,7 +780,7 @@ dr_l:
     LDA AL,[tmp3]
     SHR AL,#2
     AND AL,#0x01
-    STA [tmp3],AL                 ; tmp3: 0 = arbusto bajo, 1 = arbusto alto
+    STA [tmp3],AL                 ; tmp3: 0 = pino pequeño, 1 = pino grande
 
     LDA AL,[edge_l]
     SUB AL,#4
@@ -858,27 +811,77 @@ dr_next:
     JMPNZ dr_l
     RET
 
-; --- draw_tree: dibuja un arbusto en (tree_x,tree_y); tmp3=1 lo hace de 3 px
-; de alto en vez de 1 (ver draw_road) ----------------------------------------
+; --- draw_tree: pino de verdad (copa triangular + tronco) con la base en
+; (tree_x,tree_y) -- tmp3=0 pequeño (punta + una fila de base, cabe cerca
+; del horizonte donde apenas hay hueco vertical), tmp3=1 grande (dos pisos
+; de copa mas ancha y un tronco, para las filas mas cercanas). Usa `tp` para
+; no repetir tree_x+desplazamiento en cada punto. ---------------------------
 draw_tree:
-    LDA AL,[tree_x]
-    STA [px_x],AL
-    LDA AL,[tree_y]
-    STA [px_y],AL
-    CALL plot
-
     LDA AL,[tmp3]
     CMP AL,#0
-    JMPZ dt_done
+    JMPNZ dt_big
+
     LDA AL,[tree_y]
     SUB AL,#1
     STA [px_y],AL
-    CALL plot
+    MOV DL,#0
+    CALL tp
+
     LDA AL,[tree_y]
-    ADD AL,#1
     STA [px_y],AL
+    MOV DL,#0xFF                  ; -1
+    CALL tp
+    MOV DL,#0
+    CALL tp
+    MOV DL,#1
+    CALL tp
+    RET
+
+dt_big:
+    LDA AL,[tree_y]
+    SUB AL,#3
+    STA [px_y],AL
+    MOV DL,#0
+    CALL tp
+
+    LDA AL,[tree_y]
+    SUB AL,#2
+    STA [px_y],AL
+    MOV DL,#0xFF                  ; -1
+    CALL tp
+    MOV DL,#0
+    CALL tp
+    MOV DL,#1
+    CALL tp
+
+    LDA AL,[tree_y]
+    SUB AL,#1
+    STA [px_y],AL
+    MOV DL,#0xFE                  ; -2
+    CALL tp
+    MOV DL,#0xFF
+    CALL tp
+    MOV DL,#0
+    CALL tp
+    MOV DL,#1
+    CALL tp
+    MOV DL,#2
+    CALL tp
+
+    LDA AL,[tree_y]
+    STA [px_y],AL
+    MOV DL,#0                     ; tronco
+    CALL tp
+    RET
+
+; --- tp: pinta (tree_x+DL, px_y) -- px_y ya puesto por el llamador, DL trae
+; el desplazamiento horizontal con signo. Solo la usa draw_tree, para no
+; repetir "tree_x + desplazamiento -> px_x -> plot" en cada punto ----------
+tp:
+    LDA AL,[tree_x]
+    ADD AL,DL
+    STA [px_x],AL
     CALL plot
-dt_done:
     RET
 
 ; ============================================================================
@@ -1169,10 +1172,10 @@ uo_shot_xabs:
     MOV AL,#1
     STA [score_dirty],AL
 uo_shot_score_ok:
+    MOV AL,#6                ; duracion primero (ver el aviso en cw_fire_done)
+    OUT (P_SND_DUR),AL
     MOV AL,#81
     OUT (P_SND_NOTE),AL
-    MOV AL,#6
-    OUT (P_SND_DUR),AL
     LDA CL,[obst_i]
     MOV BL,#lo(obst_active)
     MOV BH,#hi(obst_active)
@@ -1271,10 +1274,10 @@ uo_next:
 ;  on_collision: pita, y si no hay invulnerabilidad en curso resta una vida
 ; ============================================================================
 on_collision:
+    MOV AL,#18                ; duracion primero (ver el aviso en cw_fire_done)
+    OUT (P_SND_DUR),AL
     MOV AL,#36
     OUT (P_SND_NOTE),AL
-    MOV AL,#18
-    OUT (P_SND_DUR),AL
 
     LDA AL,[invuln]
     CMP AL,#0
@@ -1628,8 +1631,7 @@ curve_target:   .space 1
 curve_timer:    .space 1
 spawn_timer:    .space 1
 invuln:         .space 1
-melody_i:       .space 1
-music_countdown:.space 1
+scroll_n:       .space 1    ; ver scroll_road: cuantos pasos de curva le quedan
 dir_prev:       .space 1
 dat_prev:       .space 1
 dir_btn_prev:   .space 1
@@ -1652,7 +1654,6 @@ ship_lane:      .space 1
 tree_scroll:    .space 1
 tree_x:         .space 1
 tree_y:         .space 1
-engine_phase:   .space 1
 shot_active:    .space 1
 shot_row:       .space 1
 shot_x:         .space 1
@@ -1692,21 +1693,17 @@ mountain_h:
     .db 5, 8, 9, 8, 7, 6, 6, 7, 7, 5, 2, 1, 1, 3, 5, 6
     .db 5, 4, 5, 7, 9, 9, 8, 5, 3, 3, 4, 4, 3, 2, 1, 2
 
-; road_width[fila 0..31]: calculado en Python, 6 + fila*2
+; road_width[fila 0..31]: calculado en Python, 6 + round(94*(fila/31)^1.4) --
+; una curva, no una progresion lineal: crece poco cerca del horizonte y
+; mucho mas deprisa cerca de la nave (6 px en la fila 0, 100 px en la 31),
+; para que la parte de abajo -- donde de verdad hace falta maniobrar --
+; sea bastante mas ancha que con una progresion lineal simple.
 road_width:
-    .db 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36
-    .db 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68
+    .db 6,  7,  8,  10, 11, 13, 15, 18, 20, 23, 25, 28, 31, 34, 37, 40
+    .db 43, 47, 50, 53, 57, 60, 64, 68, 72, 76, 79, 83, 88, 92, 96, 100
 
 ; riff corto y energico (se repite cada MELODY_LEN notas): notas MIDI y
 ; duracion de PORT_SND_DUR (x10ms), cortas y con saltos para que suene vivo
-melody_notes: .db 76, 84, 79, 72, 76, 84, 79, 88
-melody_durs:  .db 4,  4,  4,  4,  4,  4,  4,  6
-
-; zumbido de motor: frecuencia (Hz, 16 bits) segun `speed` (1..4; el indice 0
-; no se usa nunca, SPEED_MIN=1) -- mas rapido = mas agudo
-engine_freq_lo: .db 0, 0x64, 0xA0, 0xF0, 0x54     ; 100, 160, 240, 340 Hz
-engine_freq_hi: .db 0, 0x00, 0x00, 0x00, 0x01
-
 ; SHIP_PIX: 21 pares (dx,dy) con signo, relativos a (ship_x, SHIP_BASE_Y) --
 ; una navecita en flecha con alas y llamas de motor
 ship_pix:
@@ -1722,12 +1719,12 @@ obst_pix:
     .db 0,0, 0,255, 0,1, 255,0, 1,0
 
 s_title: .asciiz "EXPRESS X-1"
-s_help1: .asciiz "ADDR GIRA, DATA GAS"
-s_help2: .asciiz "PULSA PARA EMPEZAR"
+s_help1: .asciiz "DIR TURNS, DAT GAS"
+s_help2: .asciiz "PRESS TO START"
 s_over:  .asciiz "GAME OVER"
-s_score: .asciiz "PUNTOS:"
+s_score: .asciiz "SCORE:"
 s_pts:   .asciiz "PTS:"
-s_vidas: .asciiz "VIDAS:"
+s_vidas: .asciiz "LIVES:"
 
 ; shadow: copia del framebuffer en RAM ("doble buffer" software, ver game_l).
 ; Va la ultima de todo: es un .space, nunca se le hace un .db/.asciiz de

@@ -58,6 +58,25 @@
 ;  pared o al llegar al limite de MAX_STEPS (la garantia de la cabecera
 ;  de arriba asegura que eso pasa siempre, dentro de ese limite).
 ;
+;  DOT_COUNT=10 "bolitas" recolectables estan repartidas por el mapa (una
+;  posicion fija por nivel, en el centro de una baldosa libre). Se ven y se
+;  dibujan con el MISMO mecanismo de "angulo relativo a facing -> columna de
+;  pantalla" que los proyectiles (calc_dot_angle, calculo de octante sin
+;  multiplicacion/trigonometria -- ver actualiza_dots), y se recogen sin mas
+;  que acercarse (distancia en pixeles por eje, igual criterio que el
+;  contacto del antiguo esqueleto). Al recoger la ultima bolita de un nivel,
+;  aparece "LEVEL PASSED!" con un jingle corto y se genera un nivel nuevo:
+;  no hay generacion de laberintos al vuelo (esta CPU no tiene division, y
+;  un backtracking recursivo como el de shamus.asm seria mucho para un
+;  bonus de este programa), asi que "nuevo" quiere decir el SIGUIENTE de
+;  MAP_COUNT=3 mapas prehechos (uno de ellos el original, dos mas nuevos,
+;  cada uno verificado en Python con el mismo criterio de "ningun rayo se
+;  queda sin chocar dentro de MAX_STEPS" que el mapa original, ver el aviso
+;  de la cabecera de arriba), en bucle (vuelve al primero tras el tercero).
+;  El mapa activo se copia de una tabla en ROM a un buffer en RAM (`mapa`)
+;  al cargar cada nivel (ver load_level); el resto del motor (es_pared,
+;  march_ray) no cambia nada, sigue leyendo siempre de `mapa`.
+;
 ;  El cielo lleva CLOUD_COUNT=8 nubes grandes, huecas y de lineas curvas
 ;  (el contorno de la union de varios circulos, con el interior vacio --
 ;  calculado una vez con Python, ver el comentario de cloud_shape_a/
@@ -121,6 +140,7 @@ P_T3       = 0x0623
 P_SND_FREQ_LO = 0x0630
 P_SND_FREQ_HI = 0x0631
 P_SND_NOTE    = 0x0632
+P_SND_DUR     = 0x0633
 
 ; --- geometria / constantes --------------------------------------------------
 FOV_RAYS   = 32          ; rayos por fotograma = franjas de 4 px (32*4=128)
@@ -142,6 +162,25 @@ PROJ_SIZE_T3    = 15     ; pasos < T3  -> pequeno        (1 fila, nibble entero)
 SND_FREQ_START  = 900    ; Hz al disparar
 SND_FREQ_STEP   = 90     ; Hz que baja cada fotograma
 SND_SWEEP_FRAMES = 9     ; fotogramas que dura el silbido
+
+; --- bolitas recolectables: DOT_COUNT posiciones fijas por nivel (ver la
+; cabecera de arriba). Se ven/dibujan con el mismo mecanismo de "angulo
+; relativo a facing -> columna de pantalla" que los proyectiles (ver
+; apr_vis), pero su angulo se RECALCULA cada fotograma a partir de la
+; posicion relativa jugador/bolita con calc_dot_angle -- la misma
+; clasificacion en 8 octantes sin multiplicacion ni trigonometria que usaba
+; el enemigo de la version anterior de este programa.
+DOT_COUNT           = 10    ; bolitas por nivel
+DOT_TOUCH_DIST      = 10    ; distancia (px, por eje) para recogerla -- NO
+                             ; la misma baldosa (16x16): igual criterio que
+                             ; usaba el contacto del enemigo, mas generoso
+DOT_ROW             = 40    ; fila donde se dibuja cada bolita (altura de
+                             ; "el suelo", por debajo de la de los ojos)
+MAP_COUNT           = 3     ; niveles prehechos, en bucle (ver load_level)
+; pitido corto al recoger una bolita (mismo mecanismo de silbido que
+; dispara, reutilizando snd_timer/snd_freq_* -- un solo canal):
+DOT_PICK_FREQ_START   = 1500
+DOT_PICK_SWEEP_FRAMES = 4
 
 ; --- cielo: nubes grandes, huecas y curvas, con deriva propia ----------------
 CLOUD_COUNT        = 8   ; numero de nubes
@@ -170,12 +209,12 @@ start:
     CALL frame_wait
     CALL clst
 
-    MOV AL,#136            ; jugador: baldosa (8,2), zona abierta del mapa
-    STA [player_x],AL
-    MOV AL,#40
-    STA [player_y],AL
     MOV AL,#0
-    STA [facing],AL
+    STA [map_idx],AL
+    CALL load_level         ; posiciona al jugador y puebla mapa/bolitas
+                              ; del nivel 0 (ver load_level)
+
+    MOV AL,#0
     STA [proj_active],AL
     STA [proj_active+1],AL
     STA [proj_active+2],AL
@@ -203,6 +242,7 @@ main_l:
     CALL leer_avance
     CALL leer_disparo
     CALL actualiza_proyectil
+    CALL actualiza_dots
     CALL actualiza_sonido
     CALL actualiza_nubes
 
@@ -272,6 +312,45 @@ ray_proj_next:
     STA [proj_i],AL
     CMP AL,#PROJ_COUNT
     JMPNZ ray_proj_loop
+
+    ; cada bolita activa y visible cae en una unica columna (su propio
+    ; [dot_rayi]) -- mismo criterio de profundidad "mas lejos primero, mas
+    ; cerca despues" que los proyectiles de arriba (ver actualiza_dots para
+    ; [dot_vis]/[dot_rayi]/[dot_steps_arr], recalculados una vez por
+    ; fotograma antes de este bucle, no columna a columna)
+    MOV AL,#0
+    STA [dot_i],AL
+ray_dot_loop:
+    MOV BL,#lo(dot_vis)
+    MOV BH,#hi(dot_vis)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPZ ray_dot_next
+    MOV BL,#lo(dot_rayi)
+    MOV BH,#hi(dot_rayi)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[ray_i]
+    CMP AL,BL
+    JMPNZ ray_dot_next
+    MOV BL,#lo(dot_steps_arr)
+    MOV BH,#hi(dot_steps_arr)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[dist]
+    CMP AL,BL
+    JMPNC ray_dot_next      ; dot_steps >= dist -> la pared esta delante
+    CALL dibuja_dot
+ray_dot_next:
+    LDA AL,[dot_i]
+    ADD AL,#1
+    STA [dot_i],AL
+    CMP AL,#DOT_COUNT
+    JMPNZ ray_dot_loop
 
     LDA AL,[ray_i]
     ADD AL,#1
@@ -571,6 +650,8 @@ apr_loop:
     SHR AL,#4
     MOV CH,AL
     LDA CL,[apr_tx]
+
+apr_chk_wall:
     CALL es_pared
     CMP AL,#0
     JMPNZ apr_stop
@@ -722,6 +803,447 @@ proj_row_common:
     AND AL,DL
     STA [BX],AL
     RET
+
+; ============================================================================
+;  BOLITAS RECOLECTABLES: DOT_COUNT posiciones fijas por nivel (ver la
+;  cabecera de constantes). Cada fotograma se recalcula su angulo/
+;  visibilidad/distancia respecto al jugador (calc_dot_angle, igual
+;  clasificacion en 8 octantes que usaba el enemigo de la version anterior
+;  de este programa) y se comprueba si el jugador la ha recogido.
+; ============================================================================
+
+; --- actualiza_dots: punto de entrada, llamado una vez por fotograma desde
+; main_l -- para cada bolita activa: calcula su angulo/distancia respecto
+; al jugador, la recoge si esta lo bastante cerca (y arranca level_passed
+; si era la ultima) y, si no, guarda su visibilidad/columna/distancia de
+; este fotograma en los arrays dot_vis/dot_rayi/dot_steps_arr para que
+; ray_loop (mas arriba) sepa si dibujarla en cada columna -----------------
+actualiza_dots:
+    MOV AL,#0
+    STA [dot_i],AL
+ad_loop:
+    MOV BL,#lo(dot_active)
+    MOV BH,#hi(dot_active)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPZ ad_mark_invis      ; inactiva (ya recogida) -- no se dibuja
+
+    MOV BL,#lo(dot_x)
+    MOV BH,#hi(dot_x)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [cur_dot_x],AL
+    MOV BL,#lo(dot_y)
+    MOV BH,#hi(dot_y)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [cur_dot_y],AL
+
+    CALL calc_dot_deltas     ; -> dot_adx/dot_ady/dot_xneg/dot_yneg
+
+    ; recogida: menos de DOT_TOUCH_DIST px en los DOS ejes (distancia real,
+    ; no "misma baldosa" -- igual criterio que usaba el enemigo antes)
+    LDA AL,[dot_adx]
+    CMP AL,#DOT_TOUCH_DIST
+    JMPNC ad_no_pick
+    LDA AL,[dot_ady]
+    CMP AL,#DOT_TOUCH_DIST
+    JMPNC ad_no_pick
+    CALL dot_pickup
+    JMP ad_mark_invis        ; recogida este mismo fotograma -> no se dibuja
+
+ad_no_pick:
+    CALL calc_dot_angle      ; -> dot_vis_s/dot_rayi_s/dot_steps_s
+    LDA AL,[dot_vis_s]
+    MOV BL,#lo(dot_vis)
+    MOV BH,#hi(dot_vis)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    STA [BX],AL
+    LDA AL,[dot_rayi_s]
+    MOV BL,#lo(dot_rayi)
+    MOV BH,#hi(dot_rayi)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    STA [BX],AL
+    LDA AL,[dot_steps_s]
+    MOV BL,#lo(dot_steps_arr)
+    MOV BH,#hi(dot_steps_arr)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    STA [BX],AL
+    JMP ad_next
+ad_mark_invis:
+    MOV AL,#0
+    MOV BL,#lo(dot_vis)
+    MOV BH,#hi(dot_vis)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    STA [BX],AL
+ad_next:
+    LDA AL,[dot_i]
+    ADD AL,#1
+    STA [dot_i],AL
+    CMP AL,#DOT_COUNT
+    JMPNZ ad_loop
+    RET
+
+; --- calc_dot_deltas: (cur_dot_x,cur_dot_y) vs (player_x,player_y) ->
+; magnitudes [dot_adx]/[dot_ady] (0-255, siempre correctas) y flags
+; [dot_xneg]/[dot_yneg] (1 = la bolita esta al oeste/norte del jugador) --
+; mismo truco de comparar con CMP antes de restar (en vez del atajo de
+; mirar el bit alto de una resta) que usaba calc_ska_deltas del enemigo,
+; necesario porque el mapa mide 256 unidades de lado en cada eje -----------
+calc_dot_deltas:
+    LDA AL,[cur_dot_x]
+    LDA BL,[player_x]
+    CMP AL,BL
+    JMPC cdd_xneg          ; cur_dot_x < player_x
+    MOV AL,#0
+    STA [dot_xneg],AL
+    LDA AL,[cur_dot_x]
+    LDA BL,[player_x]
+    SUB AL,BL
+    STA [dot_adx],AL
+    JMP cdd_y
+cdd_xneg:
+    MOV AL,#1
+    STA [dot_xneg],AL
+    LDA AL,[player_x]
+    LDA BL,[cur_dot_x]
+    SUB AL,BL
+    STA [dot_adx],AL
+cdd_y:
+    LDA AL,[cur_dot_y]
+    LDA BL,[player_y]
+    CMP AL,BL
+    JMPC cdd_yneg          ; cur_dot_y < player_y
+    MOV AL,#0
+    STA [dot_yneg],AL
+    LDA AL,[cur_dot_y]
+    LDA BL,[player_y]
+    SUB AL,BL
+    STA [dot_ady],AL
+    RET
+cdd_yneg:
+    MOV AL,#1
+    STA [dot_yneg],AL
+    LDA AL,[player_y]
+    LDA BL,[cur_dot_y]
+    SUB AL,BL
+    STA [dot_ady],AL
+    RET
+
+; --- calc_dot_angle: a partir de [dot_adx]/[dot_ady]/[dot_xneg]/[dot_yneg]
+; (ver calc_dot_deltas, llamada antes por quien llama a esta), calcula el
+; pseudo-angulo de la bolita visto desde el jugador en 8 octantes (sin
+; multiplicacion/division/trigonometria: solo comparaciones y un SHL para
+; probar "domina claramente un eje" -- igual que calc_skel_angle del
+; enemigo de la version anterior), [dot_steps_s] (distancia aproximada,
+; misma escala que march_ray) y [dot_vis_s]/[dot_rayi_s] con el mismo
+; criterio de ventana de 32 rayos que apr_vis usa para los proyectiles -----
+calc_dot_angle:
+    LDA AL,[dot_adx]
+    LDA BL,[dot_ady]
+    CMP AL,BL
+    JMPNC cda_maxdone
+    MOV AL,BL
+cda_maxdone:
+    SHR AL,#4
+    STA [dot_steps_s],AL
+
+    LDA AL,[dot_ady]
+    SHL AL,#1
+    STA [dot_tmp2],AL
+    LDA AL,[dot_adx]
+    LDA BL,[dot_tmp2]
+    CMP AL,BL
+    JMPC cda_not_pure_h   ; adx < ady*2 -> el eje X no domina claramente
+    LDA AL,[dot_xneg]
+    CMP AL,#0
+    JMPNZ cda_w
+    MOV AL,#0             ; Este
+    JMP cda_done
+cda_w:
+    MOV AL,#64            ; Oeste
+    JMP cda_done
+cda_not_pure_h:
+    LDA AL,[dot_adx]
+    SHL AL,#1
+    STA [dot_tmp2],AL
+    LDA AL,[dot_ady]
+    LDA BL,[dot_tmp2]
+    CMP AL,BL
+    JMPC cda_diag         ; ady < adx*2 tampoco -> ningun eje domina: diagonal
+    LDA AL,[dot_yneg]
+    CMP AL,#0
+    JMPNZ cda_n
+    MOV AL,#32            ; Sur
+    JMP cda_done
+cda_n:
+    MOV AL,#96            ; Norte
+    JMP cda_done
+cda_diag:
+    LDA AL,[dot_xneg]
+    CMP AL,#0
+    JMPNZ cda_diag_w
+    LDA AL,[dot_yneg]
+    CMP AL,#0
+    JMPNZ cda_ne
+    MOV AL,#16            ; Sureste
+    JMP cda_done
+cda_ne:
+    MOV AL,#112           ; Noreste
+    JMP cda_done
+cda_diag_w:
+    LDA AL,[dot_yneg]
+    CMP AL,#0
+    JMPNZ cda_nw
+    MOV AL,#48            ; Suroeste
+    JMP cda_done
+cda_nw:
+    MOV AL,#80            ; Noroeste
+cda_done:
+    STA [dot_ang_s],AL
+
+    LDA BL,[facing]
+    SUB AL,BL
+    AND AL,#0x7F
+    CMP AL,#16
+    JMPC cda_lo
+    CMP AL,#112
+    JMPNC cda_hi
+    MOV AL,#0
+    STA [dot_vis_s],AL
+    RET
+cda_lo:
+    ADD AL,#16
+    STA [dot_rayi_s],AL
+    MOV AL,#1
+    STA [dot_vis_s],AL
+    RET
+cda_hi:
+    SUB AL,#112
+    STA [dot_rayi_s],AL
+    MOV AL,#1
+    STA [dot_vis_s],AL
+    RET
+
+; --- dot_pickup: el jugador ha recogido la bolita [dot_i] -- la desactiva,
+; resta 1 de [dot_remaining], y suena un pitido corto (reutiliza el mismo
+; mecanismo de silbido que dispara). Si era la ultima, arranca level_passed
+dot_pickup:
+    MOV AL,#0
+    MOV BL,#lo(dot_active)
+    MOV BH,#hi(dot_active)
+    LDA CL,[dot_i]
+    CALL idx_ptr
+    STA [BX],AL
+
+    LDA AL,[dot_remaining]
+    SUB AL,#1
+    STA [dot_remaining],AL
+
+    MOV AL,#DOT_PICK_SWEEP_FRAMES
+    STA [snd_timer],AL
+    MOV AL,#lo(DOT_PICK_FREQ_START)
+    STA [snd_freq_lo],AL
+    MOV AL,#hi(DOT_PICK_FREQ_START)
+    STA [snd_freq_hi],AL
+
+    LDA AL,[dot_remaining]
+    CMP AL,#0
+    JMPNZ dp_d
+    CALL level_passed
+dp_d:
+    RET
+
+; --- level_passed: se han recogido todas las bolitas del nivel -- mensaje
+; en pantalla + un jingle corto de 3 notas ascendentes (bloqueante, igual
+; patron que el "dos notas" de docs/isa.md), y carga el SIGUIENTE de los
+; MAP_COUNT mapas prehechos (en bucle, ver load_level) ---------------------
+level_passed:
+    CALL clst
+    MOV BL,#lo(h_level_passed)
+    MOV BH,#hi(h_level_passed)
+    MOV CL,#3
+    MOV CH,#3
+    CALL puts
+
+    MOV AL,#8
+    OUT (P_SND_DUR),AL
+    MOV AL,#72             ; DO5
+    OUT (P_SND_NOTE),AL
+    MOV AL,#12
+    CALL frame_wait
+    MOV AL,#8
+    OUT (P_SND_DUR),AL
+    MOV AL,#76             ; MI5
+    OUT (P_SND_NOTE),AL
+    MOV AL,#12
+    CALL frame_wait
+    MOV AL,#8
+    OUT (P_SND_DUR),AL
+    MOV AL,#79             ; SOL5
+    OUT (P_SND_NOTE),AL
+    MOV AL,#40
+    CALL frame_wait
+    MOV AL,#0
+    OUT (P_SND_NOTE),AL     ; silencio
+
+    LDA AL,[map_idx]
+    ADD AL,#1
+    CMP AL,#MAP_COUNT
+    JMPNZ lp_store
+    MOV AL,#0
+lp_store:
+    STA [map_idx],AL
+    CALL load_level
+    CALL clst
+    RET
+
+; --- dibuja_dot: estampa la bolita [dot_i] en la columna actual (usa
+; [byte_col]/[nibble], ya calculados por render_column para este ray_i --
+; reutiliza proj_row_half). Sin escalones de tamano (a diferencia del
+; proyectil/enemigo): es solo una marca pequena, no hace falta mas ---------
+dibuja_dot:
+    MOV AL,#DOT_ROW
+    STA [rowy],AL
+    CALL proj_row_half
+    RET
+
+; --- load_level: copia el mapa ROM de [map_idx] al buffer en RAM `mapa`,
+; puebla dot_x/dot_y/dot_active desde la tabla de bolitas de ese mismo
+; nivel, reinicia [dot_remaining] y coloca al jugador (posicion y facing)
+; en el punto de partida de ese mapa -- llamada al arrancar y de nuevo al
+; final de level_passed cuando se agotan las bolitas de un nivel ----------
+load_level:
+    LDA AL,[map_idx]
+    SHL AL                  ; offset = map_idx*2 (2 bytes/puntero)
+    MOV CL,AL
+    MOV BL,#lo(MAP_PTRS)
+    MOV BH,#hi(MAP_PTRS)
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [lvl_lo],AL
+    ADD BL,#1
+    JMPNC ll_c1
+    ADD BH,#1
+ll_c1:
+    LDA AL,[BX]
+    STA [lvl_hi],AL
+
+    LDA BL,[lvl_lo]
+    LDA BH,[lvl_hi]          ; BX = mapa ROM de este nivel (32 bytes)
+    MOV DL,#lo(mapa)
+    MOV DH,#hi(mapa)
+    MOV AL,#0
+    STA [ll_cnt],AL          ; contador de bytes PROPIO -- ver el aviso de
+                              ; abajo sobre por que no puede ser [dot_i]
+ll_map_copy:
+    LDA AL,[BX]
+    STA [DX],AL
+    ADD BL,#1
+    JMPNC llmc_bnc
+    ADD BH,#1
+llmc_bnc:
+    ADD DL,#1
+    JMPNC llmc_dnc
+    ADD DH,#1
+llmc_dnc:
+    LDA AL,[ll_cnt]
+    ADD AL,#1
+    STA [ll_cnt],AL
+    CMP AL,#32
+    JMPNZ ll_map_copy
+
+    LDA AL,[map_idx]
+    SHL AL
+    MOV CL,AL
+    MOV BL,#lo(DOT_DATA_PTRS)
+    MOV BH,#hi(DOT_DATA_PTRS)
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [lvl_lo],AL
+    ADD BL,#1
+    JMPNC ll_c2
+    ADD BH,#1
+ll_c2:
+    LDA AL,[BX]
+    STA [lvl_hi],AL
+
+    LDA BL,[lvl_lo]
+    LDA BH,[lvl_hi]           ; BX = tabla de bolitas de este nivel (x,y...)
+    MOV DL,#lo(dot_x)
+    MOV DH,#hi(dot_x)
+    MOV CL,#lo(dot_y)
+    MOV CH,#hi(dot_y)
+    MOV AL,#0
+    STA [ll_cnt],AL
+ll_dot_copy:
+    LDA AL,[BX]              ; x
+    STA [DX],AL
+    ADD BL,#1
+    JMPNC lldc_a
+    ADD BH,#1
+lldc_a:
+    LDA AL,[BX]              ; y
+    STA [CX],AL
+    ADD BL,#1
+    JMPNC lldc_b
+    ADD BH,#1
+lldc_b:
+    ADD DL,#1
+    JMPNC lldc_c
+    ADD DH,#1
+lldc_c:
+    ADD CL,#1
+    JMPNC lldc_d
+    ADD CH,#1
+lldc_d:
+    LDA AL,[ll_cnt]
+    ADD AL,#1
+    STA [ll_cnt],AL
+    CMP AL,#DOT_COUNT
+    JMPNZ ll_dot_copy
+
+    MOV AL,#1
+    MOV BL,#lo(dot_active)
+    MOV BH,#hi(dot_active)
+    MOV CL,#0
+ll_dot_act:
+    STA [BX],AL
+    ADD BL,#1
+    JMPNC lldact_nc
+    ADD BH,#1
+lldact_nc:
+    ADD CL,#1
+    CMP CL,#DOT_COUNT
+    JMPNZ ll_dot_act
+
+    MOV AL,#DOT_COUNT
+    STA [dot_remaining],AL
+
+    MOV BL,#lo(MAP_SPAWN_X)
+    MOV BH,#hi(MAP_SPAWN_X)
+    LDA CL,[map_idx]
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [player_x],AL
+    MOV BL,#lo(MAP_SPAWN_Y)
+    MOV BH,#hi(MAP_SPAWN_Y)
+    LDA CL,[map_idx]
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [player_y],AL
+    MOV AL,#0
+    STA [facing],AL
+    RET
+
 
 ; ============================================================================
 ;  CIELO: CLOUD_COUNT nubes huecas, cada una con angulo de mundo fijo mas
@@ -1359,6 +1881,53 @@ snd_timer:    .space 1
 snd_freq_lo:  .space 1
 snd_freq_hi:  .space 1
 
+; bolitas recolectables: DOT_COUNT slots, un byte por slot en cada tabla
+; (indexado por [dot_i], mismo patron que los proyectiles) -- posicion fija
+; por nivel (dot_x/dot_y, copiadas de la ROM por load_level), y visibilidad/
+; columna/distancia recalculadas cada fotograma por actualiza_dots para que
+; ray_loop sepa si dibujar cada una en la columna que le toque
+dot_x:        .space 10    ; DOT_COUNT -- literal, .space no admite constantes
+dot_y:        .space 10
+dot_active:   .space 10
+dot_vis:      .space 10
+dot_rayi:     .space 10
+dot_steps_arr: .space 10
+dot_remaining: .space 1
+dot_i:        .space 1    ; slot "actual" durante los bucles per-bolita
+
+; escalares de trabajo de actualiza_dots/calc_dot_deltas/calc_dot_angle (no
+; pueden vivir en CL/BL/BH: los usan idx_ptr/es_pared entre un acceso y el
+; siguiente)
+cur_dot_x: .space 1
+cur_dot_y: .space 1
+dot_xneg: .space 1   ; 1 = la bolita esta al oeste del jugador
+dot_yneg: .space 1   ; 1 = la bolita esta al norte del jugador
+dot_adx: .space 1
+dot_ady: .space 1
+dot_tmp2: .space 1
+dot_ang_s: .space 1
+dot_vis_s: .space 1
+dot_rayi_s: .space 1
+dot_steps_s: .space 1
+
+; nivel actual: que mapa/bolitas hay cargados en RAM (ver load_level)
+map_idx: .space 1
+lvl_lo:  .space 1   ; escalares de trabajo de load_level
+lvl_hi:  .space 1
+ll_cnt:  .space 1   ; contador de bytes de sus bucles de copia -- NUNCA
+                     ; [dot_i]: load_level puede llamarse desde dentro del
+                     ; bucle de actualiza_dots (via dot_pickup/level_passed,
+                     ; al recoger la ultima bolita de un nivel), que
+                     ; necesita [dot_i] intacto al volver para seguir por
+                     ; el siguiente slot -- bug real que hubo aqui: al
+                     ; reusar [dot_i] como contador generico, el hueco que
+                     ; se estaba procesando (dot_i=5, p.ej.) volvia con
+                     ; dot_i=10 (el ultimo valor del bucle de copia de
+                     ; load_level), lo que desbordaba dot_vis/dot_rayi/
+                     ; dot_steps_arr (solo 10 bytes) y dejaba el bucle de
+                     ; actualiza_dots sin poder volver a valer DOT_COUNT
+                     ; nunca (arrancaba ya por encima), en bucle infinito
+
 ; nubes: angulo de mundo fijo por nube (cloud_angle_tbl) + una deriva por
 ; tipo que decrece con el tiempo (cloud_drift_a/cloud_drift_b -- la B, de
 ; las alargadas, decrece mas por paso, asi que se ven mas rapidas)
@@ -1390,6 +1959,7 @@ pix_mask:   .space 1
 y0_tbl:     .space 32
 
 h_title:    .asciiz "RAYCAST 3D"
+h_level_passed: .asciiz "LEVEL PASSED!"
 
 ; --- cloud_angle_tbl: angulo de mundo fijo de cada nube (repartidas a
 ; partes iguales en los 128 angulos posibles, 16 = 45 grados entre ellas) --
@@ -1474,8 +2044,18 @@ cloud_shape_b:
 
 ; --- mapa: 16 filas x 16 columnas, 1=pared 0=libre, 2 bytes/fila (bit7 =
 ; columna 0). Bordeado de pared por completo (ver el aviso de la cabecera:
-; con eso ningun rayo se queda sin chocar dentro de MAX_STEPS).
-mapa:
+; con eso ningun rayo se queda sin chocar dentro de MAX_STEPS). Buffer en
+; RAM: se rellena copiando desde map_data0/1/2 (ROM) al cargar cada nivel,
+; ver load_level -- es_pared/march_ray no cambian nada, siguen leyendo
+; siempre de aqui.
+mapa: .space 32
+
+; --- map_data0/1/2: los MAP_COUNT mapas prehechos, en ROM (mismo formato
+; que `mapa`). map_data0 es el mapa original de este programa; map_data1 y
+; map_data2 son nuevos, cada uno verificado en Python con el mismo criterio
+; de "ningun rayo se queda sin chocar dentro de MAX_STEPS" que el original
+; (sondeo de 5 subposiciones por baldosa libre x los 128 angulos posibles).
+map_data0:
     .db 0xFF,0xFF
     .db 0x80,0x01
     .db 0xBE,0x01
@@ -1492,6 +2072,67 @@ mapa:
     .db 0x84,0x01
     .db 0x80,0x01
     .db 0xFF,0xFF
+
+; map_data1: pasillo en zigzag horizontal (divisores con un unico hueco,
+; alternando lado, para que el recorrido serpentee de arriba a abajo).
+map_data1:
+    .db 0xFF,0xFF
+    .db 0x80,0x01
+    .db 0xFF,0xFD
+    .db 0x80,0x01
+    .db 0xBF,0xFF
+    .db 0x80,0x01
+    .db 0xFF,0xFD
+    .db 0x80,0x01
+    .db 0xBF,0xFF
+    .db 0x80,0x01
+    .db 0xFF,0xFD
+    .db 0x80,0x01
+    .db 0xBF,0xFF
+    .db 0x80,0x01
+    .db 0xFF,0xFD
+    .db 0xFF,0xFF
+
+; map_data2: mismo zigzag que map_data1 pero en vertical (columnas en vez
+; de filas), para que se sienta como un mapa distinto de verdad.
+map_data2:
+    .db 0xFF,0xFF
+    .db 0xA2,0x23
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0xAA,0xAB
+    .db 0x88,0x89
+    .db 0xFF,0xFF
+
+MAP_PTRS: .dw map_data0, map_data1, map_data2
+
+; --- dot_data0/1/2: posiciones (x,y en pixeles, centro de baldosa) de las
+; DOT_COUNT bolitas de cada nivel -- una por baldosa libre, bien repartidas
+; y lejos de la posicion de partida del jugador en ese mapa (elegidas con
+; Python, ver tools/ -- no hay proceso para regenerarlas en el repo, son
+; solo datos).
+dot_data0:
+    .db 120,40, 168,232, 88,232, 216,136, 200,72, 168,120, 72,88, 88,152, 184,200, 232,56
+dot_data1:
+    .db 136,216, 56,184, 200,56, 152,56, 56,56, 120,184, 104,152, 184,152, 120,24, 184,120
+dot_data2:
+    .db 104,232, 88,24, 184,200, 184,120, 216,216, 152,88, 152,56, 56,104, 216,152, 56,152
+
+DOT_DATA_PTRS: .dw dot_data0, dot_data1, dot_data2
+
+; --- MAP_SPAWN_X/Y: posicion inicial del jugador en cada mapa (en una
+; baldosa libre, ver load_level).
+MAP_SPAWN_X: .db 136, 40, 24
+MAP_SPAWN_Y: .db 40, 24, 24
 
 ; --- height_tbl: altura de pared (px) segun distancia en pasos (0..20),
 ; formula K/d con techo 63 (pantalla entera) y suelo 1 -- calculada con

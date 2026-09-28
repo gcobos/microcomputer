@@ -38,6 +38,11 @@
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
+P_DIR_BTN  = 0x0601     ; encoder DIRECCION: pulsado
+P_DAT_BTN  = 0x0603     ; encoder DATOS: pulsado
+P_PROG_LOAD = 0x0640    ; cargar slot (OUT nº de slot): salto a otro programa
+
+; --- puertos (ver ../docs/isa.md) -------------------------------------------
 P_T7 = 0x0627      ; temporizador 7: el mas lento, 128 ms/paso
 
 ; ============================================================================
@@ -124,7 +129,26 @@ bench_chk:
     MOV CH,#4
     CALL putc
 
-    HALT
+    ; fin: espera a que se pulse DIRECCION o DATOS, espera a que se suelten
+    ; los dos (para que el sistema no vea la pulsacion como suya) y vuelve al
+    ; sistema (sisop, slot 0)
+wk_p:
+    IN  AL,(P_DIR_BTN)
+    CMP AL,#0
+    JMPNZ wk_r
+    IN  AL,(P_DAT_BTN)
+    CMP AL,#0
+    JMPZ wk_p
+wk_r:
+    IN  AL,(P_DIR_BTN)
+    CMP AL,#0
+    JMPNZ wk_r
+    IN  AL,(P_DAT_BTN)
+    CMP AL,#0
+    JMPNZ wk_r
+    MOV AL,#0
+    OUT (P_PROG_LOAD),AL       ; vuelve al sistema (sisop, slot 0)
+    HALT                       ; solo si el slot 0 estuviera vacio (la carga no hace nada)
 
 ; ============================================================================
 ;  RUTINAS COMPARTIDAS
@@ -180,6 +204,6 @@ ps_d:
 res_hi: .space 1
 res_lo: .space 1
 
-s_title: .asciiz "BENCHMARK COMPI"
-s_wait:  .asciiz "MIDIENDO 32s..."
+s_title: .asciiz "COMPI BENCHMARK"
+s_wait:  .asciiz "MEASURING 32s..."
 s_done:  .asciiz "N=0x"

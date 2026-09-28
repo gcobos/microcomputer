@@ -33,12 +33,33 @@ El SuperMini expone 13 GPIO: **IO0–IO10, IO20, IO21**.
 | Pines | Motivo |
 |---|---|
 | GPIO18, GPIO19 | USB nativo del C3; **no salen a los pads del SuperMini** |
-| GPIO2, GPIO9 | *strapping*. GPIO9 = botón BOOT |
+| GPIO2 | *strapping* |
 | GPIO8 | *strapping*, pero se usa para el LED azul de a bordo (OK como salida) |
+| GPIO9 | *strapping*, pero se usa como botón BOOT reutilizado (ver abajo) |
 | GPIO11–GPIO17 | flash SPI interna del módulo |
 
 Libres: **GPIO0, 1, 3, 4, 5, 6, 7, 10, 20, 21** (10 pines). El diseño los usa
 todos: GPIO3 = zumbador piezo (sección 9).
+
+### GPIO9 / botón BOOT: doble uso (bootloader + MUTE/UNMUTE)
+
+GPIO9 es un *strapping pin* (su nivel en el instante del reset decide modo
+bootloader vs arranque normal) y es el botón físico BOOT de la placa. Esa
+comprobación la hace la ROM del propio chip **antes** de que corra
+`setup()`/`loop()` — leerlo luego como una entrada normal durante la
+ejecución no interfiere con eso en absoluto, así que el firmware lo
+reutiliza como pulsador de **MUTE/UNMUTE general** (`PIN_BOOT_BTN` en
+[`src/main.cpp`](../src/main.cpp)), disponible en todo momento sin importar
+qué programa corra ni en qué modo esté el panel: `tickBootButton()` se
+sondea lo primero en cada vuelta de `loop()`, antes de mirar el interruptor
+de modo. Antirrebote por tiempo (`BOOT_BTN_DEBOUNCE_MS`); al desmutear
+suena un jingle de 2 notas no bloqueante (`tickMuteJingle()`) para
+confirmarlo. El sonido empieza activado al encender.
+
+La vía de recuperación manual de flasheo (mantenerlo pulsado al enchufar si
+falla el auto-reset, ver más abajo) sigue funcionando exactamente igual,
+porque ocurre a nivel de ROM/ hardware antes de que el firmware llegue a
+tocar el pin.
 
 ### Flasheo
 
@@ -62,6 +83,7 @@ pines por defecto del C3; el driver de la flash los toma solo.
 | 6  | SPI MOSI | salida | flash pin 5 (DI) |
 | 7  | Flash /CS | salida | flash pin 1 (/CS) **+ `[10 kΩ]` a 3V3** |
 | 8  | LED de fallo | salida | LED azul de a bordo (**activo a nivel bajo**) |
+| 9  | MUTE/UNMUTE general | entrada (pull-up) | botón BOOT de a bordo (**activo a nivel bajo**) |
 | 10 | 74HC165 PL (SH/LD) | salida | pin 1 (SH/LD) |
 | 20 | I2C SDA | bidir | OLED SDA |
 | 21 | I2C SCL | salida | OLED SCL |

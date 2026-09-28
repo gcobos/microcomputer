@@ -37,6 +37,18 @@ constexpr bool PIN_LED_ACTIVE_LOW = true;
 // Zumbador piezo PASIVO en GPIO3 (único pin libre). Tono por hardware (tone()).
 constexpr uint8_t PIN_BUZZER = 3;
 
+// Botón BOOT (GPIO9) reutilizado como MUTE/UNMUTE general, disponible EN
+// TODO MOMENTO sin importar qué programa corre ni en qué modo esté el
+// panel (por eso se sondea en loop() antes de cualquier otra cosa, nunca
+// dentro del switch(view) de más abajo). docs/hardware.md lo marca como
+// "pin que no se puede usar" por ser de *strapping* y por ser la vía de
+// recuperación manual de flasheo (mantenerlo pulsado al enchufar si falla
+// el auto-reset) -- eso solo importa en el instante del reset/arranque; leerlo
+// como entrada normal durante la ejecución no interfiere con ninguna de
+// las dos cosas. Activo a nivel bajo (pulsador a GND, pull-up interno).
+constexpr uint8_t PIN_BOOT_BTN = 9;
+constexpr unsigned long BOOT_BTN_DEBOUNCE_MS = 30;
+
 // EJECUCIÓN + CONTINUO: instrucciones por vuelta de loop() y refresco del
 // framebuffer.
 constexpr int EXEC_BATCH = 4000;
@@ -61,11 +73,11 @@ constexpr unsigned long DIR_LONG_PRESS_MS = 500;
 // de RAM).
 //
 // La diferencia entre "activo" y "reposo" se mantiene A PROPÓSITO pequeña
-// (2 ms vs 4/8 ms, no 2 ms vs 20/100 ms como en versiones anteriores):
-// un salto grande hacía que, nada más dejar de tocar el panel, un giro
-// posterior pudiera empezar a perderse casi por completo hasta girar muy
-// rápido -- con separaciones así de pequeñas el consumo extra en reposo es
-// mínimo y la respuesta se mantiene prácticamente igual que "activo".
+// (2 ms vs 4/8 ms): un salto grande haría que, nada más dejar de tocar el
+// panel, un giro posterior pudiera empezar a perderse casi por completo
+// hasta girar muy rápido -- con separaciones así de pequeñas el consumo
+// extra en reposo es mínimo y la respuesta se mantiene prácticamente igual
+// que "activo".
 //
 // Nota de hardware: para despertar del light sleep girando un encoder haría
 // falta una línea de "actividad de panel" (OR de las señales activas-bajas)
@@ -74,8 +86,8 @@ constexpr unsigned long DIR_LONG_PRESS_MS = 500;
 // entre dos muestras y perderse -- de ahí que SAMPLE_IDLE_MS se mantenga
 // bajo en vez de subirlo para ahorrar más batería.
 constexpr uint32_t SAMPLE_ACTIVE_MS  = 2;      // muestreo del '165 en uso
-constexpr uint32_t SAMPLE_SCREENON_MS = 4;     // pantalla encendida pero sin tocar (antes 20)
-constexpr uint32_t SAMPLE_IDLE_MS    = 8;      // pantalla atenuada/apagada (antes 40, y 100 antes de eso)
+constexpr uint32_t SAMPLE_SCREENON_MS = 4;     // pantalla encendida pero sin tocar
+constexpr uint32_t SAMPLE_IDLE_MS    = 8;      // pantalla atenuada/apagada
 constexpr uint32_t ACTIVE_WINDOW_MS  = 2000;   // sigue a 2 ms tras la última actividad
 constexpr uint32_t SCREEN_DIM_MS     = 20000;  // atenuar la OLED por inactividad
 constexpr uint32_t SCREEN_OFF_MS     = 45000;  // apagar la OLED
@@ -96,6 +108,13 @@ static uint8_t g_fb[FB_BYTES];              // framebuffer del dispositivo (puer
 static uint8_t g_text[TEXT_CELLS];          // rejilla de texto (puertos 0x0400+)
 static uint8_t g_attr[TEXT_CELLS];          // atributos de texto (puertos 0x0500+)
 static uint8_t g_preview[PREVIEW_BYTES];    // primeros bytes del slot (EditPrg)
+// Búfer de recepción/envío del provisioning por USB (ver provisionLoad()/
+// provisionDump() más abajo). Aparte de cpu.ram() a propósito: si se usara
+// la RAM de la CPU como antes, mandar o pedir CUALQUIER slot por USB borraba
+// y paraba lo que estuviera corriendo en ese momento, aunque fuera un slot
+// distinto del que se estaba transmitiendo. El C3 tiene 320 KiB de sobra
+// para permitirse este segundo búfer de 64 KiB.
+static uint8_t g_provisionBuf[PROGRAM_SIZE];
 
 UiState ui;
 bool prevExec = false;
@@ -122,6 +141,33 @@ uint8_t  g_sndNote = 0;                     // última nota MIDI escrita (eco de
 uint8_t  g_sndDurUnits = 0;                 // duración auto en unidades de 10 ms
 uint16_t g_sndHz = 0;
 unsigned long g_sndOffAt = 0;               // millis() en que callar; 0 = sostenido
+
+// Mute general (botón BOOT, ver PIN_BOOT_BTN). Empieza con el sonido
+// ACTIVADO. Mientras g_soundMuted esté a true, sndApply() no llama a
+// tone() -- el programa en curso sigue escribiendo en los puertos de
+// sonido con total normalidad, solo se corta la salida física.
+bool g_soundMuted = false;
+bool g_bootBtnRawPrev = HIGH;               // ultima lectura CRUDA (para detectar el cambio)
+bool g_bootBtnStable = HIGH;                // estado ya anti-rebotado
+unsigned long g_bootBtnLastChangeMs = 0;
+
+// Jingle de "sonido reactivado": 2 notas cortas, NO bloqueante (se avanza
+// un paso por vuelta de loop(), igual que tickSound() -- nunca se para la
+// emulación de la CPU para reproducirlo). Mientras suena, g_soundMuted
+// sigue en true (ver tickMuteJingle) para que no compita con el propio
+// sonido del programa por el único zumbador: se desmutea de verdad justo
+// al terminar la melodia.
+constexpr uint16_t MUTE_JINGLE_HZ[2] = {880, 1175};   // La5, Re6 -- subida alegre
+constexpr unsigned long MUTE_JINGLE_NOTE_MS = 110;
+bool g_muteJingleActive = false;
+uint8_t g_muteJingleStep = 0;                // 0 = sonando nota 1, 1 = sonando nota 2
+unsigned long g_muteJingleNoteEndMs = 0;
+
+// Carga/grabado de programas desde el propio programa (puertos 0x0640/41).
+// Eco de si el ULTIMO intento salio bien -- ver el comentario de estos
+// puertos en iomap.h (el de carga solo tiene sentido leerlo tras un fallo).
+uint8_t g_lastLoadOk = 0;                   // 1 = el ultimo intento de carga FALLO
+uint8_t g_lastSaveOk = 0;
 
 void setLed(bool on) {
     bool level = PIN_LED_ACTIVE_LOW ? !on : on;
@@ -158,12 +204,23 @@ uint16_t noteToHz(uint8_t note) {
 
 void sndApply(uint16_t hz) {
     if (hz == 0) {
-        if (g_sndHz) noTone(PIN_BUZZER);
+        // No toca el zumbador de verdad mientras suena el jingle de
+        // reactivar el sonido (g_muteJingleActive): esta funcion la llaman
+        // muchos sitios del firmware para "callar el sonido DEL PROGRAMA",
+        // y ese silencio no tiene por que cortar una melodia de UI que esta
+        // sonando encima en ese mismo instante -- el estado emulado
+        // (g_sndHz/g_sndOffAt) se pone a cero igual, solo se salta la
+        // llamada fisica a noTone().
+        if (g_sndHz && !g_muteJingleActive) noTone(PIN_BUZZER);
         g_sndHz = 0;
         g_sndOffAt = 0;
         return;
     }
-    tone(PIN_BUZZER, hz);
+    // Mientras esta muteado NO se toca el zumbador de verdad -- el programa
+    // sigue creyendo que el tono suena (g_sndHz/g_sndOffAt se actualizan
+    // igual) para que, en cuanto se desmutee, todo siga su curso normal sin
+    // que el programa tenga que volver a escribir nada.
+    if (!g_soundMuted) tone(PIN_BUZZER, hz);
     g_sndHz = hz;
     g_sndOffAt = g_sndDurUnits
                      ? millis() + (unsigned long)g_sndDurUnits * 10
@@ -177,6 +234,80 @@ void tickSound() {
 void resetSound() {
     g_sndLo = g_sndHi = g_sndNote = g_sndDurUnits = 0;
     sndApply(0);
+}
+
+// --- Jingle de "sonido reactivado" (ver g_muteJingleActive más arriba) ---
+void startMuteJingle() {
+    g_muteJingleActive = true;
+    g_muteJingleStep = 0;
+    tone(PIN_BUZZER, MUTE_JINGLE_HZ[0]);
+    g_muteJingleNoteEndMs = millis() + MUTE_JINGLE_NOTE_MS;
+}
+
+// Llamada una vez por vuelta de loop(), SIEMPRE (igual que tickBootButton) --
+// avanza el jingle un paso sin bloquear nunca la emulación de la CPU.
+void tickMuteJingle() {
+    if (!g_muteJingleActive) return;
+    if ((long)(millis() - g_muteJingleNoteEndMs) < 0) return;
+    if (g_muteJingleStep == 0) {
+        g_muteJingleStep = 1;
+        tone(PIN_BUZZER, MUTE_JINGLE_HZ[1]);
+        g_muteJingleNoteEndMs = millis() + MUTE_JINGLE_NOTE_MS;
+    } else {
+        noTone(PIN_BUZZER);
+        g_muteJingleActive = false;
+        g_soundMuted = false;   // ya termino la melodia: el sonido vuelve de verdad
+    }
+}
+
+// --- Botón BOOT (GPIO9) como MUTE/UNMUTE general, con antirrebote --------
+void toggleMute() {
+    if (g_muteJingleActive) {
+        // pulsacion durante la propia melodia de reactivacion: la corta y
+        // mutea de nuevo directamente, sin dejarla terminar
+        g_muteJingleActive = false;
+        noTone(PIN_BUZZER);
+        g_soundMuted = true;
+        return;
+    }
+    if (g_soundMuted) {
+        startMuteJingle();   // sigue "muteado" (ver tickMuteJingle) hasta que acabe
+    } else {
+        g_soundMuted = true;
+        if (g_sndHz) noTone(PIN_BUZZER);
+    }
+}
+
+// Llamada la PRIMERA en cada vuelta de loop(), antes de mirar el modo del
+// panel: el mute tiene que responder pulse lo que pulse el interruptor de
+// modo, y corra el programa que corra en ese slot.
+void tickBootButton() {
+    bool raw = digitalRead(PIN_BOOT_BTN);
+    if (raw != g_bootBtnRawPrev) {
+        g_bootBtnRawPrev = raw;
+        g_bootBtnLastChangeMs = millis();
+    }
+    if ((millis() - g_bootBtnLastChangeMs) >= BOOT_BTN_DEBOUNCE_MS &&
+        raw != g_bootBtnStable) {
+        g_bootBtnStable = raw;
+        if (g_bootBtnStable == LOW) toggleMute();   // flanco de pulsacion (activo a nivel bajo)
+    }
+}
+
+// Deja pantalla/LED/sonido/encoders como al entrar en una ejecucion nueva
+// (ver el bloque enterExec de más abajo, y el reset largo de ExecPaso) --
+// SIN tocar la CPU (pc_/regs_/sp_/flags_/RAM), que cada llamador resetea o
+// no segun le convenga. Factorizado aparte porque PORT_PROG_LOAD (ver
+// portWrite) necesita exactamente esto mismo: el programa que arranca no
+// debe heredar la pantalla, el LED o un tono en marcha del que lo cargo.
+void clearRuntimeOutputs() {
+    panel.resetPositions();
+    memset(g_fb, 0, sizeof(g_fb));
+    memset(g_text, 0, sizeof(g_text));
+    memset(g_attr, 0, sizeof(g_attr));
+    g_led = 0; setLed(false);
+    resetTimers();
+    resetSound();
 }
 
 // Índice en g_text de un puerto de la rejilla de texto, o -1 si el puerto no
@@ -229,6 +360,8 @@ uint8_t portRead(uint16_t port) {
         case PORT_DAT_POS: return panel.datPos();
         case PORT_DAT_BTN: return panel.datDown() ? 1 : 0;
         case PORT_LED:     return g_led;
+        case PORT_PROG_LOAD: return g_lastLoadOk;
+        case PORT_PROG_SAVE: return g_lastSaveOk;
         default:           return 0;
     }
 }
@@ -253,7 +386,34 @@ void portWrite(uint16_t port, uint8_t value) {
         }
         return;
     }
-    if (port == PORT_LED) { g_led = (uint8_t)(value & 1); setLed(g_led); }
+    if (port == PORT_LED) { g_led = (uint8_t)(value & 1); setLed(g_led); return; }
+    if (port == PORT_PROG_LOAD) {
+        // "salto" a otro programa: si el slot existe, sustituye la RAM
+        // entera y reinicia la CPU (PC/SP/flags/registros) para que la
+        // SIGUIENTE instruccion ejecutada ya sea la primera del programa
+        // cargado -- ver el comentario de este puerto en iomap.h. Si falla
+        // (slot vacio o fuera de 0..59) no se toca nada y sigue corriendo
+        // el programa que hizo el OUT.
+        const bool loadOk = flash.loadProgram((int)value, cpu.ram());
+        g_lastLoadOk = loadOk ? 0 : 1;   // IN 0x0640 = 1 si FALLO (ver iomap.h)
+        if (loadOk) {
+            cpu.reset();
+            // el programa que arranca no debe heredar la pantalla, el LED
+            // ni un tono en marcha de quien lo cargo (p.ej. un "sistema
+            // operativo" en un slot que encadena varios programas) -- lo
+            // mismo que ya se hace al entrar en una ejecucion nueva por el
+            // interruptor del panel, ver clearRuntimeOutputs().
+            clearRuntimeOutputs();
+        }
+        return;
+    }
+    if (port == PORT_PROG_SAVE) {
+        // volcado sin panel ni cable: graba la RAM actual entera en el slot
+        // pedido y sigue ejecutandose el mismo programa (a diferencia de
+        // PORT_PROG_LOAD, esto no es un salto).
+        g_lastSaveOk = flash.saveProgram((int)value, cpu.ram()) ? 1 : 0;
+        return;
+    }
 }
 
 void failBlink(int delayMs) {
@@ -331,6 +491,15 @@ void applyScreenPower(ScreenPwr want) {
 void noteActivity() {
     g_lastActivity = millis();
     applyScreenPower(SCR_FULL);
+}
+
+// Fuerza un repintado completo de la OLED en la siguiente vuelta de loop(),
+// sin importar la vista actual -- para cuando oled.message() (provisioning)
+// ha escrito un texto transitorio directo al panel, sin pasar por g_fb/
+// oled.render(), y hay que asegurarse de que no se quede colgado en pantalla.
+void forceRedraw() {
+    g_forceRender = true;   // EditMem/EditPrg/ExecPaso: ver el switch de loop()
+    lastFlush = 0;          // ExecCont: fuerza el proximo volcado del framebuffer
 }
 
 void loadSlot(uint8_t s) {
@@ -449,14 +618,14 @@ void provisionLoad(int slot, long len) {
     oled.message("RECEIVING...");
     Serial.println("COMPI READY");
 
-    cpu.clearMemory();
+    memset(g_provisionBuf, 0, PROGRAM_SIZE);   // el resto de los 64 KiB va a 0
     Serial.setTimeout(5000);
     size_t total = (size_t)len;
     size_t got = 0;
     while (got < total) {
         size_t want = total - got;
         if (want > COMPI_CHUNK) want = COMPI_CHUNK;
-        size_t n = Serial.readBytes(cpu.ram() + got, want);
+        size_t n = Serial.readBytes(g_provisionBuf + got, want);
         got += n;
         if (n != want) break;               // hueco/timeout: se corta abajo
         Serial.print("COMPI CHUNK ");
@@ -466,28 +635,24 @@ void provisionLoad(int slot, long len) {
     if (got != total) {
         Serial.print("COMPI ERR datos ");
         Serial.println((unsigned long)got);
-        cpu.reset();
-        ui.cursor = 0;
-        ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
         noteActivity();
-        oled.render(cpu, ui);
+        forceRedraw();
         return;
     }
 
     uint32_t sum = 0;
-    const uint8_t* img = cpu.ram();
-    for (size_t i = 0; i < PROGRAM_SIZE; ++i) sum += img[i];
+    for (size_t i = 0; i < PROGRAM_SIZE; ++i) sum += g_provisionBuf[i];
 
     char m[24];
     snprintf(m, sizeof(m), "WRITING slot %02d", slot);
     oled.message(m);
-    bool ok = flash.saveProgram(slot, cpu.ram());
+    bool ok = flash.saveProgram(slot, g_provisionBuf);
 
-    cpu.reset();
-    ui.cursor = 0;
-    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
-    prevSlot = 0xFF;                    // fuerza recargar la previsualizacion
-    running = false;
+    // Ya NO se toca cpu/ui/running: grabar un slot por USB no debe alterar
+    // nada de lo que estuviera corriendo o mostrandose (ver g_provisionBuf
+    // mas arriba). Si el slot grabado es justo el que EditPrg tiene en
+    // pantalla, refresca su previsualizacion la proxima vez que se pinte.
+    if (ui.slot == (uint8_t)slot) prevSlot = 0xFF;
 
     if (ok) {
         Serial.print("COMPI OK ");
@@ -496,7 +661,7 @@ void provisionLoad(int slot, long len) {
         Serial.println("COMPI ERR flash");
     }
     noteActivity();
-    oled.render(cpu, ui);
+    forceRedraw();
 }
 
 void provisionDump(int slot, long len) {
@@ -515,17 +680,14 @@ void provisionDump(int slot, long len) {
     snprintf(m, sizeof(m), "SENDING slot %02d", slot);
     oled.message(m);
 
-    // cpu.ram() de scratch para leer la imagen, igual que provisionLoad() lo
-    // usa de scratch para recibirla -- ya se acepta que el provisioning
-    // pisa lo que hubiera en RAM (ver cpu.clearMemory() de arriba), no hace
-    // falta un buffer de 64 KiB aparte solo para esto. Se lee siempre la
-    // imagen ENTERA (loadProgram no admite leer solo un trozo), <len> solo
-    // decide cuanto de ella se manda.
-    flash.loadProgram(slot, cpu.ram());
+    // g_provisionBuf de scratch para leer la imagen -- NO cpu.ram(), para no
+    // pisar ni parar lo que estuviera corriendo (ver su comentario). Se lee
+    // siempre la imagen ENTERA (loadProgram no admite leer solo un trozo),
+    // <len> solo decide cuanto de ella se manda.
+    flash.loadProgram(slot, g_provisionBuf);
 
     uint32_t sum = 0;
-    const uint8_t* img = cpu.ram();
-    for (long i = 0; i < len; ++i) sum += img[i];
+    for (long i = 0; i < len; ++i) sum += g_provisionBuf[i];
 
     Serial.print("COMPI READY ");
     Serial.println((unsigned long)len);
@@ -533,16 +695,14 @@ void provisionDump(int slot, long len) {
     // RECEPCION del USB-CDC del C3 es de solo 256 bytes y descarta en
     // silencio si se llena (ver arriba). Para ENVIAR no hay ese problema --
     // Serial.write() ya bloquea lo que haga falta hasta que cabe.
-    Serial.write(cpu.ram(), (size_t)len);
+    Serial.write(g_provisionBuf, (size_t)len);
     Serial.print("COMPI OK ");
     Serial.println((unsigned long)sum);
 
-    cpu.reset();
-    ui.cursor = 0;
-    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
-    running = false;
+    // Tampoco aqui se toca cpu/ui/running: pedir un slot por USB es una
+    // lectura, no debe alterar nada de lo que estuviera corriendo.
     noteActivity();
-    oled.render(cpu, ui);
+    forceRedraw();
 }
 
 void provisionPoll() {
@@ -578,6 +738,20 @@ void provisionPoll() {
 }
 
 void setup() {
+    // Lo PRIMERO de todo, antes de tocar la pantalla para nada (ni siquiera
+    // oled.begin(), que ya puede dejar algo visible en la OLED): leer los
+    // interruptores. panel.begin() no depende de Serial/Wire/OLED (el '165
+    // es puro bit-bang por GPIO, ver ShiftRegister165::begin()), así que es
+    // seguro adelantarlo aquí. Con el arranque automático del slot 0 (más
+    // abajo) el aparato puede pasar a EJECUTAR nada más encender si los
+    // interruptores ya están en EJECUTAR+CONTINUO, así que conviene conocer
+    // su estado desde el instante cero, no después de haber inicializado la
+    // pantalla.
+    panel.begin();
+    prevExec = panel.ejecutar();
+    prevAbajo = panel.swAbajo();
+    running = prevExec && prevAbajo;   // arrancado en EJECUTAR+CONTINUO
+
     // El USB-CDC nativo del C3 usa una cola de recepción por software de solo
     // 256 bytes por defecto; si se llega a llenar (p. ej. provisionPoll()
     // recibiendo una imagen de 64 KiB), descarta bytes SIN avisar. Hay que
@@ -588,23 +762,44 @@ void setup() {
     setLed(false);                     // GPIO8 alto en el arranque (strapping OK)
     pinMode(PIN_BUZZER, OUTPUT);
     digitalWrite(PIN_BUZZER, LOW);     // piezo en reposo (tone() lo reconfigura)
+    // Botón BOOT (GPIO9) como MUTE/UNMUTE general -- ver PIN_BOOT_BTN.
+    // Pull-up interno: a nivel alto en reposo, a nivel bajo al pulsarlo.
+    pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
+    g_bootBtnRawPrev = digitalRead(PIN_BOOT_BTN);
+    g_bootBtnStable = g_bootBtnRawPrev;
+    g_bootBtnLastChangeMs = millis();
     Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
-    panel.begin();
     cpu.setPortRead(portRead);
     cpu.setPortWrite(portWrite);
 
     if (!oled.begin())  failBlink(200); // parpadeo lento = falla la OLED
     if (!flash.init())  failBlink(80);  // parpadeo rápido = falla la flash
 
+    // Arranque automatico: si el slot 0 tiene algo grabado (pensado para un
+    // "sistema operativo" que arranque otros programas, ver PORT_PROG_LOAD
+    // en iomap.h), se carga solo nada mas encender, sin esperar a que el
+    // usuario entre en EDITAR y pulse Cargar. Si esta vacio, arranca limpio
+    // (RAM a 0x00 = NOP) como hasta ahora.
+    if (!flash.loadProgram(0, cpu.ram())) {
+        cpu.clearMemory();
+    }
     cpu.reset();
-    prevExec = panel.ejecutar();
-    prevAbajo = panel.swAbajo();
-    running = prevExec && prevAbajo;   // arrancado en EJECUTAR+CONTINUO
     ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // arranca el editor en lo que haya
 
-    g_scr = START_SCREEN_DIMMED ? SCR_DIM : SCR_FULL;
-    oled.contrast(START_SCREEN_DIMMED ? OLED_CONTRAST_DIM : OLED_CONTRAST_FULL);
-    oled.render(cpu, ui);
+    // `running` ya se calculó lo primero de todo (interruptores en EJECUTAR +
+    // CONTINUO): en ese caso el aparato arranca directamente el programa del
+    // slot 0 y NO se pinta el desensamblado del editor ni un instante -- la
+    // pantalla se queda en blanco hasta el primer volcado del framebuffer del
+    // propio programa (loop() lo hace ya en su primera vuelta, lastFlush=0).
+    if (running) {
+        g_scr = SCR_FULL;
+        oled.contrast(OLED_CONTRAST_FULL);
+        oled.renderFramebuffer(g_fb, g_text, g_attr, false);   // pantalla limpia
+    } else {
+        g_scr = START_SCREEN_DIMMED ? SCR_DIM : SCR_FULL;
+        oled.contrast(START_SCREEN_DIMMED ? OLED_CONTRAST_DIM : OLED_CONTRAST_FULL);
+        oled.render(cpu, ui);
+    }
 
     // Muestreo del panel en su propio temporizador, independiente de loop().
     // Si arranca atenuada, se retrasa g_lastActivity para que la gestión de
@@ -620,6 +815,12 @@ void setup() {
 }
 
 void loop() {
+    // Mute/unmute: SIEMPRE lo primero, antes de mirar el modo del panel o
+    // qué programa corre -- tiene que responder pulse lo que pulse el
+    // interruptor de modo, en cualquiera de las 4 vistas.
+    tickBootButton();
+    tickMuteJingle();
+
     provisionPoll();
     // panel.update() lo hace el esp_timer (samplerCb), no loop().
     const bool exec  = panel.ejecutar();
@@ -640,13 +841,7 @@ void loop() {
     // paso desde ahí).
     if (enterExec || (pasoToggle && abajo)) {
         cpu.reset();                       // los programas arrancan en PC=0
-        panel.resetPositions();
-        memset(g_fb, 0, sizeof(g_fb));
-        memset(g_text, 0, sizeof(g_text)); // rejilla de texto -> transparente
-        memset(g_attr, 0, sizeof(g_attr)); // atributos de texto -> ninguno
-        g_led = 0; setLed(false);          // apaga el LED del programa
-        resetTimers();
-        resetSound();                      // calla el piezo
+        clearRuntimeOutputs();
         running = abajo;                   // CONTINUO corre; PASO espera
         lastFlush = 0;
     } else if (pasoToggle) {               // -> PASO: congelar
@@ -674,10 +869,8 @@ void loop() {
         // no se puede aterrizar a mitad byte a byte. Su pulsador distingue
         // pulsación corta de larga (DIR_LONG_PRESS_MS): corta inserta un NOP
         // suelto en el cursor (insertByteAt), larga borra el byte del cursor
-        // (deleteByteAt) -- ninguna de las dos mueve el cursor. Antes esto se
-        // hacía manteniendo pulsado DIRECCIÓN mientras se giraba DATOS; se
-        // sustituyó por el gesto de pulsación corta/larga, que no roba el
-        // giro de DATOS para nada más (ver más abajo).
+        // (deleteByteAt) -- ninguna de las dos mueve el cursor. Este gesto no
+        // roba el giro de DATOS para nada más (ver más abajo).
         if (changed) {
             // vista recién entrada (o venimos de otra): re-decodifica en lo
             // que ya haya en memoria en el cursor actual.
@@ -801,8 +994,7 @@ void loop() {
         // una carrera hacia ADELANTE hasta que el PC llegue a esa dirección
         // (no hay forma de "ir hacia atrás" en la ejecución, así que apuntar
         // detrás del PC actual da una vuelta completa antes de llegar);
-        // larga resetea, igual que antes hacía cualquier pulsación de
-        // DIRECCIÓN. DATOS sigue ejecutando (girar adelante = varios pasos
+        // larga resetea. DATOS sigue ejecutando (girar adelante = varios pasos
         // de golpe, pulsar = un paso); girar DATOS hacia atrás NO hace nada
         // por ahora (queda para DIRECCIÓN, que lo hace de forma más lógica:
         // eliges destino y lo ves llegar, en vez de volver "a donde estabas").
@@ -879,13 +1071,7 @@ void loop() {
                     pasoRunning = false;   // un reset a medio camino invalida el objetivo
                     ui.cursor = cpu.pc();  // el # sigue al PC (que vuelve a 0)
                     ui.pasoFollowCursor = false;   // PC vuelve a 0: que se vea
-                    panel.resetPositions();
-                    memset(g_fb, 0, sizeof(g_fb));
-                    memset(g_text, 0, sizeof(g_text));
-                    memset(g_attr, 0, sizeof(g_attr));
-                    g_led = 0; setLed(false);
-                    resetTimers();
-                    resetSound();
+                    clearRuntimeOutputs();
                     dirBtnLongFired = true;
                     changed = true;
                 }
@@ -964,8 +1150,13 @@ void loop() {
 #ifndef COMPI_NO_LIGHT_SLEEP
     // Reposo prolongado y sin programa en marcha: light sleep. Conserva la RAM
     // (los 64 KiB de la CPU emulada) y despierta en <1 ms. No dormimos si hay
-    // un host de serie conectado (desarrollo / provisioning por USB-CDC).
-    if (!g_execActive && idleMs >= LIGHT_SLEEP_MS && !Serial) {
+    // un host de serie conectado (desarrollo / provisioning por USB-CDC), ni
+    // mientras suena el jingle de reactivar el sonido: el botón BOOT no pasa
+    // por noteActivity() (no es parte del panel/'165), así que si llevaba
+    // rato inactivo idleMs ya puede superar LIGHT_SLEEP_MS en el mismo
+    // fotograma en que se pulsa -- sin esta condición, el digitalWrite(LOW)
+    // de aquí abajo cortaría la melodía nada más empezar a sonar.
+    if (!g_execActive && idleMs >= LIGHT_SLEEP_MS && !Serial && !g_muteJingleActive) {
         digitalWrite(PIN_BUZZER, LOW);
         setLed(false);
         // Despierta con el timer (backstop) o con la propia alarma del sampler,
