@@ -560,15 +560,27 @@ srq_2:
     RET
 
 ; --- udiv_acc: acc(24 bits) /= entry(24 bits); si entry=0, err_flag=1.
-; Division binaria larga con resto: [rd0..rd5] es un registro combinado de
-; 48 bits, dividendo en la mitad baja (rd0..rd2) y resto en la alta
-; (rd3..rd5); en cada una de las 24 vueltas se desplaza todo el conjunto un
-; bit a la izquierda (eso solo mete el siguiente bit del dividendo en el
-; resto, automaticamente) y, si el resto ya vale >= entry, se resta y se
-; marca el bit de cociente vacante en rd0. Al final, rd0..rd2 es el
-; cociente -- exactamente 24 vueltas siempre, no importa lo grande que sea
-; entry (a diferencia de restar de uno en uno, que con numeros de 6 cifras
-; podria tardar casi un millon de vueltas) ---------------------------------
+; Dos caminos:
+;   - CAMINO RAPIDO (udiv_acc_fast, entry1=entry2=0 -- divisor de 1 byte,
+;     con diferencia el caso mas comun al usar la calculadora a mano):
+;     division larga clasica BYTE a byte (MSB primero) usando la
+;     instruccion DIV del hardware como el paso de cada byte -- ver
+;     docs/isa.md SS4d. Sustituye el bucle de 24 vueltas bit a bit por 3
+;     instrucciones DIV (una por byte de acc), unas 30-40x menos trabajo.
+;   - CAMINO LENTO (divisor > 255, sin cambios respecto a antes): division
+;     binaria larga con resto de toda la vida. [rd0..rd5] es un registro
+;     combinado de 48 bits, dividendo en la mitad baja (rd0..rd2) y resto
+;     en la alta (rd3..rd5); en cada una de las 24 vueltas se desplaza todo
+;     el conjunto un bit a la izquierda (eso solo mete el siguiente bit del
+;     dividendo en el resto, automaticamente) y, si el resto ya vale >=
+;     entry, se resta y se marca el bit de cociente vacante en rd0. Al
+;     final, rd0..rd2 es el cociente -- exactamente 24 vueltas siempre, no
+;     importa lo grande que sea entry (a diferencia de restar de uno en
+;     uno, que con numeros de 6 cifras podria tardar casi un millon de
+;     vueltas). DIV de hardware no sirve aqui directo: un divisor de mas de
+;     8 bits necesitaria un algoritmo de division larga multi-byte de
+;     verdad (estimar y corregir cada digito, tipo Knuth D), bastante mas
+;     riesgo para un camino que en la practica se usa poco.
 udiv_acc:
     LDA AL,[entry0]
     LDA BL,[entry1]
@@ -577,6 +589,17 @@ udiv_acc:
     OR  AL,BL
     CMP AL,#0
     JMPZ ud_err
+
+    LDA AL,[entry1]
+    LDA BL,[entry2]
+    OR  AL,BL
+    CMP AL,#0
+    JMPNZ ud_slow           ; divisor > 255 -> camino lento de siempre
+
+    CALL udiv_acc_fast
+    RET
+
+ud_slow:
     LDA AL,[acc0]
     STA [rd0],AL
     LDA AL,[acc1]
@@ -630,6 +653,40 @@ ud_nosub:
 ud_err:
     MOV AL,#1
     STA [err_flag],AL
+    RET
+
+; --- udiv_acc_fast: acc(24 bits) /= entry0 (divisor de 1 byte, nunca 0 --
+; ya comprobado por el que llama). Division larga MSB primero: en cada
+; byte de acc (de mas a menos significativo), AX = resto_acumulado*256 +
+; byte_actual siempre cabe en 16 bits Y el cociente de ese paso siempre
+; cabe en 8 bits (el resto de un paso es < divisor <= 255, asi que
+; AX < divisor*256, y AX/divisor < 256) -- exactamente las condiciones que
+; pide DIV para no saturar. Sin overflow que comprobar (dividir nunca puede
+; dar un resultado mayor que el dividendo, que ya se sabe que cabe). -------
+udiv_acc_fast:
+    MOV AL,#0
+    STA [ud_rem],AL
+
+    LDA BL,[entry0]         ; divisor (fijo para los 3 pasos)
+
+    LDA AH,[ud_rem]
+    LDA AL,[acc2]
+    DIV BL
+    STA [acc2],AL
+    MOV AL,AH
+    STA [ud_rem],AL
+
+    LDA AH,[ud_rem]
+    LDA AL,[acc1]
+    DIV BL
+    STA [acc1],AL
+    MOV AL,AH
+    STA [ud_rem],AL
+
+    LDA AH,[ud_rem]
+    LDA AL,[acc0]
+    DIV BL
+    STA [acc0],AL
     RET
 
 ; --- add_n: [BX..BX+N) += [DX..DX+N), N en [cnt_n], LSB primero (BX/DX
@@ -1314,10 +1371,9 @@ vl_d:
 ;  DOBLE BUFFER (igual patron que cubo.asm/roto_debug.asm/raycast.asm)
 ; ============================================================================
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 calc_pix:
@@ -1375,25 +1431,23 @@ shadow_clr_px:
     STA [BX],AL
     RET
 
+; clr_shadow: antes un bucle de 1024 pasadas (STA+acarreo+cuenta), ahora
+; solo pone a 0 el PRIMER byte y usa MOVB con origen/destino solapados en
+; 1 (BX=shadow, DX=shadow+1) para que ese unico 0 se propague en cascada
+; a los 1023 bytes restantes -- MOVB copia [BX+i]->[DX+i] con i creciente,
+; asi que cada byte lee el que acaba de escribir el paso anterior (ver
+; docs/isa.md SS4d: MOVB no es memmove-seguro con origen<destino
+; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
+    MOV AL,#0
+    STA [shadow],AL
     MOV BL,#lo(shadow)
     MOV BH,#hi(shadow)
-    MOV AL,#0
-    MOV CL,#0
-    MOV CH,#4
-csh_l:
-    STA [BX],AL
-    ADD BL,#1
-    JMPNC csh_addr_ok
-    ADD BH,#1
-csh_addr_ok:
-    SUB CL,#1
-    JMPNC csh_cnt_ok
-    SUB CH,#1
-csh_cnt_ok:
-    MOV DL,CH
-    OR  DL,CL
-    JMPNZ csh_l
+    MOV DL,#lo(shadow+1)
+    MOV DH,#hi(shadow+1)
+    MOV CL,#0xFF
+    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOVB
     RET
 
 blit:
@@ -1498,6 +1552,7 @@ rd3:             .space 1
 rd4:             .space 1
 rd5:             .space 1
 ud_i:            .space 1   ; udiv_acc: contador de las 24 vueltas
+ud_rem:          .space 1   ; udiv_acc_fast: resto acumulado entre bytes
 
 bi:              .space 1
 box_mode:        .space 1   ; 0=apaga pixeles  1=enciende

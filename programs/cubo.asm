@@ -59,11 +59,15 @@
 ;  que la trama de discos solapados case entre si en vez de verse cada uno
 ;  con su propio patron descuadrado.
 ;
-;  La CPU no tiene MUL ni DIV en hardware, asi que hacen falta dos rutinas
-;  propias:
-;    - smul64: multiplicacion con signo de 8x8 bits (desplazar-y-sumar) que
-;      de paso reescala /64, para deshacer la coma fija del seno/coseno
-;      (ver "punto fijo" mas abajo).
+;  Esta CPU SI tiene MUL en hardware (familia 27, ver docs/isa.md SS4d), pero
+;  no DIV con signo ni un "multiplica y reescala /64" de una sola pieza, asi
+;  que siguen haciendo falta dos rutinas propias:
+;    - smul64: multiplicacion con signo de 8x8 bits que de paso reescala
+;      /64, para deshacer la coma fija del seno/coseno (ver "punto fijo" mas
+;      abajo). Por dentro: extrae el signo de cada operando a mano (MUL es
+;      sin signo), UNA instruccion MUL para la multiplicacion sin signo de
+;      verdad (antes un bucle de desplazar-y-sumar de 8 pasos), reescala con
+;      6 SHR y reaplica el signo al resultado.
 ;    - line_draw: Bresenham entero de proposito general (con signo via el bit
 ;      N, sin necesitar comparaciones con signo de rango completo -- los
 ;      deltas de este cubo son pequenos y no desbordan un byte). Solo la usa
@@ -761,56 +765,17 @@ sm_apos:
     XOR AL,#1
     STA [sm_neg],AL
 sm_bpos:
-    MOV AL,#0
-    STA [sm_hi],AL
-    STA [sm_lo],AL
+    ; Multiplicacion sin signo de verdad: antes esto era un bucle de 8
+    ; pasos de "desplaza y suma condicional" (~30 instrucciones, ejecutado
+    ; entero en cada llamada); ahora es una sola instruccion hardware --
+    ; ver MUL en docs/isa.md SS4d. AX = [sm_a] * [sm_b] (sin signo, los dos
+    ; ya son magnitudes no negativas gracias al bloque de arriba).
     LDA AL,[sm_a]
-    STA [sm_m_lo],AL
-    MOV AL,#0
-    STA [sm_m_hi],AL
-    MOV AL,#8
-    STA [sm_cnt],AL
-sm_loop:
-    LDA AL,[sm_b]
-    AND AL,#1
-    JMPZ sm_noadd
-    LDA AL,[sm_lo]
-    LDA BL,[sm_m_lo]
-    ADD AL,BL
+    LDA BL,[sm_b]
+    MUL BL
     STA [sm_lo],AL
-    LDA AL,[sm_hi]
-    LDA BL,[sm_m_hi]
-    JMPNC sm_addhi
-    ADD AL,#1
-sm_addhi:
-    ADD AL,BL
+    MOV AL,AH
     STA [sm_hi],AL
-sm_noadd:
-    LDA AL,[sm_m_lo]
-    SHL AL
-    STA [sm_m_lo],AL
-    JMPNC sm_mnocarry
-    MOV AL,#1
-    STA [sm_carry],AL
-    JMP sm_mcarrydone
-sm_mnocarry:
-    MOV AL,#0
-    STA [sm_carry],AL
-sm_mcarrydone:
-    LDA AL,[sm_m_hi]
-    SHL AL
-    LDA BL,[sm_carry]
-    OR AL,BL
-    STA [sm_m_hi],AL
-
-    LDA AL,[sm_b]
-    SHR AL
-    STA [sm_b],AL
-
-    LDA AL,[sm_cnt]
-    SUB AL,#1
-    STA [sm_cnt],AL
-    JMPNZ sm_loop
 
     MOV AL,#6
     STA [sm_cnt],AL
@@ -975,10 +940,9 @@ ln_done:
 
 ; --- idx_ptr:  BX = (BL/BH iniciales) + CL, propagando el acarreo a mano ---
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- shadow_set_px:  enciende el pixel (px_x,px_y) en `shadow` (RAM), no en
@@ -1034,25 +998,23 @@ spp_store:
 ; mas corta que las demas y el bucle para 192 bytes antes de tiempo. En su
 ; lugar se cuenta con un contador de 16 bits explicito (CH:CL, de 1024 a 0),
 ; que no depende de en que direccion caiga `shadow`.
+; clr_shadow: antes un bucle de 1024 pasadas (STA+acarreo+cuenta), ahora
+; solo pone a 0 el PRIMER byte y usa MOVB con origen/destino solapados en
+; 1 (BX=shadow, DX=shadow+1) para que ese unico 0 se propague en cascada
+; a los 1023 bytes restantes -- MOVB copia [BX+i]->[DX+i] con i creciente,
+; asi que cada byte lee el que acaba de escribir el paso anterior (ver
+; docs/isa.md SS4d: MOVB no es memmove-seguro con origen<destino
+; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
+    MOV AL,#0
+    STA [shadow],AL
     MOV BL,#lo(shadow)
     MOV BH,#hi(shadow)
-    MOV AL,#0
-    MOV CL,#0
-    MOV CH,#4            ; CH:CL = 1024
-csh_l:
-    STA [BX],AL
-    ADD BL,#1
-    JMPNC csh_addr_ok
-    ADD BH,#1
-csh_addr_ok:
-    SUB CL,#1
-    JMPNC csh_cnt_ok
-    SUB CH,#1
-csh_cnt_ok:
-    MOV DL,CH
-    OR  DL,CL
-    JMPNZ csh_l
+    MOV DL,#lo(shadow+1)
+    MOV DH,#hi(shadow+1)
+    MOV CL,#0xFF
+    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que haya cambiado -
@@ -1866,8 +1828,6 @@ sm_b:      .space 1
 sm_neg:    .space 1
 sm_hi:     .space 1
 sm_lo:     .space 1
-sm_m_lo:   .space 1
-sm_m_hi:   .space 1
 sm_carry:  .space 1
 sm_cnt:    .space 1
 

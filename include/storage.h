@@ -14,6 +14,15 @@ constexpr size_t PROGRAM_SIZE = 65536;
 // 4194304 / 69632 = 60.
 constexpr size_t MAX_PROGRAM_SLOTS = 60;
 
+// Memoria persistente de EEPROM_SLOT_SIZE bytes POR SLOT (ver iomap.h
+// PORT_EEPROM_*), aparte y con dirección propia de la imagen del programa --
+// para records/ajustes que deben sobrevivir a apagar el aparato. Vive en el
+// resto de la flash que los 60 slots de programa no llegan a llenar
+// (60*69632 = 4177920 de los 4194304 bytes del chip -- sobran 16384, justo
+// 60*256): 256 bytes por slot, sin desperdiciar ese hueco ni recortar de
+// más.
+constexpr size_t EEPROM_SLOT_SIZE = 256;
+
 // Interfaz de almacenamiento. Cualquier implementación (flash SPI real,
 // fichero...) es intercambiable.
 class IProgramStorage {
@@ -30,6 +39,13 @@ public:
     virtual bool saveProgram(int slot, const uint8_t* src) = 0;
     // Marca el slot como libre.
     virtual bool deleteProgram(int slot) = 0;
+
+    // Lee/escribe los EEPROM_SLOT_SIZE bytes persistentes de 'slot' (ver
+    // arriba). Independiente de si el slot tiene programa guardado o no, y
+    // de deleteProgram() (que no los toca). false solo si 'slot' está fuera
+    // de 0..MAX_PROGRAM_SLOTS-1.
+    virtual bool readEeprom(int slot, uint8_t* dest) = 0;
+    virtual bool writeEeprom(int slot, const uint8_t* src) = 0;
 };
 
 } // namespace compi

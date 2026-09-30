@@ -295,7 +295,9 @@ draw_page:
 
 ; --- draw_header: BX = puntero al nombre del tema (asciiz). Escribe en la
 ; fila 0: "NOMBRE P/N" (P = pagina actual 1-indexada, N = total de paginas;
-; un solo digito cada uno -- ningun tema pasa de 9 paginas).
+; put_dec2 escribe cada una en 1 o 2 cifras segun haga falta -- ver su
+; comentario, ningun tema por encima de 9 paginas se comia ya la segunda
+; cifra, "PORTS" fue el primero en llegar a 10).
 draw_header:
     MOV DL,#0
     MOV DH,#0x04
@@ -316,15 +318,40 @@ dh_name_done:
     ADD DL,#1
     LDA AL,[cur_page]
     ADD AL,#1
-    ADD AL,#0x30             ; '0' + (cur_page+1)
-    OUT (DX),AL
-    ADD DL,#1
+    CALL put_dec2            ; pagina actual (1-indexada), 1 o 2 cifras
     MOV AL,#0x2F              ; '/'
     OUT (DX),AL
     ADD DL,#1
     LDA AL,[cur_topic_pages]
+    CALL put_dec2            ; total de paginas del tema, 1 o 2 cifras
+    RET
+
+; --- put_dec2: AL = valor 0-99 a escribir en decimal; DX = puerto de texto
+; de la celda donde va la primera cifra. Sin cero a la izquierda: un solo
+; digito si AL<10, decenas+unidades si AL>=10 (nunca un "10" partido en dos
+; celdas de golpe con un simbolo raro en medio, que es justo lo que pasaba
+; antes con "ADD AL,#0x30" a secas para un valor de dos cifras: 10+0x30 =
+; 0x3A = ':', no "10"). Deja DL avanzado a la celda siguiente a la ultima
+; cifra escrita, listo para seguir escribiendo detras (p.ej. el "/" o lo que
+; venga despues en draw_header).
+put_dec2:
+    CMP AL,#10
+    JMPC pd2_one              ; AL<10: una sola cifra
+    MOV AH,#0
+    MOV BL,#10
+    DIV BL                    ; AL=decenas (1-9), AH=unidades (0-9)
     ADD AL,#0x30
     OUT (DX),AL
+    ADD DL,#1
+    MOV AL,AH
+    ADD AL,#0x30
+    OUT (DX),AL
+    ADD DL,#1
+    RET
+pd2_one:
+    ADD AL,#0x30
+    OUT (DX),AL
+    ADD DL,#1
     RET
 
 ; --- draw_content: BX = puntero a texto con "\n" (0x0A) como salto de
@@ -398,10 +425,9 @@ ps_d:
 
 ; --- idx_ptr: BX += CL (con acarreo a BH) -----------------------------------
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- read_ptr16: BX = base de una tabla de punteros de 16 bits; CL = indice
@@ -485,19 +511,20 @@ t2p5: .asciiz "LED & TIMERS\n0610 IN/OUT: onboard\nLED, bit0=on.\n0620-0629 IN/O
 t2p6: .asciiz "SOUND 0630-0633\n0630/31: freq lo/hi\n(16-bit, hi triggers)\n0632: MIDI note\n0-127 (69=440Hz)\n0633: auto-off in\n10ms steps, sticky"
 t2p7: .asciiz "SOUND ORDER WARNING\nAlways write 0633\n(duration) BEFORE\n0632/0631 (note or\nfreq): duration is\nsticky but not\nretroactive"
 t2p8: .asciiz "PROGRAM LOAD/SAVE\n0640 OUT slot: load\ninto RAM, reset CPU\n+screen+snd+led+enc\n0641 OUT slot: save\nRAM, keep running\nIN=1 if last failed"
+t2p9: .asciiz "CONFIG 0650-0651\n0650 brightness\nOUT 0-255 (IN=echo)\nresets on new run\n0651 sound on/off\nOUT !0=on 0=off\n(IN=state) persists"
 t3p0: .asciiz "REGISTERS\nAX BX CX DX, each\n16 bit, split into\n8-bit halves: AL/AH\nBL/BH CL/CH DL/DH.\nPlus PC, SP (starts\n0xFFFF), FLAGS:NVZC"
-t3p1: .asciiz "OPCODE BYTE\nopcode = family*8\n+ register (or +\ncondition for JMP/\nCALL). No MUL/DIV\ninstructions exist\non this CPU"
+t3p1: .asciiz "OPCODE BYTE\nopcode = family*8\n+ register (or +\ncondition for JMP/\nCALL). Now includes\nMUL/DIV/INC/DEC/\nMOVB/MOVW families"
 t3p2: .asciiz "CORE INSTRUCTIONS 1\nNOP(1) HALT(1)\nMOV reg,#imm8(2)\nLDA reg,[addr16](3)\n  reg = mem[addr]\nSTA [addr16],reg(3)\n  mem[addr] = reg"
 t3p3: .asciiz "ALU w/ MEMORY (3B)\nADD/SUB/AND/OR/XOR\nreg,[addr16]\nreg = reg <op> mem\nFlags: N V Z C for\nADD/SUB; N Z only\n(C=V=0) for logic"
-t3p4: .asciiz "NOT/SHR/SHL/IN/OUT\nNOT reg(1): ~reg\nSHR/SHL reg(1):\nshift 1 bit, C=bit\nout, V/N/Z set\nIN reg,(port16)(3)\nOUT (port16),reg(3)"
-t3p5: .asciiz "EXTENDED FORMS\nLDA/STA/IN/OUT also\ntake addr/port from\nAX/BX/CX/DX (2B not\n3). SHR/SHL reg,#N\n(2B) shifts N=1..8\nbits in one instr"
-t3p6: .asciiz "STACK & JUMPS\nPUSH/POP reg (1B).\nJMP<cc>/CALL<cc>\naddr16: always 3B\neven if cc false.\nRET(1) pops PC.\ncc:ALWAYS Z NZ C NC"
+t3p4: .asciiz "NOT/SHR/SHL/EXT\nNOT reg(1):~reg\nSHR/SHL reg(1):1bit\nIN/OUT (port)(3B) or\n(AX|BX|CX|DX)(2B)\nSHR/SHL reg,#N(2B):\nshift N=1..8 at once"
+t3p5: .asciiz "MUL/DIV & 16-BIT\nMUL:AX=AL*reg\nDIV:AL=AX/r,AH=rem\nINC/DEC/ADD/SUB\nreg16. MOVB/MOVW\nblock copy. MOV\nreg16,#imm16: LEN 4!"
+t3p6: .asciiz "STACK & JUMPS\nPUSH/POP reg (1B).\nJMP<cc>/CALL<cc>\naddr16: always 3B\nRET(1) pops PC.\ncc:ALWAYS Z NZ C NC\nN NN V(overflow)"
 t3p7: .asciiz "ALU reg,reg / #imm\nF8+op dst,src (2B):\nMOV ADD SUB CMP AND\nOR XOR, op 0-6.\nA0+op reg,#imm8(3B):\nop=reg field, then\nimm8. Same flags"
 t3p8: .asciiz "FLAGS SUMMARY\nArithmetic: Z=res 0,\nN=bit7 of result.\nSUB/CMP: C=borrow\n(a<b). ADD: C=carry\npast 255. Logic ops:\nC=V=0 always"
 t4p0: .asciiz "TWO SWITCHES\nSW_MODE: EDIT or\nRUN. SW_STEP means:\nediting: up=memory,\ndown=programs.\nrunning: up=step,\ndown=continuous"
 t4p1: .asciiz "THE FOUR VIEWS\nEDIT+up: EditMem\n(disasm + edit)\nEDIT+dn: EditPrg\n(slot browser)\nRUN+up: ExecPaso\nRUN+dn: ExecCont"
 t4p2: .asciiz "EditMem CONTROLS\nADDR turn: move by\nwhole instruction.\nADDR short: insert\nNOP. ADDR long:\ndelete byte. DATA\nturn: change field"
-t4p3: .asciiz "EditMem FIELDS\nDATA press confirms\nfield, advances.\nOn last field, also\nmoves to next addr.\nVerb field cycles\n21 verbs A-Z order"
+t4p3: .asciiz "EditMem FIELDS\nDATA press confirms\nfield, advances.\nOn last field, also\nmoves to next addr.\nVerb field cycles\n27 verbs A-Z order"
 t4p4: .asciiz "EditPrg CONTROLS\nADDR turn: pick\nslot 0-59. DATA\nturn: cycle action\nLOAD/SAVE/NEW.\nEither button press\nruns chosen action"
 t4p5: .asciiz "ExecPaso CONTROLS\nADDR turn: pick a\ntarget addr (no\nrun yet). ADDR short\npress: run to there.\nADDR long: reset.\nDATA: step 1 instr"
 t4p6: .asciiz "ExecCont\nBoth encoders and\nboth buttons pass\nstraight through to\nthe running program\nvia IN on their\nports (0600-0603)"
@@ -506,14 +533,14 @@ t4p7: .asciiz "RUN/RESET RULES\nStart of RUN, or\nswitch to CONT, or\nADDR-long 
 ; --- tablas de paginas por tema ----------------------------------------------
 T0_PAGES: .dw t0p0, t0p1, t0p2, t0p3, t0p4, t0p5, t0p6, t0p7, t0p8
 T1_PAGES: .dw t1p0, t1p1, t1p2, t1p3, t1p4, t1p5, t1p6, t1p7, t1p8
-T2_PAGES: .dw t2p0, t2p1, t2p2, t2p3, t2p4, t2p5, t2p6, t2p7, t2p8
+T2_PAGES: .dw t2p0, t2p1, t2p2, t2p3, t2p4, t2p5, t2p6, t2p7, t2p8, t2p9
 T3_PAGES: .dw t3p0, t3p1, t3p2, t3p3, t3p4, t3p5, t3p6, t3p7, t3p8
 T4_PAGES: .dw t4p0, t4p1, t4p2, t4p3, t4p4, t4p5, t4p6, t4p7
 
 ; --- tablas de nivel superior (indexadas por numero de tema 0..NUM_TOPICS-1) -
 NUM_TOPICS = 5
 TOPIC_NAMES:       .dw tn0_name, tn1_name, tn2_name, tn3_name, tn4_name
-TOPIC_PAGE_COUNTS: .db 9, 9, 9, 9, 8
+TOPIC_PAGE_COUNTS: .db 9, 9, 10, 9, 8
 TOPIC_PAGE_TABLES: .dw T0_PAGES, T1_PAGES, T2_PAGES, T3_PAGES, T4_PAGES
 
 ; ============================================================================

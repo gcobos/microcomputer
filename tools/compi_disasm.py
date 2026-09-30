@@ -32,13 +32,13 @@ necesariamente LEGIBLE en esas zonas.
 Por que el resultado reensambla EXACTO: cada mnemonico que emite es el mismo
 texto, byte a byte, que ya emite disasm.cpp (por eso casm.py lo entiende sin
 cambios). Las pocas combinaciones de bits que NO tienen mnemonico documentado
--- familias de opcode reservadas (27-30) o el subcampo de ALU con valor 0 o 7
-en las formas OP_EXT/OP_ALUI (ver include/isa.h: AluOp solo define 0-6, y el
-valor 0 en la forma ALUI, aunque tecnicamente MOV, ambiguaria con la forma
-LDI de 2 bytes si se escribiera "MOV reg,#imm" a secas: casm.py SIEMPRE
-prefiere LDI, que no ocupa los mismos bytes) -- se vuelcan como `.db` con los
-bytes crudos en vez de inventarse un mnemonico, para no perder ni cambiar ni
-un bit.
+-- el subop 6/7 de F_EXT2 (reservado, ver include/isa.h) o el subcampo de ALU
+con valor 0 o 7 en las formas OP_EXT/OP_ALUI (ver include/isa.h: AluOp solo
+define 0-6, y el valor 0 en la forma ALUI, aunque tecnicamente MOV, ambiguaria
+con la forma LDI de 2 bytes si se escribiera "MOV reg,#imm" a secas: casm.py
+SIEMPRE prefiere LDI, que no ocupa los mismos bytes) -- se vuelcan como `.db`
+con los bytes crudos en vez de inventarse un mnemonico, para no perder ni
+cambiar ni un bit.
 
 Genera una etiqueta L<addr> (p.ej. L0100) para cada destino de JMP/CALL que
 caiga justo en el arranque de "su" instruccion segun esta misma particion; si
@@ -53,22 +53,38 @@ IMAGE_SIZE = 65536
 # Familias de opcode (isa.h): opcode = family<<3 | reg.
 (F_NOP, F_HALT, F_LDI, F_LDA, F_STA, F_ADD, F_SUB, F_AND, F_OR, F_XOR,
  F_NOT, F_SHR, F_SHL, F_IN, F_OUT, F_PUSH, F_POP, F_JMP, F_CALL, F_RET,
- F_ALUI, F_LDAR, F_STAR, F_INR, F_OUTR, F_SHRN, F_SHLN) = range(27)
+ F_ALUI, F_LDAR, F_STAR, F_INR, F_OUTR, F_SHRN, F_SHLN,
+ F_MUL, F_DIV, F_INCDEC16, F_EXT2) = range(31)
 F_EXT = 31
 
 REG8 = ["AL", "AH", "BL", "BH", "CL", "CH", "DL", "DH"]
 REG16 = ["AX", "BX", "CX", "DX"]
-COND = ["", "Z", "NZ", "C", "NC", "N", "NN"]
+COND = ["", "Z", "NZ", "C", "NC", "N", "NN", "V"]
 ALU_NAMES = {0: "MOV", 1: "ADD", 2: "SUB", 3: "CMP", 4: "AND", 5: "OR", 6: "XOR"}
 
 # Longitud (bytes) de cada familia -- igual que instrLen() en disasm.cpp.
+# F_MUL/F_DIV/F_INCDEC16 son LEN1 (caen al "return 1" de abajo). F_EXT2 es
+# la unica familia que mezcla longitudes -- se resuelve aparte, mirando el
+# subop (los 3 bits bajos del opcode), igual que disasm.cpp.
 _LEN2 = {F_LDI, F_EXT, F_LDAR, F_STAR, F_INR, F_OUTR, F_SHRN, F_SHLN}
 _LEN3 = {F_LDA, F_STA, F_ADD, F_SUB, F_AND, F_OR, F_XOR, F_IN, F_OUT,
          F_JMP, F_CALL, F_ALUI}
 
 
 def instr_len(mem, addr):
-    fam = mem[addr] >> 3
+    op = mem[addr]
+    fam = op >> 3
+    if fam == F_EXT2:
+        sub = op & 7
+        if sub <= 1:
+            return 2
+        if sub <= 3:
+            return 1
+        if sub <= 5:
+            return 3
+        if sub == 6:
+            return 4
+        return 1
     if fam in _LEN3:
         return 3
     if fam in _LEN2:
@@ -96,6 +112,7 @@ def decode_one(mem, addr):
     fam, r = op >> 3, op & 7
     b1 = rd(mem, addr + 1)
     b2 = rd(mem, addr + 2)
+    b3 = rd(mem, addr + 3)
     a16 = b1 | (b2 << 8)
 
     if fam in (F_NOP, F_HALT, F_RET):
@@ -151,10 +168,7 @@ def decode_one(mem, addr):
     if fam == F_POP:
         return Instr(addr, 1, f"POP {REG8[r]}")
     if fam in (F_JMP, F_CALL):
-        # r = condicion (0-6 documentadas, ver isa.h JumpCond); r==7 no
-        # tiene sufijo valido para casm.py (su tabla COND no lo tiene).
-        if r == 7:
-            return Instr(addr, 3, None, raw=[op, b1, b2])
+        # r = condicion (0-6 documentadas + 7=V, ver isa.h JumpCond).
         mnem = "JMP" if fam == F_JMP else "CALL"
         return Instr(addr, 3, f"{mnem}{COND[r]} 0x{a16:04X}", target=a16)
     if fam == F_EXT:
@@ -174,8 +188,44 @@ def decode_one(mem, addr):
             dst = b1 & 7
             return Instr(addr, 3, f"{ALU_NAMES[r]} {REG8[dst]},#0x{b2:02X}")
         return Instr(addr, 3, None, raw=[op, b1, b2])
-    # Familias reservadas (27..30): sin mnemonico, longitud 1 (igual que las
-    # ejecuta el aparato: como un NOP, pero conservando el byte real).
+    if fam == F_MUL:
+        return Instr(addr, 1, f"MUL {REG8[r]}")
+    if fam == F_DIV:
+        return Instr(addr, 1, f"DIV {REG8[r]}")
+    if fam == F_INCDEC16:
+        # r = dir<<2 | reg16 (dir 0=INC 1=DEC); los bits por encima de eso
+        # (r>=8 es imposible, r ya son solo 3 bits) no existen aqui.
+        dec = (r & 4) != 0
+        return Instr(addr, 1, f"{'DEC' if dec else 'INC'} {REG16[r & 3]}")
+    if fam == F_EXT2:
+        sub = r
+        if sub in (0, 1):
+            # ADD/SUB dst16,src8: operando = (dst16<<3)|src8; los 3 bits
+            # altos de b1 estan fuera de ese layout (siempre 0 al
+            # reensamblar) -- si vienen puestos, se deja en crudo.
+            if b1 & 0xC0:
+                return Instr(addr, 2, None, raw=[op, b1])
+            dst16, src8 = (b1 >> 3) & 3, b1 & 7
+            mnem = "ADD" if sub == 0 else "SUB"
+            return Instr(addr, 2, f"{mnem} {REG16[dst16]},{REG8[src8]}")
+        if sub == 2:
+            return Instr(addr, 1, "MOVB")
+        if sub == 3:
+            return Instr(addr, 1, "MOVW")
+        if sub == 4:
+            return Instr(addr, 3, f"JMPNV 0x{a16:04X}", target=a16)
+        if sub == 5:
+            return Instr(addr, 3, f"CALLNV 0x{a16:04X}", target=a16)
+        if sub == 6:
+            # MOV reg16,#imm16: b1=reg16 (2 bits bajos), imm16 en b2/b3 --
+            # NO en a16 (que aqui vale b1|b2<<8 y no es el layout de esto).
+            if b1 & 0xFC:
+                return Instr(addr, 4, None, raw=[op, b1, b2, b3])
+            imm16 = b2 | (b3 << 8)
+            return Instr(addr, 4, f"MOV {REG16[b1 & 3]},#0x{imm16:04X}")
+        # subop 7: reservado, sin mnemonico (se ejecuta como NOP).
+        return Instr(addr, 1, None, raw=[op])
+    # Sin familias reservadas por ahora (27-30 ya se usan arriba).
     return Instr(addr, 1, None, raw=[op])
 
 

@@ -192,6 +192,20 @@ periféricos va en `0x06xx`.
   porque tras una carga correcta ya no corre el programa que la pidió).
   El slot 0 se carga solo al encender (ver `setup()`), pensado para un
   "sistema operativo" (`programs/sisop.asm`) que arranque los demás.
+- **Configuración del aparato** (`OUT`/`IN`): `PORT_CFG_BRIGHTNESS` 0x0650 y
+  `PORT_CFG_SOUND_EN` 0x0651 -- ajustes que antes solo se tocaban desde fuera
+  del programa (ahorro de energía automático, botón BOOT). `OUT 0x0650, v` =
+  brillo 0–255, aplicado al instante (`oled.contrast(v)`) y guardado en
+  `g_screenContrast`, que sustituye a `OLED_CONTRAST_FULL` como el "pleno
+  brillo" que usa `applyScreenPower()` -- el atenuado/apagado automático por
+  inactividad sigue igual, solo cambia a qué vuelve. Se reinicia de fábrica en
+  cada `clearRuntimeOutputs()` (arranque de ejecución nueva), como el resto de
+  salidas. `OUT 0x0651, v` = activa (`v!=0`) o silencia (`v=0`) el sonido:
+  mismo interruptor que el botón BOOT (`g_soundMuted`), pero sin su jingle de
+  reactivación (pensado para un humano, no para código) y, a diferencia del
+  brillo, **no** se reinicia entre ejecuciones (es una preferencia de sesión).
+  `IN` de cada uno: eco del brillo actual, o 1/0 según el sonido esté
+  activado/silenciado.
 - `main` fija `cpu.setPortRead(portRead)` y `cpu.setPortWrite(portWrite)`.
   Los contadores de posición viven en `FrontPanel`.
 
@@ -250,7 +264,12 @@ Trabaja sobre un buffer plano `(mem, memLen)`; direcciones `>= memLen` leen 0.
 - Las 7 ops de la ALU (`MOV ADD SUB CMP AND OR XOR`) tienen forma `reg,src`
   (`OP_EXT`, `0xF8+op`) y `reg,#imm` (`OP_ALUI`, `0xA0+op`); las que además
   operan con memoria son familias 5–9. `MOV reg,#imm` es `OP_LDI` (más corto).
-  Familias reservadas → `DB 0xXX`. Detalle en [`isa.md`](isa.md).
+  `MUL`/`DIV`/`INC`/`DEC`/`ADD`+`SUB` de 16 bits/`MOVB`/`MOVW`/`JMPV`/
+  `JMPNV`/`CALLV`/`CALLNV`/`MOV reg16,#imm16` usan las familias 27–30
+  (antes reservadas) y el hueco `cc=7` de `JMP`/`CALL` — ver
+  [`isa.md`](isa.md) §4d/§5 (`MOV reg16,#imm16` es la única instrucción de
+  más de 3 bytes de toda la ISA: LEN 4). Solo queda reservado de verdad el
+  subop 7 de la familia 30 → `DB 0xXX`.
 
 ---
 

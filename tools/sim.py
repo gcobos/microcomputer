@@ -64,6 +64,11 @@ class Ports:
         self.cpu = None
         self.last_load_ok = 0
         self.last_save_ok = 0
+        # configuracion (0x0650/0x0651, iomap.h) -- espejo de g_screenContrast/
+        # g_soundMuted en main.cpp. sound_muted empieza en False (sonido
+        # activado), igual que g_soundMuted en el firmware real.
+        self.brightness = 0xCF   # OLED_CONTRAST_FULL (main.cpp)
+        self.sound_muted = False
 
     def tick(self):
         self.now_ns += self.instr_ns
@@ -111,6 +116,10 @@ class Ports:
             return self.last_load_ok
         if port == 0x0641:
             return self.last_save_ok
+        if port == 0x0650:
+            return self.brightness
+        if port == 0x0651:
+            return 0 if self.sound_muted else 1
         return 0
 
     def write(self, port, val):
@@ -154,6 +163,12 @@ class Ports:
         if port == 0x0641:
             self._prog_save(val)
             return
+        if port == 0x0650:
+            self.brightness = val
+            return
+        if port == 0x0651:
+            self.sound_muted = (val == 0)
+            return
 
     def _slot_path(self, slot):
         if self.slots_dir is None or not (0 <= slot < MAX_PROGRAM_SLOTS):
@@ -168,7 +183,7 @@ class Ports:
         # siquiera se limpia pantalla/LED/sonido en ese caso).
         path = self._slot_path(slot)
         if path is None or not os.path.isfile(path):
-            self.last_load_ok = 0
+            self.last_load_ok = 1   # 1 = FALLO (ver iomap.h PORT_PROG_LOAD)
             return
         with open(path, "rb") as f:
             data = f.read(PROGRAM_SIZE)
@@ -195,6 +210,10 @@ class Ports:
             self.timer_set_ns[i] = self.now_ns
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
         self._snd(0)
+        # brillo: de fabrica en cada ejecucion nueva (clearRuntimeOutputs());
+        # sonido silenciado/activado NO se toca -- es una preferencia de
+        # sesion, igual que main.cpp (ver iomap.h PORT_CFG_SOUND_EN).
+        self.brightness = 0xCF
         self.last_load_ok = 1
 
     def _prog_save(self, slot):
@@ -330,7 +349,9 @@ class Cpu:
         z = bool(self.flags & FLAG_Z)
         cy = bool(self.flags & FLAG_C)
         n = bool(self.flags & FLAG_N)
-        return [True, z, not z, cy, not cy, n, not n][c] if c < 7 else True
+        v = bool(self.flags & FLAG_V)
+        table = [True, z, not z, cy, not cy, n, not n, v]
+        return table[c] if c < len(table) else True
 
     def step(self):
         if self.halted:
@@ -464,7 +485,88 @@ class Cpu:
             dst = self._f8() & 7
             imm = self._f8()
             self.r[dst] = self._alu(r, self.r[dst], imm)
-        # 27..30: NOP
+        elif fam == 27:  # MUL reg : AX = AL * reg, sin signo
+            b = self.r[r]
+            product = self.r[0] * b
+            self.r[0] = product & 0xFF
+            self.r[1] = (product >> 8) & 0xFF
+            hi = 1 if product > 0xFF else 0
+            f = hi
+            if product == 0:
+                f |= FLAG_Z
+            if product & 0x8000:
+                f |= FLAG_N
+            if hi:
+                f |= FLAG_V
+            self.flags = f
+        elif fam == 28:  # DIV reg : AL=AX/reg AH=AX%reg, sin signo -- satura
+                          # (AL=AH=0xFF, C=V=1) en division entre 0 o cociente
+                          # que no cabe en 8 bits, igual que cpu.cpp
+            divisor = self.r[r]
+            ax = self.r[0] | (self.r[1] << 8)
+            ok, q, rem = False, 0, 0
+            if divisor != 0:
+                q, rem = divmod(ax, divisor)
+                ok = q <= 0xFF
+            if ok:
+                self.r[0] = q
+                self.r[1] = rem
+                f = 0
+                if q == 0:
+                    f |= FLAG_Z
+                if q & 0x80:
+                    f |= FLAG_N
+                self.flags = f
+            else:
+                self.r[0] = 0xFF
+                self.r[1] = 0xFF
+                self.flags = FLAG_C | FLAG_V | FLAG_N
+        elif fam == 29:  # INC/DEC reg16 : opcode bajo = dir<<2|reg16, sin flags
+            reg16 = r & 3
+            dec = bool(r & 4)
+            v = self.r[reg16 * 2] | (self.r[reg16 * 2 + 1] << 8)
+            v = (v - 1) & MASK if dec else (v + 1) & MASK
+            self.r[reg16 * 2] = v & 0xFF
+            self.r[reg16 * 2 + 1] = (v >> 8) & 0xFF
+        elif fam == 30:  # "extension 2": subop en r (ver isa.h OP_EXT2)
+            sub = r
+            if sub in (0, 1):  # ADD/SUB dst16,src8 (sin signo, sin flags)
+                operand = self._f8()
+                dst16 = (operand >> 3) & 3
+                src8 = operand & 7
+                v = self.r[dst16 * 2] | (self.r[dst16 * 2 + 1] << 8)
+                ext = self.r[src8]
+                v = (v + ext) & MASK if sub == 0 else (v - ext) & MASK
+                self.r[dst16 * 2] = v & 0xFF
+                self.r[dst16 * 2 + 1] = (v >> 8) & 0xFF
+            elif sub in (2, 3):  # MOVB/MOVW: BX=origen DX=destino CX=cuenta
+                src = self.r[2] | (self.r[3] << 8)
+                dst = self.r[6] | (self.r[7] << 8)
+                count = self.r[4] | (self.r[5] << 8)
+                nbytes = count * 2 if sub == 3 else count
+                for i in range(nbytes):
+                    self.m[(dst + i) & MASK] = self.m[(src + i) & MASK]
+                newsrc = (src + nbytes) & MASK
+                newdst = (dst + nbytes) & MASK
+                self.r[2], self.r[3] = newsrc & 0xFF, (newsrc >> 8) & 0xFF
+                self.r[6], self.r[7] = newdst & 0xFF, (newdst >> 8) & 0xFF
+                self.r[4] = self.r[5] = 0
+            elif sub == 4:  # JMPNV
+                addr = self._f16()
+                if not (self.flags & FLAG_V):
+                    self.pc = addr
+            elif sub == 5:  # CALLNV
+                addr = self._f16()
+                if not (self.flags & FLAG_V):
+                    self._push((self.pc >> 8) & 0xFF)
+                    self._push(self.pc & 0xFF)
+                    self.pc = addr
+            elif sub == 6:  # MOV reg16,#imm16 -- unica LEN 4, sin flags
+                pair = self._f8() & 3
+                imm = self._f16()
+                self.r[pair * 2] = imm & 0xFF
+                self.r[pair * 2 + 1] = (imm >> 8) & 0xFF
+            # sub 7: reservado, se comporta como NOP
         return not self.halted
 
 

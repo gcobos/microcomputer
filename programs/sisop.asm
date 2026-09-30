@@ -42,8 +42,15 @@ P_DIR_BTN  = 0x0601
 P_DAT_POS  = 0x0602
 P_DAT_BTN  = 0x0603
 P_PROG_LOAD = 0x0640
+P_CFG_BRIGHTNESS = 0x0650
+P_CFG_SOUND_EN   = 0x0651
 
-NUM_FOLDERS = 5
+NUM_FOLDERS = 6
+; "Carpeta" especial (ver on_select/os_settings): no lista programas, entra
+; directo en la vista SETTINGS (view=2) -- brillo de pantalla y silenciar/
+; activar el sonido, en caliente, sin salir de este menu ni cargar otro slot.
+SETTINGS_FOLDER = 5
+BRIGHT_STEP = 16      ; paso de brillo por detente de DATOS (0..255, 16 pasos)
 
 ; ============================================================================
 ;  ARRANQUE
@@ -67,6 +74,13 @@ start:
     CALL redraw
 
 main_l:
+    ; SETTINGS (view=2) tiene su propio manejo de DATOS (gira=brillo,
+    ; pulsa=mute) -- ver ml_settings, mas abajo, que comparte con el resto
+    ; de vistas el pulsador de DIRECCION (volver) y la espera del final.
+    LDA AL,[view]
+    CMP AL,#2
+    JMPZ ml_settings
+
     ; --- encoder DIRECCION: mueve la seleccion --------------------------
     IN  AL,(P_DIR_POS)
     STA [tmp0],AL
@@ -114,6 +128,11 @@ ml_datbtn:
     CMP BL,#0
     JMPNZ ml_dirbtn         ; ya estaba pulsado -- no es un flanco nuevo
     CALL on_select
+    JMP ml_dirbtn
+
+ml_settings:
+    CALL settings_dial_dat
+    CALL settings_press_dat
 
 ml_dirbtn:
     ; --- pulsador DIRECCION: vuelve a la lista de carpetas --------------
@@ -190,6 +209,10 @@ on_select:
     CMP AL,#0
     JMPNZ os_launch
 
+    LDA AL,[cur_folder]
+    CMP AL,#SETTINGS_FOLDER
+    JMPZ os_settings
+
     MOV BL,#lo(FOLDER_COUNTS)
     MOV BH,#hi(FOLDER_COUNTS)
     LDA CL,[cur_folder]
@@ -217,15 +240,101 @@ os_launch:
     ; el menu tal cual, se puede seguir navegando o probar otro)
     RET
 
-; --- on_back: de programas, vuelve a carpetas; de carpetas, no hace nada.
+; --- os_settings: entra en la vista SETTINGS (view=2). Resincroniza los
+; "prev" de DATOS a la posicion/pulsador actuales -- si no, el primer giro/
+; pulsacion dentro de settings interpretaria como "delta" todo lo que el
+; usuario hubiera tocado el mando mientras estaba en la lista de carpetas.
+os_settings:
+    MOV AL,#2
+    STA [view],AL
+    IN  AL,(P_DAT_POS)
+    STA [dat_pos_prev],AL
+    IN  AL,(P_DAT_BTN)
+    STA [dat_btn_prev],AL
+    CALL redraw
+    RET
+
+; --- on_back: de programas o de settings, vuelve a carpetas; de carpetas,
+; no hace nada. Resincroniza dir_pos_prev al volver: en SETTINGS no se lee
+; el encoder DIRECCION para nada (ver ml_settings), asi que si giro mientras
+; tanto, sin esto la vuelta a la lista de carpetas interpretaria ese giro
+; acumulado como un salto brusco de seleccion.
 on_back:
     LDA AL,[view]
     CMP AL,#0
     JMPZ ob_ret
     MOV AL,#0
     STA [view],AL
+    IN  AL,(P_DIR_POS)
+    STA [dir_pos_prev],AL
     CALL redraw
 ob_ret:
+    RET
+
+; --- settings_dial_dat: gira DATOS -> sube/baja PORT_CFG_BRIGHTNESS
+; (BRIGHT_STEP por detente, saturando en 0/255 en vez de dar la vuelta). No
+; guarda brillo aparte: PORT_CFG_BRIGHTNESS ya hace de "memoria" (IN devuelve
+; el ultimo valor escrito, ver iomap.h), asi que siempre se parte del que hay
+; puesto de verdad. El efecto se ve al momento en la pantalla real -- no
+; hace falta pintar un numero ni una barra para saber que esta pasando.
+settings_dial_dat:
+    IN  AL,(P_DAT_POS)
+    STA [tmp0],AL
+    LDA BL,[dat_pos_prev]
+    SUB AL,BL
+    LDA CL,[tmp0]
+    STA [dat_pos_prev],CL
+    CMP AL,#0
+    JMPZ sdd_ret
+
+    AND AL,#0x80
+    JMPNZ sdd_down
+
+    IN  AL,(P_CFG_BRIGHTNESS)
+    ADD AL,#BRIGHT_STEP
+    JMPC sdd_sat255
+    JMP sdd_apply
+sdd_sat255:
+    MOV AL,#255
+    JMP sdd_apply
+
+sdd_down:
+    IN  AL,(P_CFG_BRIGHTNESS)
+    CMP AL,#BRIGHT_STEP
+    JMPC sdd_sat0           ; AL < BRIGHT_STEP -> no cabe una resta entera
+    SUB AL,#BRIGHT_STEP
+    JMP sdd_apply
+sdd_sat0:
+    MOV AL,#0
+
+sdd_apply:
+    OUT (P_CFG_BRIGHTNESS),AL
+sdd_ret:
+    RET
+
+; --- settings_press_dat: pulsa DATOS -> alterna PORT_CFG_SOUND_EN (activa/
+; silencia). Igual que arriba, PORT_CFG_SOUND_EN ya guarda el estado; solo
+; hace falta invertirlo y redibujar la palabra ON/OFF en pantalla.
+settings_press_dat:
+    IN  AL,(P_DAT_BTN)
+    LDA BL,[dat_btn_prev]
+    STA [dat_btn_prev],AL
+    CMP AL,#0
+    JMPZ spd_ret
+    CMP BL,#0
+    JMPNZ spd_ret           ; ya estaba pulsado -- no es un flanco nuevo
+
+    IN  AL,(P_CFG_SOUND_EN)
+    CMP AL,#0
+    JMPZ spd_on
+    MOV AL,#0
+    JMP spd_apply
+spd_on:
+    MOV AL,#1
+spd_apply:
+    OUT (P_CFG_SOUND_EN),AL
+    CALL redraw_settings    ; solo la palabra ON/OFF cambia -- sin parpadeo
+spd_ret:
     RET
 
 ; --- get_selected_slot: sale AL = numero de slot del programa marcado
@@ -249,11 +358,16 @@ redraw:
     CALL clst
     LDA AL,[view]
     CMP AL,#0
-    JMPNZ rd_progs
+    JMPNZ rd_1
     CALL redraw_folders
     RET
-rd_progs:
+rd_1:
+    CMP AL,#1
+    JMPNZ rd_settings
     CALL redraw_programs
+    RET
+rd_settings:
+    CALL redraw_settings
     RET
 
 redraw_folders:
@@ -368,6 +482,48 @@ rdp_domark:
 rdp_done:
     RET
 
+; --- redraw_settings: brillo (se ve/oye en la propia pantalla, sin numero
+; ni barra) y el estado ON/OFF del sonido, con los controles a mano.
+redraw_settings:
+    MOV BL,#lo(s_settings_title)
+    MOV BH,#hi(s_settings_title)
+    MOV CL,#6
+    MOV CH,#0
+    CALL puts
+
+    MOV BL,#lo(s_set_help1)
+    MOV BH,#hi(s_set_help1)
+    MOV CL,#1
+    MOV CH,#2
+    CALL puts
+
+    MOV BL,#lo(s_set_help2)
+    MOV BH,#hi(s_set_help2)
+    MOV CL,#1
+    MOV CH,#3
+    CALL puts
+
+    IN  AL,(P_CFG_SOUND_EN)
+    CMP AL,#0
+    JMPZ rs_snd_off
+    MOV BL,#lo(s_sound_on)
+    MOV BH,#hi(s_sound_on)
+    JMP rs_snd_puts
+rs_snd_off:
+    MOV BL,#lo(s_sound_off)
+    MOV BH,#hi(s_sound_off)
+rs_snd_puts:
+    MOV CL,#1
+    MOV CH,#5
+    CALL puts
+
+    MOV BL,#lo(s_set_back)
+    MOV BH,#hi(s_set_back)
+    MOV CL,#1
+    MOV CH,#7
+    CALL puts
+    RET
+
 ; --- puts:  BL/BH = puntero asciiz,  CL = col,  CH = fila -------------------
 ; solo altera AL/DL/DH (y BL/BH, que ya no hacen falta al terminar).
 puts:
@@ -394,10 +550,9 @@ ps_d:
 
 ; --- idx_ptr: BX += CL (con acarreo a BH) -----------------------------------
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- read_ptr16: BX = base de una tabla de punteros de 16 bits; CL = indice
@@ -444,6 +599,14 @@ s_title:  .asciiz "COMPI"
 s_mark:   .asciiz "> "
 s_nomark: .asciiz "  "
 
+; --- textos de la vista SETTINGS (view=2) -----------------------------------
+s_settings_title: .asciiz "SETTINGS"
+s_set_help1:      .asciiz "TURN: BRIGHTNESS"
+s_set_help2:      .asciiz "PRESS: MUTE SOUND"
+s_sound_on:       .asciiz "SOUND: ON "
+s_sound_off:      .asciiz "SOUND: OFF"
+s_set_back:       .asciiz "DIR: BACK"
+
 ; --- carpeta 0: JUEGOS ------------------------------------------------------
 f0_name: .asciiz "GAMES"
 f0_n0:   .asciiz "PONG"
@@ -481,8 +644,9 @@ f3_n0:   .asciiz "CUBE 3D"
 f3_n1:   .asciiz "STARS"
 f3_n2:   .asciiz "MUSIC"
 f3_n3:   .asciiz "CHESSBOARD"
-F3_SLOTS: .db 3, 5, 8, 12
-F3_NAMES: .dw f3_n0, f3_n1, f3_n2, f3_n3
+f3_n4:   .asciiz "IMAGE"
+F3_SLOTS: .db 3, 5, 8, 12, 18
+F3_NAMES: .dw f3_n0, f3_n1, f3_n2, f3_n3, f3_n4
 
 ; --- carpeta 4: DOCUMENTATION -------------------------------------------------
 ; Un solo programa (docs.asm, slot 16 -- visor de la documentacion del
@@ -495,11 +659,22 @@ f4_n0:   .asciiz "OPEN"
 F4_SLOTS: .db 16
 F4_NAMES: .dw f4_n0
 
-; --- tablas de nivel superior (indexadas por numero de carpeta 0..4) --------
-FOLDER_NAMES:       .dw f0_name, f1_name, f2_name, f3_name, f4_name
-FOLDER_COUNTS:      .db 5, 2, 4, 4, 1
-FOLDER_SLOT_TABLES: .dw F0_SLOTS, F1_SLOTS, F2_SLOTS, F3_SLOTS, F4_SLOTS
-FOLDER_NAME_TABLES: .dw F0_NAMES, F1_NAMES, F2_NAMES, F3_NAMES, F4_NAMES
+; --- carpeta 5: SETTINGS -----------------------------------------------------
+; Especial: on_select la intercepta ANTES de llegar aqui (ver SETTINGS_FOLDER/
+; os_settings) y entra directo en la vista view=2 en vez de listar programas,
+; asi que estas 3 tablas nunca se leen de verdad -- se rellenan igual para
+; que FOLDER_NAMES (que si se usa, en redraw_folders) tenga sus NUM_FOLDERS
+; entradas parejas con el resto.
+f5_name: .asciiz "SETTINGS"
+f5_n0:   .asciiz "OPEN"
+F5_SLOTS: .db 0
+F5_NAMES: .dw f5_n0
+
+; --- tablas de nivel superior (indexadas por numero de carpeta 0..5) --------
+FOLDER_NAMES:       .dw f0_name, f1_name, f2_name, f3_name, f4_name, f5_name
+FOLDER_COUNTS:      .db 5, 2, 4, 5, 1, 1
+FOLDER_SLOT_TABLES: .dw F0_SLOTS, F1_SLOTS, F2_SLOTS, F3_SLOTS, F4_SLOTS, F5_SLOTS
+FOLDER_NAME_TABLES: .dw F0_NAMES, F1_NAMES, F2_NAMES, F3_NAMES, F4_NAMES, F5_NAMES
 
 ; ============================================================================
 ;  VARIABLES

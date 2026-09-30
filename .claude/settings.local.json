@@ -18,7 +18,16 @@
       "Bash(cp /tmp/claude-1000/-home-drone-src-platformio-microcomputer/9d91e22a-701b-4866-b57e-3e18a7183908/scratchpad/shamus.bin programs/shamus.bin)",
       "Bash(cp /tmp/claude-1000/-home-drone-src-platformio-microcomputer/9d91e22a-701b-4866-b57e-3e18a7183908/scratchpad/shamus.lst programs/shamus.lst)",
       "Bash(timeout 300 ~/.platformio/penv/bin/pio run)",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(g++ -std=c++17 -Iinclude -c src/cpu.cpp -o /tmp/cpu.o)",
+      "Bash(g++ -std=c++17 -Iinclude -c src/disasm.cpp -o /tmp/disasm.o)",
+      "Bash(g++ -std=c++17 -Iinclude -c src/editor.cpp -o /tmp/editor.o)",
+      "Bash(g++ -std=c++17 -Wall -Wextra -Iinclude -c src/cpu.cpp -o /tmp/cpu.o)",
+      "Bash(g++ -std=c++17 -Wall -Wextra -Iinclude -c src/disasm.cpp -o /tmp/disasm.o)",
+      "Bash(g++ -std=c++17 -Wall -Wextra -Iinclude -c src/editor.cpp -o /tmp/editor.o)",
+      "Bash(python3 tools/casm.py programs/shamus.asm -o /tmp/shamus_test.bin --list /tmp/shamus_test.lst)",
+      "Bash(python3 tools/compi_disasm.py /tmp/shamus_test.bin)",
+      "Read(//tmp/**)"
     ],
     "additionalDirectories": [
       "/home/drone/src/platformio/microcomputer/firmware/elf8_panel/.pio/libdeps/esp32-c3-devkitm-1/Adafruit BusIO"

@@ -60,78 +60,84 @@
 ;  capa de TEXTO (0x0400+), independiente del framebuffer grafico -- se
 ;  vuelve a escribir solo cuando cambian, no cada fotograma.
 ;
-;  SALAS PERSISTENTES Y CON VARIAS SALIDAS: cada sala tiene una entrada
-;  (siempre abierta) y de 0 a 3 huecos extra en sus otros lados (sorteados
-;  independientemente, mitad y mitad -- una sala puede quedarse sin ningun
-;  hueco extra, forzando a retroceder). room_link[sala*4+lado] guarda, para
-;  cada lado, 254 ("hueco sin cruzar todavia") o el numero de sala al que ya
-;  lleva -- asi el mapa es un arbol que se construye sobre la marcha segun
-;  se explora, no una simple cadena lineal. Cada sala, una vez generada, se
-;  guarda entera (persist_walls/persist_doors/persist_key_*/persist_door_*,
-;  indexados por numero de sala hasta MAX_ROOMS=50) para que volver a ella
-;  la deje EXACTAMENTE igual -- asi el jugador puede escapar de un enemigo
-;  dando marcha atras. Solo se puntua la PRIMERA vez que se cruza un hueco
-;  sin explorar (se le asigna sala nueva); volver a un hueco ya cruzado no
-;  da puntos. Los enemigos SI se regeneran de cero cada vez que se entra a
-;  una sala (persistida o no), la unica pieza que no persiste.
+;  SALAS PERSISTENTES: cada sala, una vez generada, se guarda entera
+;  (persist_walls/persist_doors/persist_key_*/persist_door_*, indexados por
+;  numero de sala hasta MAX_ROOMS=50) para que volver a ella la deje
+;  EXACTAMENTE igual -- asi el jugador puede escapar de un enemigo dando
+;  marcha atras. Solo se puntua la PRIMERA vez que se entra a cada sala
+;  (room_visited[], ver cross_room_gap); volver a una ya visitada no da
+;  puntos. Los enemigos SI se regeneran de cero cada vez que se entra a una
+;  sala (persistida o no), la unica pieza que no persiste.
 ;
-;  LLAVES Y PUERTAS: al sortear los huecos extra de una sala, como mucho
-;  uno de ellos puede salir CANDADO en vez de abierto: se ve (linea sencilla
-;  en vez de doble) pero no se puede cruzar hasta abrirla con una llave. La
-;  llave NUNCA esta en la propia sala de la puerta -- vive en la sala de la
-;  que se VINO para llegar a esta ([prev_room_num]), colocada en una celda
-;  cualquiera de SU laberinto interno: abrir la puerta exige haber
-;  explorado (o vuelto sobre los pasos) a otra sala, no solo cruzar esta de
-;  camino. Llavero COMPARTIDO: cualquier llave abre cualquier puerta (basta
-;  con llevar al menos una encima, [keys_held], ver door_check) -- no hay
+;  TOPOLOGIA PLANIFICADA DE ANTEMANO: a diferencia de un diseño anterior que
+;  decidia cada sala AL EXPLORARLA (sorteando sus huecos extra sobre la
+;  marcha, con las 50 salas como un arbol que crecia segun se avanzaba),
+;  ahora plan_dungeon decide las 50 salas ENTERAS -- su conexion con las
+;  demas (room_link[]) y por que lado se entra a cada una (room_entry_side[])
+;  -- antes de generar ninguna, y new_game genera las 50 de un tiron antes de
+;  que el jugador de un solo paso. Motivo: un esquema de llaves/candados
+;  fijo (ver mas abajo) necesita saber de antemano exactamente cuantas salas
+;  van a llevar una llave o un candado, cosa que un arbol construido al azar
+;  sobre la marcha no puede garantizar.
+;
+;  Hay un CAMINO DIRECTO de PATH_ROOMS(25) salas: 0->1->2->...->24->49 (el
+;  jefe), cada una conectada con la siguiente por un lado al azar (sin
+;  repetir lado dentro de la misma sala). Las salas MAX_ROOMS-PATH_ROOMS-1 =
+;  EXTRA_ROOMS(24) restantes (25..48) cuelgan cada una de una sala del
+;  camino elegida al azar, por uno de sus lados libres -- un solo nivel de
+;  ramas opcionales, nunca anidadas, siempre ABIERTAS (sin llave ni
+;  candado): no hace falta cruzarlas para llegar al jefe, pero tienen que
+;  poder alcanzarse igualmente (plan_dungeon solo las enlaza a lados que
+;  room_link todavia tenga libres, con un barrido determinista de repuesto
+;  si el azar no encontrara hueco a la primera, para no poder colgarse
+;  nunca esperando un hueco que no aparece).
+;
+;  LLAVES Y CANDADOS: de las salas del camino, las KEYLOCK_ROOMS(20)
+;  primeras (0..19) llevan el esquema fijo -- gen_and_save_current_room lo
+;  deduce del propio numero de sala, sin sortear nada:
+;    - PAR (0,2,4,...,18) -> aloja una llave, en una celda interior al azar.
+;    - IMPAR (1,3,5,...,19) -> su ENTRADA sale con CANDADO (se ve como
+;      puerta, linea sencilla, pero cell_walls se queda cerrado ahi hasta
+;      abrirse con una llave, ver door_check) -- la llave que la abre es la
+;      de la sala PAR inmediatamente anterior en el camino (N-1), siempre ya
+;      alcanzada antes de necesitarla, al ser el camino estrictamente lineal
+;      y en orden. 10 llaves y 10 candados en total, GARANTIZADO por
+;      construccion (nunca por probabilidad, a diferencia del diseño
+;      anterior: con la llave de una puerta decidida por una tirada
+;      encadenada de 1/8 dos veces seguidas, en la practica casi nunca
+;      llegaba a haber un candado de verdad, solo llaves sueltas sin nada
+;      que abrir -- bug real reportado y corregido con este rediseño).
+;  Las salas 20..24 (resto del camino) y las 25..48 (extra) no llevan ni
+;  llave ni candado -- via libre. La sala 0 (par) nunca puede salir con
+;  candado (no tiene entrada real que candar) y la del jefe (49, fuera del
+;  rango 0..19) tampoco lleva ni llave ni candado nunca.
+;
+;  Llavero COMPARTIDO: cualquier llave abre cualquier puerta (basta con
+;  llevar al menos una encima, [keys_held], ver door_check) -- no hay
 ;  emparejamiento llave-puerta especifico, porque el HUD no distingue una
 ;  llave de otra (solo un icono + una cifra) y exigir la exacta resultaba
-;  confuso: se podia tener una llave encima y aun asi no poder abrir la
-;  puerta de delante, porque era la de otra en otra parte del laberinto. Lo
-;  que si se conserva es la regla de una llave por sala donante (si una
-;  sala ya le dio su llave a un hijo, otro hijo suyo con puerta se abre sin
-;  candado en su lugar -- ver gsc_maybe_lock, sigue haciendo falta porque
-;  cada sala solo tiene sitio para una llave propia); ADEMAS, una sala que
-;  ella misma tenga su propia entrada con candado nunca aloja una llave
-;  (mismo gsc_maybe_lock) -- sin esto podia darse una sala con llave Y
-;  puerta a la vez (la suya propia, de otro candado mas adentro), que es
-;  justo lo que no se quiere ver nunca aunque no fuera explotable (la llave
-;  alojada no sirve para la propia entrada: esa ya se cruzo para poder
-;  estar ahi). Ni la sala 0 ni
-;  la del jefe (BOSS_ROOM_NUM) sacan puerta nunca. Cogerla es automatico al
-;  pisar su celda; acercarse a cualquier puerta con candado llevando al
-;  menos una llave la abre sola (gastando una del contador), y el cambio se
-;  persiste igual que el resto de la sala.
+;  confuso. Con el esquema par/impar esto es sobre todo una comodidad de
+;  implementacion (la pareja "correcta" siempre esta disponible de todas
+;  formas, al ser el camino lineal), no algo de lo que dependa la solución.
+;  Cogerla es automatico al pisar su celda; acercarse a cualquier puerta con
+;  candado llevando al menos una llave la abre sola (gastando una del
+;  contador), y el cambio se persiste igual que el resto de la sala.
 ;
-;  JEFE FINAL (sala BOSS_ROOM_NUM = MAX_ROOMS-1 = 49, "nivel 50"): en cuanto
-;  next_room_id se satura (se han generado ya MAX_ROOMS salas distintas),
-;  CUALQUIER hueco nuevo sin explorar lleva directamente aqui (mismo
-;  mecanismo que antes reciclaba la ultima sala como degradacion; ahora esa
-;  sala reciclada ES la del jefe a proposito). setup_enemies coloca ahi un
-;  unico enemigo de tipo ENEMY_TYPE_BOSS: persigue igual que cualquier
+;  JEFE FINAL (sala BOSS_ROOM_NUM = MAX_ROOMS-1 = 49, "nivel 50"): enlazada
+;  de forma FIJA desde la sala 24 (la ultima del camino) por plan_dungeon --
+;  a diferencia de un diseño anterior que la alcanzaba "reciclando" CUALQUIER
+;  hueco nuevo una vez saturado el limite de salas generadas (con las
+;  guardas que eso necesitaba para no regenerarla ni corromper su enlace de
+;  vuelta cada vez que un hueco distinto volvia a apuntar ahi), ahora tiene
+;  una unica entrada real, sabida de antemano, igual que cualquier otra
+;  sala -- no hace falta ninguna guarda especial. setup_enemies coloca ahi
+;  un unico enemigo de tipo ENEMY_TYPE_BOSS: persigue igual que cualquier
 ;  enemigo (choose_enemy_dir/step_enemy, sin cambios) y ADEMAS dispara
 ;  (update_enemy_fire ya dispara con cualquier enemy_type != 0, no hizo
 ;  falta tocarlo), pero con sprite mas grande (BOSS_SPRITE_*) y BOSS_HP_MAX
 ;  impactos del disparo del jugador en vez de uno solo (ver update_shots).
 ;  Al caer, en vez del jingle de siempre se ve la pantalla de victoria
 ;  (show_victory) y la partida se reinicia.
-;
-;  Al estar saturado, MUCHOS huecos distintos (de cualquier sala/direccion)
-;  acaban apuntando los 4 al jefe, cada uno "nuevo" desde su propio punto de
-;  vista -- pero el jefe solo se genera y se enlaza "hacia atras" la
-;  PRIMERA vez ([boss_room_ready], ver cross_room_gap); las siguientes
-;  veces solo se enlaza "hacia el" (sala_actual-->jefe) y se restaura el
-;  jefe ya existente, sin tocar nada mas. Ademas, el jefe nunca saca
-;  salidas propias (gen_and_save_current_room las salta si room_num es el
-;  suyo): sin estas dos guardas, cada hueco nuevo saturado volvia a
-;  regenerar el laberinto del jefe entero (pisando su entrada) y/o
-;  reescribia su enlace de vuelta (solo hay 4 direcciones posibles, asi que
-;  dos huecos cualesquiera acababan chocando). Y aunque el jefe ya no se
-;  regenera, un hueco saturado desde una direccion DISTINTA a la de su
-;  primera llegada seguia calculando un entry_side propio (el de ESE hueco,
-;  no el real) -- [boss_entry_side] guarda la entrada real UNA vez, y
-;  crg_boss_existing la restaura siempre sobre [entry_side] antes de
-;  colocar al jugador, sea cual sea el hueco por el que se llegue esta vez.
 ;
 ;  CAUSA RAIZ real de "morir sin mas entrando y saliendo de una sala" (bug
 ;  reportado): ROOM_OFF_LO/HI (la tabla de room_off, que traduce room_num a
@@ -142,6 +148,36 @@
 ;  pisar (al guardar) o leer mal (al restaurar) los datos de OTRA sala
 ;  cualquiera sin relacion aparente. Las guardas del jefe de arriba son
 ;  necesarias pero no habrian bastado sin este arreglo de raiz.
+;
+;  CAUSA RAIZ real de "un sprite en forma de bola que cruza la pantalla muy
+;  despacio, atraviesa paredes y no interactua con nada" (bug reportado):
+;  choose_enemy_dir elegia, de los bits abiertos de cell_walls en la celda
+;  del enemigo, cualquiera de ellos -- sin distinguir un paso INTERNO normal
+;  de la propia ENTRADA de la sala o uno de sus huecos extra (comparten el
+;  mismo bit, cell_walls no guarda esa diferencia). Un enemigo que llegaba a
+;  la celda de un borde podia "salir" por ahi igual que el jugador, pero
+;  para el jugador eso dispara cross_room_gap (genera/enlaza la sala
+;  siguiente); para un enemigo no dispara nada -- se quedaba vagando en
+;  "fuera de mapa", con cell_walls/PX_TO_ROW/PX_TO_COL leyendo memoria
+;  ajena como si fuera terreno valido (de ahi que ignorase las paredes), sin
+;  poder tocar ni ser tocado por el jugador (que se quedaba atras, dentro de
+;  la sala), hasta desaparecer por el lado opuesto de la pantalla. Ademas,
+;  el calculo de distancia Manhattan de ced_consider ni siquiera necesitaba
+;  que la sala estuviera realmente en ese borde por casualidad de layout:
+;  al salirse de la rejilla (fila o columna -1, envuelve a 255 en un byte
+;  sin signo) la resta con la fila/columna del jugador se recalculaba con
+;  el mismo truco de negar-si-negativo que un paso valido, dando una
+;  distancia PEQUEÑA y plausible en vez de "invalida" -- asi que ese hueco
+;  de borde competia de igual a igual, y en un empate el orden de barrido
+;  (N antes que E) lo hacia ganar (verificado a mano: celda esquina con N=
+;  borde y E=interna abiertas, jugador alineado, ambas dan distancia 1).
+;  Arreglo: ced_consider descarta cualquier direccion cuya celda destino
+;  caiga fuera de MAZE_ROWSxMAZE_COLS, antes de calcular ninguna distancia
+;  -- un enemigo ya no puede tomar la entrada ni ningun hueco extra de la
+;  sala, solo los caminos internos del laberinto (garantizado por
+;  construccion: el arbol de expansion de gen_maze conecta cada celda por
+;  DENTRO de la rejilla, la entrada/huecos extra se añaden aparte, asi que
+;  siempre queda al menos una direccion interna valida).
 ;
 ;  Ensamblar y enviar al slot 13:
 ;     python3 tools/casm.py programs/shamus.asm -o programs/shamus.bin
@@ -188,12 +224,16 @@ MAX_LIVES   = 3
 MAX_ROOMS       = 50      ; salas distintas que se pueden llegar a generar
                           ; (antes 24 "a secas"); persist_*/room_link se
                           ; dimensionan a partir de esta misma constante
-BOSS_ROOM_NUM   = MAX_ROOMS-1  ; la ultima -- "nivel 50". Al saturarse
-                          ; next_room_id, CUALQUIER hueco sin explorar
-                          ; nuevo lleva aqui (mismo mecanismo de reciclado
-                          ; que ya tenia la sala de saturacion, ver
-                          ; cross_room_gap): no hace falta enrutar nada
-                          ; aparte para garantizar que se llega al jefe.
+BOSS_ROOM_NUM   = MAX_ROOMS-1  ; la ultima -- "nivel 50". Enlazada de forma
+                          ; fija desde la sala PATH_ROOMS-1 (24) por
+                          ; plan_dungeon -- ya no hace falta "saturar" nada,
+                          ; las 50 salas se planifican todas de antemano.
+PATH_ROOMS      = 25     ; salas 0..24: camino directo 0->1->...->24->jefe
+KEYLOCK_ROOMS   = 20     ; de esas, 0..19 llevan el esquema de llave/candado
+                          ; (ver la nota de cabecera "LLAVES Y PUERTAS"):
+                          ; par=aloja llave, impar=entrada con candado
+EXTRA_ROOMS     = MAX_ROOMS - PATH_ROOMS - 1  ; 24: salas 25..48, ramales
+                          ; opcionales colgando del camino (ver plan_dungeon)
 ENEMY_TYPE_BOSS = 2       ; enemy_type: 0=persegidor, 1=tirador, 2=JEFE
                           ; (persigue Y dispara -- ver update_enemy_fire,
                           ; que ya dispara con cualquier tipo != 0)
@@ -308,8 +348,12 @@ main_draw:
     JMP main_l
 
 ; ============================================================================
-;  new_game:  reinicia puntuacion/vidas/sala y arranca la primera habitacion
-;  (siempre nueva -- una partida nueva no hereda las salas de la anterior).
+;  new_game:  reinicia puntuacion/vidas/sala, PLANIFICA las 50 salas enteras
+;  de antemano (plan_dungeon) y las GENERA todas de un tiron -- antes de que
+;  el jugador de un solo paso -- para que la topologia (y con ella, que
+;  salas llevan llave o candado) quede fija desde el principio, nunca
+;  decidida sala a sala segun se explora (ver la nota de cabecera "LLAVES Y
+;  PUERTAS").
 ; ============================================================================
 new_game:
     MOV AL,#0
@@ -319,28 +363,67 @@ new_game:
     STA [room_transition_pending],AL
     STA [keys_held],AL
     STA [low_life_rooms],AL
-    MOV AL,#1
-    STA [next_room_id],AL   ; la sala 0 ya esta "asignada" (la inicial)
     MOV AL,#MAX_LIVES
     STA [lives],AL
-    MOV AL,#255
-    STA [prev_room_num],AL  ; la sala 0 no tiene sala anterior -- nunca
-                             ; sacara puerta (ver la guarda en gsc_maybe_lock)
     MOV AL,#0
     STA [room0_entered],AL  ; ver la guarda de "centro de pantalla" en
                              ; place_player_spawn (cross_room_gap lo pone a 1
                              ; al salir de la sala 0 por primera vez)
-    STA [boss_room_ready],AL ; ver la guarda de cross_room_gap: el jefe solo
-                             ; se genera una vez, aunque varios huecos
-                             ; distintos acaben apuntando ahi por saturacion
-    CALL clear_room_link
 
+    ; room_visited[] a 0 (para puntuar solo la primera vez que se cruza a
+    ; cada sala, ver cross_room_gap) salvo la propia 0, que se marca ya
+    ; visitada aqui mismo (cross_room_gap nunca se llama para llegar a ella,
+    ; es el punto de partida).
+    MOV AL,#0
+    STA [i],AL
+ng_clr_l:
+    LDA CL,[i]
+    MOV BL,#lo(room_visited)
+    MOV BH,#hi(room_visited)
+    CALL idx_ptr
+    MOV AL,#0
+    STA [BX],AL
+    LDA AL,[i]
+    ADD AL,#1
+    STA [i],AL
+    CMP AL,#MAX_ROOMS
+    JMPNZ ng_clr_l
+    MOV BL,#lo(room_visited)
+    MOV BH,#hi(room_visited)
+    MOV AL,#1
+    STA [BX],AL              ; room_visited[0] = 1 (indice 0 = la base misma)
+
+    CALL plan_dungeon
+
+    ; entrada de la sala 0: no existe de verdad (es el punto de partida) --
+    ; se sortea solo para orientar su laberinto interno (gen_maze), nunca
+    ; puede salir con candado (0 es par, ver gen_and_save_current_room).
     CALL rnd
     AND AL,#3
-    STA [entry_side],AL
+    MOV BL,#lo(room_entry_side)
+    MOV BH,#hi(room_entry_side)
+    STA [BX],AL
+
+    ; genera las 50 salas de un tiron, en orden -- gen_and_save_current_room
+    ; ya lee su propio entry_side de room_entry_side[] y decide llave/
+    ; candado por su propio numero, sin necesitar nada de la sala anterior.
     MOV AL,#0
-    STA [award_points],AL
+    STA [room_num],AL
+ng_gen_l:
     CALL gen_and_save_current_room
+    LDA AL,[room_num]
+    ADD AL,#1
+    STA [room_num],AL
+    CMP AL,#MAX_ROOMS
+    JMPNZ ng_gen_l
+
+    ; el bucle deja room_num en MAX_ROOMS y las variables de trabajo con los
+    ; datos de la ULTIMA sala generada (el jefe) -- se restaura la 0 para
+    ; arrancar la partida de verdad ahi.
+    MOV AL,#0
+    STA [room_num],AL
+    CALL restore_room_state
+
     CALL draw_maze
     CALL place_player_spawn
     CALL setup_enemies
@@ -349,12 +432,25 @@ new_game:
     CALL update_keys_hud
     RET
 
-; --- clear_room_link: pone room_link[] (MAX_ROOMS*4 bytes) entero a 254
-; ("hueco sin explorar todavia") antes de una partida nueva.
-clear_room_link:
+; ============================================================================
+;  plan_dungeon: decide POR ADELANTADO la topologia completa de las 50 salas
+;  (room_link[]/room_entry_side[]), antes de generar ninguna. Camino directo
+;  0->1->2->...->24->49 (el jefe): entrada/salida de cada una elegidas al
+;  azar entre las 4 direcciones, sin repetir lado dentro de la misma sala.
+;  Las salas 25..48 ("extra") cuelgan cada una de una sala del camino
+;  (0..24) elegida al azar, por un lado libre suyo -- un solo nivel de
+;  ramas, nunca anidadas. Que sala lleva llave o candado NO se decide aqui:
+;  gen_and_save_current_room lo deduce del propio numero de sala (par o
+;  impar en 0..19), ver su comentario y la nota de cabecera.
+; ============================================================================
+plan_dungeon:
+    ; room_link[] entero a 254 ("lado libre, todavia sin decidir") -- es
+    ; solo una marca DURANTE esta planificacion; al terminar, cualquier lado
+    ; que se quede en 254 sigue significando "pared cerrada, no hay sala
+    ; ahi" para gen_and_save_current_room, exactamente igual que antes.
     MOV AL,#0
     STA [i],AL
-crl_l:
+pd_clear_l:
     LDA CL,[i]
     MOV BL,#lo(room_link)
     MOV BH,#hi(room_link)
@@ -364,29 +460,220 @@ crl_l:
     LDA AL,[i]
     ADD AL,#1
     STA [i],AL
-    ; OJO: 200 = MAX_ROOMS*4 = 50*4 (literal, misma razon que el resto de
-    ; .space de este fichero). Bug real que hubo: se quedo en 96 (24*4) de
-    ; cuando MAX_ROOMS era 24 -- para CUALQUIER sala 24..49, sus 4 huecos
-    ; (room_link) arrancaban con basura sin inicializar en vez de 254 ("sin
-    ; explorar"), en vez de vacios de verdad: cross_room_gap podia leer
-    ; cualquier numero de sala al azar ahi y tratar un hueco nunca cruzado
-    ; como si ya llevase a una sala real (con su propio entry_side,
-    ; normalmente distinto), colocando al jugador contra una pared sin
-    ; ninguna apertura real -- la causa raiz mas gorda del bug de "morir
-    ; sin mas entrando y saliendo de una sala".
     CMP AL,#200
-    JMPNZ crl_l
+    JMPNZ pd_clear_l
+
+    ; --- camino directo: 0->1->2->...->24->49(jefe) -------------------------
+    MOV AL,#0
+    STA [pd_i],AL
+pd_path_l:
+    ; lado de SALIDA de la sala pd_i hacia la siguiente -- al azar, pero
+    ; nunca el mismo que su propio lado de ENTRADA (ya fijado en
+    ; room_entry_side[pd_i] por la vuelta anterior de este mismo bucle,
+    ; salvo la primerisima vuelta, pd_i=0, que todavia no tiene entrada real
+    ; -- new_game la fija aparte DESPUES de llamar aqui, asi que cualquier
+    ; lado vale para su salida sin comprobar nada).
+pd_pick_side:
+    CALL rnd
+    AND AL,#3
+    STA [pd_side],AL
+    LDA AL,[pd_i]
+    CMP AL,#0
+    JMPZ pd_side_ok
+    LDA CL,[pd_i]
+    MOV BL,#lo(room_entry_side)
+    MOV BH,#hi(room_entry_side)
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[pd_side]
+    CMP AL,BL
+    JMPZ pd_pick_side          ; coincide con la entrada -- vuelve a tirar
+pd_side_ok:
+
+    ; vecino: pd_i+1, o el jefe si pd_i es la ultima del camino
+    LDA AL,[pd_i]
+    CMP AL,#(PATH_ROOMS-1)
+    JMPNZ pd_next_is_room
+    MOV AL,#BOSS_ROOM_NUM
+    JMP pd_have_next
+pd_next_is_room:
+    LDA AL,[pd_i]
+    ADD AL,#1
+pd_have_next:
+    STA [pd_nxt],AL
+
+    ; enlaza pd_i --pd_side--> pd_nxt
+    LDA AL,[pd_i]
+    SHL AL,#2
+    LDA BL,[pd_side]
+    ADD AL,BL
+    STA [tmp2],AL
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[pd_nxt]
+    STA [BX],AL
+
+    ; el vecino entra por el lado opuesto -- fija su room_entry_side y el
+    ; enlace de vuelta pd_nxt --tmp3--> pd_i
+    LDA CL,[pd_side]
+    MOV BL,#lo(OPP_OF_DIR)
+    MOV BH,#hi(OPP_OF_DIR)
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [tmp3],AL
+
+    LDA CL,[pd_nxt]
+    MOV BL,#lo(room_entry_side)
+    MOV BH,#hi(room_entry_side)
+    CALL idx_ptr
+    LDA AL,[tmp3]
+    STA [BX],AL
+
+    LDA AL,[pd_nxt]
+    SHL AL,#2
+    LDA BL,[tmp3]
+    ADD AL,BL
+    STA [tmp2],AL
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[pd_i]
+    STA [BX],AL
+
+    LDA AL,[pd_i]
+    ADD AL,#1
+    STA [pd_i],AL
+    CMP AL,#PATH_ROOMS
+    JMPNZ pd_path_l
+
+    ; --- salas extra 25..48: cada una cuelga de una sala del camino ---------
+    MOV AL,#PATH_ROOMS
+    STA [pd_i],AL
+pd_extra_l:
+    MOV AL,#0
+    STA [pd_tries],AL
+pd_extra_pick:
+    ; sala candidata del camino, 0..24 -- descarte-y-repite de siempre
+    ; (PATH_ROOMS=25 no es potencia de 2)
+    CALL rnd
+    AND AL,#31
+    CMP AL,#PATH_ROOMS
+    JMPNC pd_extra_pick
+    STA [pd_room],AL
+    CALL rnd
+    AND AL,#3
+    STA [pd_side],AL
+
+    LDA AL,[pd_room]
+    SHL AL,#2
+    LDA BL,[pd_side]
+    ADD AL,BL
+    STA [tmp2],AL
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[BX]
+    CMP AL,#254
+    JMPZ pd_extra_have_slot    ; libre -- se usa
+
+    ; ocupado -- reintenta con tope de seguridad (25 salas de camino, hasta
+    ; 3 lados libres cada una, dan de sobra para 24 extras: esto no deberia
+    ; llegar a hacer falta nunca, pero un barrido determinista de repuesto
+    ; evita colgarse para siempre si la mala suerte del azar lo agotara)
+    LDA AL,[pd_tries]
+    ADD AL,#1
+    STA [pd_tries],AL
+    CMP AL,#100
+    JMPNZ pd_extra_pick
+
+pd_extra_scan_r:
+    MOV AL,#0
+    STA [pd_room],AL
+pd_extra_scan_r_l:
+    MOV AL,#0
+    STA [pd_side],AL
+pd_extra_scan_s_l:
+    LDA AL,[pd_room]
+    SHL AL,#2
+    LDA BL,[pd_side]
+    ADD AL,BL
+    STA [tmp2],AL
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[BX]
+    CMP AL,#254
+    JMPZ pd_extra_have_slot
+    LDA AL,[pd_side]
+    ADD AL,#1
+    STA [pd_side],AL
+    CMP AL,#4
+    JMPNZ pd_extra_scan_s_l
+    LDA AL,[pd_room]
+    ADD AL,#1
+    STA [pd_room],AL
+    CMP AL,#PATH_ROOMS
+    JMPNZ pd_extra_scan_r_l
+    JMP pd_extra_next          ; inalcanzable en la practica -- ver la nota de arriba
+
+pd_extra_have_slot:
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[pd_i]
+    STA [BX],AL
+
+    LDA CL,[pd_side]
+    MOV BL,#lo(OPP_OF_DIR)
+    MOV BH,#hi(OPP_OF_DIR)
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [tmp3],AL              ; tmp3 = lado de entrada de la sala extra
+
+    LDA CL,[pd_i]
+    MOV BL,#lo(room_entry_side)
+    MOV BH,#hi(room_entry_side)
+    CALL idx_ptr
+    LDA AL,[tmp3]
+    STA [BX],AL
+
+    LDA AL,[pd_i]
+    SHL AL,#2
+    LDA BL,[tmp3]
+    ADD AL,BL
+    STA [tmp2],AL
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[pd_room]
+    STA [BX],AL
+
+pd_extra_next:
+    LDA AL,[pd_i]
+    ADD AL,#1
+    STA [pd_i],AL
+    CMP AL,#BOSS_ROOM_NUM     ; 25..48 son las EXTRA_ROOMS(24) -- la 49 es el
+                              ; jefe, ya enlazada aparte desde la 24, nunca
+                              ; una "extra" mas (si el bucle llegara hasta
+                              ; incluirla, se le daria un segundo enlace al
+                              ; azar, dejando el jefe con dos entradas)
+    JMPNZ pd_extra_l
     RET
 
 ; ============================================================================
 ;  cross_room_gap:  [exit_dir_taken] indica el lado por el que se acaba de
-;  cruzar. Cada sala puede tener de 1 a 4 huecos (no solo una entrada y una
-;  salida) -- room_link[sala*4+lado] guarda, para cada uno, o 254 ("hueco,
-;  todavia sin cruzar") o el numero de la sala a la que ya lleva. Si el
-;  hueco cruzado ya tiene sala asignada, se va alli (restaurada tal cual);
-;  si no, se asigna una sala nueva (next_room_id, saturado a MAX_ROOMS-1),
-;  enlazando los dos lados entre si, se genera y se puntua -- los enemigos
-;  siempre se recolocan de cero en los dos casos.
+;  cruzar. Con las 50 salas planificadas y generadas de antemano
+;  (plan_dungeon/new_game), room_link[sala*4+lado] YA tiene siempre la sala
+;  real al otro lado -- esta rutina solo restaura esa sala (nunca hace falta
+;  generar nada aqui) y puntua la primera vez que se entra a cada una
+;  (room_visited[], ver new_game).
 ; ============================================================================
 cross_room_gap:
     LDA AL,[room_num]
@@ -399,19 +686,20 @@ cross_room_gap:
     MOV BH,#hi(room_link)
     CALL idx_ptr
     LDA AL,[BX]
-    STA [tmp0],AL             ; tmp0 = sala destino ya asignada, o 254
+    STA [tmp0],AL             ; tmp0 = sala destino (siempre real)
 
-    LDA CL,[exit_dir_taken]
-    MOV BL,#lo(OPP_OF_DIR)
-    MOV BH,#hi(OPP_OF_DIR)
+    LDA CL,[tmp0]
+    MOV BL,#lo(room_entry_side)
+    MOV BH,#hi(room_entry_side)
     CALL idx_ptr
     LDA AL,[BX]
-    STA [entry_side],AL       ; lado de entrada en la sala destino
+    STA [entry_side],AL       ; lado de entrada en la sala destino, ya fijo
+                               ; desde plan_dungeon -- place_player_spawn lo
+                               ; usa para colocar al jugador
 
-    ; si se esta CRUZANDO fuera de la sala 0 (todavia con su valor viejo
-    ; aqui, antes de pisarlo mas abajo con el destino), marca que ya se ha
-    ; dejado atras al menos una vez -- a partir de ahora, cualquier vuelta a
-    ; la sala 0 tiene un lado de entrada real que respetar (ver la guarda de
+    ; si se esta CRUZANDO fuera de la sala 0, marca que ya se ha dejado
+    ; atras al menos una vez -- a partir de ahora, cualquier vuelta a la
+    ; sala 0 tiene un lado de entrada real que respetar (ver la guarda de
     ; place_player_spawn); antes de esto, todavia no hay "de donde viene".
     LDA AL,[room_num]
     CMP AL,#0
@@ -420,183 +708,61 @@ cross_room_gap:
     STA [room0_entered],AL
 crg_not_leaving_room0:
 
-    LDA AL,[tmp0]
-    CMP AL,#254
-    JMPNZ crg_known
-
-    ; primera vez por este hueco: asigna una sala nueva -- o, si ya se
-    ; llego a MAX_ROOMS, SIEMPRE la sala del jefe (BOSS_ROOM_NUM =
-    ; MAX_ROOMS-1): asi cualquier hueco sin explorar mas alla del limite
-    ; lleva a la batalla final, sin enrutar nada aparte
-    LDA AL,[next_room_id]
-    CMP AL,#MAX_ROOMS
-    JMPC crg_alloc_ok
-    MOV AL,#BOSS_ROOM_NUM
-crg_alloc_ok:
-    STA [tmp0],AL
-
-    ; enlaza sala_actual --exit_dir_taken--> tmp0 (siempre: sale bien igual
-    ; para una sala nueva de verdad que para un alias mas hacia el jefe ya
-    ; existente -- ver la nota de abajo).
-    LDA AL,[room_num]
-    SHL AL,#2
-    LDA BL,[exit_dir_taken]
-    ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
+    ; puntua solo la primera vez que se entra a la sala destino
+    LDA CL,[tmp0]
+    MOV BL,#lo(room_visited)
+    MOV BH,#hi(room_visited)
     CALL idx_ptr
-    LDA AL,[tmp0]
-    STA [BX],AL
-
-    ; el jefe (BOSS_ROOM_NUM) es un caso especial: por saturacion
-    ; (next_room_id>=MAX_ROOMS), CUALQUIER hueco nuevo de CUALQUIER sala o
-    ; direccion puede acabar apuntando aqui, y cada uno es "nuevo" desde su
-    ; propio punto de vista (su room_link seguia a 254) aunque el destino
-    ; sea siempre el mismo. Si el jefe YA EXISTE ([boss_room_ready]), no se
-    ; regenera su laberinto (pisaria su entrada ya guardada) NI se reescribe
-    ; su enlace "hacia atras" (tmp0-->sala_actual, mas abajo): ese enlace
-    ; solo tiene sentido para SU sala de origen ORIGINAL, y solo hay 4
-    ; direcciones posibles -- con mas de 4 huecos distintos saturando hacia
-    ; el jefe (algo normal ya entrada la partida), dos de ellos acaban
-    ; calculando el MISMO entry_side por pura aritmetica modular, y el
-    ; segundo pisaba el enlace de vuelta del primero: el jugador podia
-    ; entonces aparecer en una sala (jefe o cualquier otra reenlazada de
-    ; rebote) por un lado que ya no tenia ninguna apertura real -- bug real:
-    ; "morir sin mas entrando y saliendo de una sala".
-    LDA AL,[tmp0]
-    CMP AL,#BOSS_ROOM_NUM
-    JMPNZ crg_link_back
-    LDA AL,[boss_room_ready]
+    LDA AL,[BX]
     CMP AL,#0
-    JMPNZ crg_boss_existing
+    JMPNZ crg_no_score
     MOV AL,#1
-    STA [boss_room_ready],AL
-    LDA AL,[entry_side]
-    STA [boss_entry_side],AL  ; unica entrada real del jefe -- ver
-                               ; crg_boss_existing, que la restaura en vez de
-                               ; usar el entry_side de un hueco distinto
-
-crg_link_back:
-    ; enlaza tmp0 --entry_side--> sala_actual (primera vez de verdad: sala
-    ; normal, o la primerisima llegada al jefe)
-    LDA AL,[tmp0]
-    SHL AL,#2
-    LDA BL,[entry_side]
-    ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
-    LDA AL,[room_num]
     STA [BX],AL
-
-    LDA AL,[next_room_id]
-    CMP AL,#MAX_ROOMS
-    JMPNC crg_no_bump         ; ya saturado -- no crece mas
-    ADD AL,#1
-    STA [next_room_id],AL
-crg_no_bump:
-
-    ; guarda de que sala se viene ANTES de pisarla con la nueva: ahi es
-    ; donde gen_and_save_current_room coloca la llave si a la sala nueva le
-    ; toca puerta (ver su comentario)
-    LDA AL,[room_num]
-    STA [prev_room_num],AL
-
-    LDA AL,[tmp0]
-    STA [room_num],AL
-
-    MOV AL,#1
-    STA [award_points],AL
-    CALL gen_and_save_current_room
-    JMP crg_common
-
-crg_boss_existing:
-    ; el jefe ya existia (otro hueco lo genero antes) -- solo se restaura,
-    ; sin regenerar ni reescribir su enlace de vuelta; SI puntua (este hueco
-    ; concreto es la primera vez que se cruza, aunque el destino no sea
-    ; nuevo -- mismo criterio de puntos que gen_and_save_current_room,
-    ; duplicado aqui porque esa rutina no llega a llamarse en esta rama).
-    ;
-    ; [entry_side] AQUI es el de ESTE hueco concreto (puede ser cualquiera
-    ; de las 4 direcciones, segun desde donde se sature) -- NO tiene por que
-    ; coincidir con la unica entrada real y permanente del jefe
-    ; ([boss_entry_side], fijada la primera vez). Se sobreescribe antes de
-    ; seguir: place_player_spawn (en crg_common) coloca al jugador segun
-    ; [entry_side], y solo hay una pared realmente abierta en el jefe.
-    LDA AL,[boss_entry_side]
-    STA [entry_side],AL
-
-    LDA AL,[tmp0]
-    STA [room_num],AL
-    CALL restore_room_state
     MOV AL,#10
     CALL score_add
     CALL update_score_hud
     MOV BL,#lo(JINGLE_TUNE)
     MOV BH,#hi(JINGLE_TUNE)
     CALL play_tune
-    JMP crg_common
+crg_no_score:
 
-crg_known:
     LDA AL,[tmp0]
     STA [room_num],AL
     CALL restore_room_state
 
-    ; si el destino (ya conocido) es el jefe, [entry_side] sigue siendo el
-    ; de ESTE hueco concreto (OPP_OF_DIR de por donde se ha cruzado esta
-    ; vez) -- que puede ser cualquiera de los alias hacia el jefe, no
-    ; necesariamente su unica entrada real. Mismo arreglo que
-    ; crg_boss_existing, aqui tambien hace falta: una vez que un hueco
-    ; alias concreto queda enlazado (tras su primer uso), TODAS las veces
-    ; siguientes que se cruza pasan por aqui, no por crg_boss_existing.
-    LDA AL,[tmp0]
-    CMP AL,#BOSS_ROOM_NUM
-    JMPNZ crg_common
-    LDA AL,[boss_entry_side]
-    STA [entry_side],AL
-
-crg_common:
     CALL draw_maze
     CALL place_player_spawn
     CALL setup_enemies
     RET
 
 ; ============================================================================
-;  gen_and_save_current_room:  genera la sala [room_num] desde cero. El
-;  hueco de [entry_side] ya esta enlazado (por quien llama, apuntando a la
-;  sala anterior -- o sin explorar, 254, si es la sala 0) y se fuerza
-;  abierto de todas formas; los otros 3 lados se sortean UNO A UNO (mitad y
-;  mitad) para que salga con 1 a 4 huecos en total, no solo entrada+salida.
-;  Como mucho uno de esos huecos extra puede salir CANDADO en vez de
-;  abierto (1 de cada 8 tiradas, y solo si esta sala no tenia ya uno): se ve
-;  como una puerta (linea sencilla) pero cell_walls se queda CERRADO ahi
-;  hasta usar una llave, que se coloca en una celda cualquiera de esta misma
-;  sala (siempre alcanzable por el arbol de expansion, nunca en otra sala,
-;  para que abrirla nunca dependa de haber visitado nada mas). Una sala
-;  puede quedarse asi con 0 salidas utilizables ademas de la entrada --
-;  fuerza a retroceder, a proposito. Cada hueco (abierto o, tras abrirse,
-;  antes candado) deja su room_link en 254 (se asignara sala real la
-;  primera vez que se cruce, en cross_room_gap). Guarda todo en
-;  persist_*[room_num]; si [award_points] no es 0, suma puntos.
+;  gen_and_save_current_room: genera la sala [room_num] ENTERA, siguiendo la
+;  topologia ya decidida por plan_dungeon (room_link[]/room_entry_side[]) --
+;  aqui no se sortea NINGUNA conexion. Por cada uno de los 4 lados, si
+;  room_link[room_num*4+lado] apunta a una sala real (no 254), se abre ese
+;  hueco -- EXCEPTO si es el lado de ENTRADA y room_num es IMPAR en 0..19
+;  (KEYLOCK_ROOMS), en cuyo caso sale con CANDADO (linea sencilla,
+;  cell_walls cerrado hasta abrirse con una llave, ver door_check). Las
+;  salas de numero PAR en 0..19 alojan ademas una llave propia, en una
+;  celda interior al azar -- 10 llaves y 10 candados en total, garantizado
+;  por construccion (ver la nota de cabecera "LLAVES Y PUERTAS"). Guarda
+;  todo en persist_*[room_num]; no puntua nunca (eso es cosa de
+;  cross_room_gap, solo al CRUZAR, nunca al generar).
 ; ============================================================================
 gen_and_save_current_room:
-    LDA AL,[entry_side]
-    ADD AL,#1
-    AND AL,#3
-    STA [cand0],AL
-    ADD AL,#1
-    AND AL,#3
-    STA [cand1],AL
-    ADD AL,#1
-    AND AL,#3
-    STA [cand2],AL
+    LDA CL,[room_num]
+    MOV BL,#lo(room_entry_side)
+    MOV BH,#hi(room_entry_side)
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [entry_side],AL
 
     MOV AL,#255
-    STA [door_dir],AL        ; sin puerta todavia en esta sala
+    STA [door_dir],AL        ; sin candado todavia en esta sala
+    MOV AL,#255
+    STA [key_cell],AL        ; sin llave propia todavia
+    MOV AL,#0
+    STA [key_taken],AL
 
     LDA AL,[entry_side]
     CALL side_to_rc
@@ -607,6 +773,39 @@ gen_and_save_current_room:
 
     CALL gen_maze
 
+    ; --- los 4 lados, uno a uno: abre, o candado si toca -------------------
+    MOV AL,#0
+    STA [d],AL
+gsc_side_l:
+    LDA AL,[room_num]
+    SHL AL,#2
+    LDA BL,[d]
+    ADD AL,BL
+    STA [tmp2],AL
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[BX]
+    CMP AL,#254
+    JMPZ gsc_side_next          ; nada por este lado -- pared, no hace falta nada
+
+    LDA AL,[d]
+    LDA BL,[entry_side]
+    CMP AL,BL
+    JMPNZ gsc_side_open         ; no es la entrada -- siempre se abre normal
+
+    ; es la entrada: candado SOLO si esta sala es IMPAR en 0..19
+    LDA AL,[room_num]
+    CMP AL,#KEYLOCK_ROOMS
+    JMPNC gsc_side_open         ; room_num >= 20 -- entrada normal, sin candado
+    AND AL,#1
+    CMP AL,#0
+    JMPZ gsc_side_open          ; par -- entrada normal (esta aloja llave, no candado)
+
+    ; --- candado en la entrada ----------------------------------------------
+    LDA AL,[d]
+    STA [door_dir],AL
     LDA CL,[entry_row]
     MOV BL,#lo(ROW_MUL)
     MOV BH,#hi(ROW_MUL)
@@ -614,83 +813,70 @@ gen_and_save_current_room:
     LDA AL,[BX]
     LDA BL,[entry_col]
     ADD AL,BL
+    STA [door_cell],AL
+
+    LDA CL,[d]
+    MOV BL,#lo(BIT_OF_DIR)
+    MOV BH,#hi(BIT_OF_DIR)
+    CALL idx_ptr
+    LDA AL,[BX]
+    STA [tmp3],AL
+
+    LDA CL,[door_cell]
+    MOV BL,#lo(door_bits)
+    MOV BH,#hi(door_bits)
+    CALL idx_ptr
+    LDA AL,[tmp3]
+    STA [BX],AL                 ; marca la puerta (linea sencilla)
+    ; cell_walls se deja CERRADO aqui (nunca se llama a open_dir para este
+    ; lado) -- door_check lo abrira al usar una llave.
+    JMP gsc_side_next
+
+gsc_side_open:
+    LDA AL,[d]
+    CALL side_to_rc
+    LDA CL,[rc_row]
+    MOV BL,#lo(ROW_MUL)
+    MOV BH,#hi(ROW_MUL)
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[rc_col]
+    ADD AL,BL
     STA [od_cell],AL
-    LDA AL,[entry_side]
+    LDA AL,[d]
     STA [od_dir],AL
     CALL open_dir
 
-    ; la sala del jefe NUNCA saca salidas propias ademas de su entrada --
-    ; es la sala final, no hace falta que seguir explorando desde ahi de
-    ; verdad, y cada salida extra suya seria OTRO hueco que, saturado
-    ; next_room_id, volveria a apuntar al jefe (ver la nota de
-    ; cross_room_gap sobre por que eso corrompia enlaces).
+gsc_side_next:
+    LDA AL,[d]
+    ADD AL,#1
+    STA [d],AL
+    CMP AL,#4
+    JMPNZ gsc_side_l
+
+    ; --- llave propia: PAR en 0..19 siempre aloja una, en una celda interior
+    ; al azar (NCELLS=18 no es potencia de 2, descarte-y-repite de siempre)
     LDA AL,[room_num]
-    CMP AL,#BOSS_ROOM_NUM
-    JMPZ gsc_no_extra_exits
-
-    LDA AL,[cand0]
-    CALL gsc_roll_side
-    LDA AL,[cand1]
-    CALL gsc_roll_side
-    LDA AL,[cand2]
-    CALL gsc_roll_side
-gsc_no_extra_exits:
-
-    LDA AL,[door_dir]
-    CMP AL,#255
-    JMPZ gsc_no_key
-
-    ; la llave de la puerta de ESTA sala NUNCA esta en esta misma sala --
-    ; vive en [prev_room_num] (la sala de la que se vino, ver la nota de
-    ; cabecera): asi abrirla exige de verdad haber ido a buscarla a otra
-    ; sala (incluso volviendo atras), no solo cruzar esta de camino a la
-    ; puerta. Esta sala se queda sin llave propia (key_cell=255) -- si mas
-    ; adelante uno de SUS hijos saca puerta a su vez, sera esa generacion la
-    ; que escriba una llave aqui (gsc_maybe_lock ya comprueba antes que el
-    ; padre no tenga ya una puesta, ver mas abajo). Cualquier llave abre
-    ; cualquier puerta (ver door_check) -- lo unico que importa de DONDE
-    ; viene esta llave concreta es que nunca coincida con la sala de su
-    ; propia puerta.
-    MOV AL,#255
-    STA [key_cell],AL
-    MOV AL,#0
-    STA [key_taken],AL
-
-    ; celda al azar 0..NCELLS-1 DENTRO DE prev_room_num -- NCELLS(18) no es
-    ; potencia de 2, asi que "rnd() & 31" ya no vale tal cual (daria hasta
-    ; 31); se descarta y se vuelve a tirar cuando salga fuera de rango (con
-    ; 18 de 32 posibles, toca repetir menos de 2 veces de media)
+    CMP AL,#KEYLOCK_ROOMS
+    JMPNC gsc_no_key
+    AND AL,#1
+    CMP AL,#0
+    JMPNZ gsc_no_key
 gsc_key_roll:
     CALL rnd
     AND AL,#31
     CMP AL,#NCELLS
     JMPNC gsc_key_roll
-    STA [tmp1],AL                 ; celda elegida para la llave
-
-    LDA CL,[prev_room_num]
-    MOV BL,#lo(persist_key_cell)
-    MOV BH,#hi(persist_key_cell)
-    CALL idx_ptr
-    LDA AL,[tmp1]
-    STA [BX],AL
-    LDA CL,[prev_room_num]
-    MOV BL,#lo(persist_key_taken)
-    MOV BH,#hi(persist_key_taken)
-    CALL idx_ptr
-    MOV AL,#0
-    STA [BX],AL
-    JMP gsc_key_done
-gsc_no_key:
-    MOV AL,#255
-    STA [key_cell],AL        ; celda imposible -- nunca coincide
+    STA [key_cell],AL
     MOV AL,#0
     STA [key_taken],AL
-gsc_key_done:
+gsc_no_key:
 
     ; --- corazon de repuesto: de vez en cuando (mas a menudo si esta sala
     ; ya tiene enemigos, es decir es "dificil" -- las dos primeras nunca los
     ; tienen), o siempre si el jugador lleva 3 salas nuevas seguidas con una
     ; sola vida; nunca si ya esta a vidas maximas (no serviria de nada).
+    ; Sin cambios respecto a antes -- ortogonal al esquema de llave/candado.
     LDA AL,[lives]
     CMP AL,#1
     JMPNZ gsc_life_reset
@@ -752,148 +938,6 @@ gsc_no_heart:
 gsc_heart_done:
 
     CALL save_room_state
-
-    LDA AL,[award_points]
-    CMP AL,#0
-    JMPZ gsc_noscore
-    MOV AL,#10
-    CALL score_add
-    CALL update_score_hud
-    MOV BL,#lo(JINGLE_TUNE)
-    MOV BH,#hi(JINGLE_TUNE)
-    CALL play_tune
-gsc_noscore:
-    RET
-
-; --- gsc_roll_side: entra AL = lado candidato (uno de los 3 distintos de
-; entry_side). La mitad de las veces se queda cerrado (pared normal, no
-; hace nada). La otra mitad es un hueco -- y de esa mitad, 1 de cada 4 sale
-; CANDADO en vez de abierto de entrada (solo si esta sala no tenia ya una
-; puerta: como mucho una por sala, para no complicar el seguimiento de
-; llaves). Un hueco candado NO se fuerza abierto todavia (se queda cerrado
-; en cell_walls hasta abrirse con la llave); solo se marca en door_bits
-; (dibujo de linea sencilla en vez de doble) y se guarda [door_cell]/
-; [door_dir] para door_check.
-gsc_roll_side:
-    STA [tmp3],AL
-    CALL rnd
-    AND AL,#7
-    CMP AL,#4
-    JMPNC gsc_maybe_lock      ; 4-7 (mitad): hueco (abierto o candado)
-    RET                       ; 0-3 (mitad): cerrado
-
-gsc_maybe_lock:
-    CMP AL,#7
-    JMPNZ gsc_side_open       ; 4-6: hueco abierto normal
-    LDA AL,[door_dir]
-    CMP AL,#255
-    JMPNZ gsc_side_open       ; ya habia puerta en esta sala -> abierto normal
-
-    ; la llave de esta puerta viviria en prev_room_num (ver gen_and_save_
-    ; current_room) -- dos guardas antes de comprometerse a la puerta:
-    LDA AL,[room_num]
-    CMP AL,#0
-    JMPZ gsc_side_open        ; sala 0 no tiene sala anterior: sin puerta
-    CMP AL,#BOSS_ROOM_NUM
-    JMPZ gsc_side_open        ; la sala del jefe tampoco saca puerta/llave
-
-    LDA CL,[prev_room_num]
-    MOV BL,#lo(persist_key_cell)
-    MOV BH,#hi(persist_key_cell)
-    CALL idx_ptr
-    LDA AL,[BX]
-    CMP AL,#255
-    JMPNZ gsc_side_open        ; prev_room_num ya le dio su llave a un
-                               ; hermano -- como mucho una llave por sala
-                               ; donante; esta se abre normal en vez de
-                               ; bloquear con una llave que no cabria
-
-    ; prev_room_num TIENE a su vez su propia entrada con candado (su
-    ; persist_door_dir, fijado para siempre al generarla, ya != 255):
-    ; alojar aqui TAMBIEN una llave dejaria una sala con llave y puerta a la
-    ; vez (no explotable -- no se puede usar la llave alojada para abrir la
-    ; propia entrada, ya cruzada para poder estar aqui -- pero es justo la
-    ; combinacion que no se quiere ver nunca). Se abre normal en su lugar.
-    LDA CL,[prev_room_num]
-    MOV BL,#lo(persist_door_dir)
-    MOV BH,#hi(persist_door_dir)
-    CALL idx_ptr
-    LDA AL,[BX]
-    CMP AL,#255
-    JMPNZ gsc_side_open
-
-    LDA AL,[tmp3]
-    STA [door_dir],AL
-    CALL side_to_rc
-    LDA CL,[rc_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
-    LDA AL,[BX]
-    LDA BL,[rc_col]
-    ADD AL,BL
-    STA [door_cell],AL
-
-    LDA CL,[tmp3]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[door_cell]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
-    LDA AL,[tmp1]
-    STA [BX],AL
-
-    LDA AL,[room_num]
-    SHL AL,#2
-    LDA BL,[tmp3]
-    ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
-    MOV AL,#254
-    STA [BX],AL
-    RET
-
-gsc_side_open:
-    LDA AL,[tmp3]
-    CALL gsc_open_extra
-    RET
-
-; --- gsc_open_extra: entra AL = lado extra a abrir. Fuerza su hueco de
-; borde abierto en cell_walls y deja su room_link[room_num][lado] en 254
-; (hueco sin explorar todavia).
-gsc_open_extra:
-    STA [tmp3],AL
-    CALL side_to_rc
-    LDA CL,[rc_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
-    LDA AL,[BX]
-    LDA BL,[rc_col]
-    ADD AL,BL
-    STA [od_cell],AL
-    LDA AL,[tmp3]
-    STA [od_dir],AL
-    CALL open_dir
-
-    LDA AL,[room_num]
-    SHL AL,#2
-    LDA BL,[tmp3]
-    ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
-    MOV AL,#254
-    STA [BX],AL
     RET
 
 ; --- side_to_rc: entra AL=lado (DIR_N..DIR_W) ; sale [rc_row],[rc_col] --
@@ -3624,6 +3668,25 @@ ced_consider:
     ADD AL,BL
     STA [tcol],AL
 
+    ; si (trow,tcol) cae FUERA de la rejilla de MAZE_ROWSxMAZE_COLS, esta
+    ; direccion es la entrada de la sala o uno de sus huecos extra (abierto
+    ; o ya abierto con llave) -- cell_walls guarda ese bit exactamente igual
+    ; que un paso interno normal, no hay forma de distinguirlos mirando solo
+    ; el bit. Un enemigo NUNCA debe poder tomar esa salida: a diferencia del
+    ; jugador (cross_room_gap le genera/enlaza la sala siguiente al cruzar),
+    ; para un enemigo eso significa salir del mapa sin que nada lo detenga
+    ; -- ni pared (cell_walls fuera de la sala son datos de otras variables,
+    ; leidos como si fueran validos), ni el jugador (que se queda atras) --
+    ; y vagar en linea recta hasta desaparecer por el otro lado de la
+    ; pantalla. Bug real reportado: "un sprite en forma de bola que cruza la
+    ; pantalla despacio, no se puede matar ni te mata, atraviesa paredes".
+    LDA AL,[trow]
+    CMP AL,#MAZE_ROWS
+    JMPNC ccd_no             ; trow >= MAZE_ROWS (incluye el envoltorio de -1 a 255)
+    LDA AL,[tcol]
+    CMP AL,#MAZE_COLS
+    JMPNC ccd_no             ; tcol >= MAZE_COLS (idem)
+
     LDA AL,[trow]
     LDA BL,[prow]
     SUB AL,BL
@@ -4466,10 +4529,9 @@ sv_wait:
 
 ; --- idx_ptr: BX = (BX inicial) + CL, propagando el acarreo a mano --------
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- sign_of: entra AL = numero con signo; sale AL = -1/0/+1 segun su
@@ -5259,36 +5321,25 @@ entry_row:  .space 1
 entry_col:  .space 1
 rc_row:     .space 1
 rc_col:     .space 1
-cand0:      .space 1
-cand1:      .space 1
-cand2:      .space 1
+
+; --- planificacion de la mazmorra (plan_dungeon, ver la nota de cabecera
+; "LLAVES Y PUERTAS") -- variables de escritorio propias, no compartidas ---
+pd_i:     .space 1
+pd_side:  .space 1
+pd_nxt:   .space 1
+pd_room:  .space 1
+pd_tries: .space 1
 
 ; --- salas persistentes (ver la nota de cabecera) ---
-next_room_id: .space 1
-award_points: .space 1
 door_bits: .space 18    ; NCELLS -- literal, .space no admite constantes
 key_cell:  .space 1
 key_taken: .space 1
-prev_room_num: .space 1 ; sala de la que se viene, puesta por cross_room_gap
-                         ; justo antes de generar una sala nueva -- ahi es
-                         ; donde gen_and_save_current_room coloca la llave
-                         ; de la puerta de la sala nueva, si le toca una
 room0_entered: .space 1 ; puesto a 0 en new_game; a 1 por cross_room_gap justo
                          ; al CRUZAR hacia afuera de la sala 0 la primera vez
                          ; (ver la guarda de place_player_spawn: "centro de
                          ; pantalla" SOLO mientras esto siga a 0 -- en cuanto
                          ; se ha salido una vez, la sala 0 usa entry_side
                          ; como cualquier otra)
-boss_room_ready: .space 1 ; puesto a 0 en new_game; a 1 la primera vez que se
-                         ; genera de verdad la sala del jefe (ver la guarda de
-                         ; cross_room_gap: solo se genera una vez, por muchos
-                         ; huecos distintos que acaben apuntando ahi tras
-                         ; saturar next_room_id)
-boss_entry_side: .space 1 ; la UNICA entrada real del jefe, fijada junto con
-                         ; boss_room_ready -- crg_boss_existing la restaura
-                         ; sobre [entry_side] antes de colocar al jugador,
-                         ; sin importar desde que direccion se saturo esta
-                         ; vez hacia el jefe
 door_cell: .space 1
 door_dir:  .space 1
 heart_cell:  .space 1
@@ -5367,7 +5418,12 @@ cwv:  .space 1
 banned_dir: .space 1
 best_dist: .space 1
 best_dir:  .space 1
-d:    .space 1
+d:    .space 1          ; direccion 0..3 de trabajo -- reutilizada tal cual
+                         ; por gen_and_save_current_room (bucle de los 4
+                         ; lados de una sala) y choose_enemy_dir/ced_l1/
+                         ; ced_l2 (bucle de las 4 direcciones de un
+                         ; enemigo): nunca se solapan en el tiempo (una es
+                         ; parte de generar una sala, la otra de jugar)
 trow: .space 1
 tcol: .space 1
 dist: .space 1
@@ -5430,8 +5486,19 @@ nd_digit:    .space 1
 ; --- estado persistente de hasta 50 salas (MAX_ROOMS -- literal, no una
 ; constante simbolica, por la misma razon que NCELLS en otros .space: casm.py
 ; resuelve los "NAME = EXPR" en una pasada posterior a calcular los .space)
-room_link: .space 200           ; 50*4: por sala y lado, 254=sin explorar,
-                                 ; 0-49=sala ya asignada por ese lado
+room_link: .space 200           ; 50*4: por sala y lado, fijado ENTERO por
+                                 ; plan_dungeon antes de generar ninguna sala
+                                 ; -- 254=pared cerrada, sin sala; 0-49=sala
+                                 ; real conectada por ese lado (ver la nota
+                                 ; de cabecera "LLAVES Y PUERTAS")
+room_entry_side: .space 50      ; lado (DIR_N..DIR_W) por el que se entra a
+                                 ; cada sala, fijado por plan_dungeon (salvo
+                                 ; la 0, que no tiene entrada real -- new_game
+                                 ; le pone un valor al azar aparte, solo para
+                                 ; orientar su laberinto interno)
+room_visited: .space 50         ; 0/1 por sala -- puesta a 1 la primera vez
+                                 ; que se entra (cross_room_gap), para
+                                 ; puntuar solo esa primera vez
 persist_walls: .space 900       ; 50*18 (MAX_ROOMS*NCELLS)
 persist_doors: .space 900       ; 50*18
 persist_key_taken: .space 50

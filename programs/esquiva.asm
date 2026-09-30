@@ -461,10 +461,9 @@ ct_io:
 
 ; --- idx_ptr:  BX = (BL/BH iniciales) + CL, propagando el acarreo a mano ---
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- shadow_fill:  rellena los 1024 bytes de `shadow` con AL --------------

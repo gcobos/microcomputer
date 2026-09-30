@@ -124,7 +124,14 @@ formas — ver secciones 6 y 6b. El resto:
 | `RET`              | 1 | 19 | `98` | `PC = ` dirección apilada | — |
 | `SHR reg,#N`       | 2 | 25 | `C8 … CF` | `reg >>= N` (N=1..8; sección 4c) | C = bit que sale en el último paso · V = bit 7 previo · N Z |
 | `SHL reg,#N`       | 2 | 26 | `D0 … D7` | `reg <<= N` (N=1..8; sección 4c) | C = bit que sale en el último paso · N = bit 7 · V = (C≠N) · Z |
-| *(reservadas)*     | 1 | 27–30 | `D8 … F7` | se ejecutan como `NOP` | — |
+| `MUL reg`          | 1 | 27 | `D8 … DF` | `AX = AL × reg` (sin signo; sección 4d) | N Z · C=V=(AH≠0) |
+| `DIV reg`          | 1 | 28 | `E0 … E7` | `AL=AX÷reg AH=AX mod reg` (sin signo; sección 4d) | N Z · C=V=1 si entre 0 o no cupo |
+| `INC reg16` / `DEC reg16` | 1 | 29 | `E8 … EF` | `reg16 ± 1` (sección 4d) | — |
+| `ADD dst16,src8` / `SUB dst16,src8` | 2 | 30 | `F0`/`F1` | `dst16 ±= src8` sin signo (sección 4d) | — |
+| `MOVB` / `MOVW`    | 1 | 30 | `F2`/`F3` | copia de bloque `[BX]→[DX]` (sección 4d) | — |
+| `JMPNV`/`CALLNV addr16` | 3 | 30 | `F4`/`F5` | salta/llama si `V=0` (sección 4d/5) | — |
+| `MOV reg16,#imm16` | 4 | 30 | `F6` | `reg16 = imm16` (sección 4d) — única LEN 4 de la ISA | — |
+| *(reservada)*     | 1 | 30 | `F7` | se ejecuta como `NOP` | — |
 | `<op> dst,src`     | 2 | 31 | `F8` + op | ALU registro-registro (sección 6) | según op |
 
 Columna "Opcode (AL … DH)": el primer valor es con el registro AL; cada
@@ -207,6 +214,74 @@ igual que `PTR` envuelve entre `AX`/`BX`/`CX`/`DX`).
 
 ---
 
+## 4d. Multiplicación, división, aritmética de 16 bits y copia de bloques
+
+Reemplazan rutinas de software que antes costaban decenas de instrucciones
+(`smul64` en `cubo.asm`, la división de `calc.asm`, el patrón de
+incremento de puntero con acarreo manual repetido en cada fichero). Regla
+general de flags: estas son instrucciones de *aritmética de punteros /
+movimiento de datos*, no de *programa* — **ninguna toca los flags salvo
+`MUL`/`DIV`** (que sí son aritmética de verdad, igual que `ADD`/`SUB`).
+
+**`MUL reg`** (familia 27): `AX = AL × reg`, sin signo (8×8→16, nunca
+desborda: máximo 255×255=65025). Flags: `Z`/`N` del resultado de 16 bits
+completo; **`C=V=1` si el producto no cupo en 8 bits** (`AH≠0`) — así
+`JMPV`/`JMPC` justo después de un `MUL` es literalmente "hizo falta el
+byte alto", sin tener que comprobar `AH` a mano.
+
+**`DIV reg`** (familia 28): `AL = AX ÷ reg` (cociente), `AH = AX mod reg`
+(resto), sin signo. Esta CPU no tiene interrupciones/excepciones, así que
+tanto **dividir entre 0 como un cociente que no quepa en 8 bits** (`AX÷reg
+> 255`) saturan `AL=AH=0xFF` con **`C=V=1`** — un solo camino de
+saturación para los dos casos, así `JMPV`/`JMPC` tras un `DIV` es "esto no
+dio un resultado válido de 8 bits". Con resultado válido: `C=V=0`, `Z`/`N`
+del cociente (`AL`).
+
+**`INC reg16` / `DEC reg16`** (familia 29, `reg16` = `AX`/`BX`/`CX`/`DX`):
+`reg16 ± 1` con vuelta (`0xFFFF↔0x0000`). Sin flags. El paso más común de
+todos: avanzar un puntero de 16 bits una unidad.
+
+**`ADD dst16,src8` / `SUB dst16,src8`** (familia 30, opcode `F0`/`F1` +
+1 byte de operando `[dst16:2][src8:3]`): **mismo mnemónico `ADD`/`SUB` de
+siempre** — el ensamblador detecta la forma de 16 bits por el nombre del
+registro destino (`AX/BX/CX/DX` en vez de `AL/AH/...`), sin palabra clave
+aparte. `dst16 ±= extender_a_cero(src8)`: el reemplazo directo de
+`idx_ptr` (`BL+=CL` con acarreo a mano a `BH`) — `src8` puede ser
+cualquiera de los 8 registros de 8 bits, no solo `CL`. Sin flags.
+`AND`/`OR`/`XOR`/`CMP` NO tienen forma de 16 bits (ni falta que hace,
+operar a nivel de bits sobre un puntero no tiene mucho sentido); si se
+escribe un `ADD`/`SUB` con un operando de 16 bits y el otro también de 16
+bits (o al revés, destino de 8 con origen de 16), `casm.py` lo rechaza con
+un error claro.
+
+**`MOVB` / `MOVW`** (familia 30, opcode `F2`/`F3`, sin operando): copia un
+bloque de memoria con registros implícitos — **`BX` = origen, `DX` =
+destino, `CX` = cuenta** — avanzando `BX`/`DX` a la vez y dejando `CX` a 0
+al terminar (para poder encadenar). `MOVB` cuenta bytes sueltos; `MOVW`
+cuenta PARES de bytes (palabras de 16 bits), para no tener que doblar `CX`
+a mano cuando el tamaño ya se piensa en palabras (tablas `.dw`, o mover el
+framebuffer 2 bytes a la vez). Copia siempre hacia adelante (como `REP
+MOVSB` de x86 o `LDIR` del Z80): si `[BX..)` y `[DX..)` se solapan con
+`DX<BX`, el resultado puede no ser el de un `memmove` seguro — limitación
+deliberada, pensada para blits/descompresión/tablas, no para solapar
+rangos a propósito. Sin flags.
+
+**`JMPNV` / `CALLNV addr16`** (familia 30, opcode `F4`/`F5`): saltan/llaman
+si `V=0`. Ver la sección 5 para por qué viven en una familia aparte de
+`JMPV`/`CALLV` en vez de compartir el campo `cc` de `JMP`/`CALL`.
+
+**`MOV reg16,#imm16`** (familia 30, opcode `F6`, mismo mnemónico `MOV` de
+siempre — detectado por que el destino es `AX`/`BX`/`CX`/`DX`): `reg16 =
+imm16`, en una sola instrucción en vez de los dos `MOV reg,#imm8` (uno por
+mitad) que hacía falta antes. Pensada sobre todo para montar `BX`/`DX`
+antes de un `MOVB`/`MOVW`. Sin flags. **Es la única instrucción de toda la
+ISA que ocupa 4 bytes** (opcode + 1 byte de registro + `imm16` lo/hi) — si
+tecleas a mano en el panel y sueles dejar 3 `NOP` de margen antes de
+insertar una instrucción nueva (suficiente para cualquier otra, que como
+mucho llegan a 3 bytes), para esta hacen falta **4**.
+
+---
+
 ## 5. Condiciones de `JMP` / `CALL`
 
 El opcode base es `88` (JMP) o `90` (CALL); se le suma el número de condición:
@@ -220,8 +295,16 @@ El opcode base es `88` (JMP) o `90` (CALL); se le suma el número de condición:
 | NC  | 4 | `8C` | `94` | C = 0 |
 | N   | 5 | `8D` | `95` | N = 1 (resultado negativo) |
 | NN  | 6 | `8E` | `96` | N = 0 |
+| V   | 7 | `8F` | `97` | V = 1 (overflow con signo — ver sección 4d) |
 
 `JMP` y `CALL` **siempre ocupan 3 bytes**, aunque la condición no se cumpla.
+
+**`JMPNV`/`CALLNV` (salta si V=0) NO tienen hueco en `cc`**: el campo son 3
+bits (0-7) y las 8 combinaciones ya están usadas con lo de arriba. Se
+codifican aparte, en la familia 30 (`F4`/`F5`, ver sección 4d) — mismos 3
+bytes (opcode + `addr16`), pero el selector de mnemónico del panel los
+ofrece igual que el resto: son un 9º valor del campo `COND` bajo el verbo
+`JMP`/`CALL` de siempre, no un verbo aparte.
 
 ---
 
@@ -283,8 +366,16 @@ Flags: iguales que en la sección 6 (aritméticos para ADD/SUB/CMP, lógicos par
 - **Lógica** (`AND`, `OR`, `XOR`, `NOT`): `Z` y `N` según el resultado; `C = 0`, `V = 0`.
 - **Desplazamientos**: ver la tabla de la sección 4 (`SHR`/`SHL reg`, 1 bit)
   y la sección 4c (`SHR`/`SHL reg,#N`, N bits de una vez).
+- **`MUL`/`DIV`** (sección 4d): `Z`/`N` del resultado; `C=V=1` si el
+  producto no cupo en 8 bits (`MUL`) o si la división no dio un resultado
+  válido de 8 bits, por entre 0 o por cociente demasiado grande (`DIV`).
 - `MOV`, `LDA`, `STA`, `IN`, `OUT`, `PUSH`, `POP`, `JMP`, `CALL`, `RET`, `NOP`:
-  **no tocan los flags**.
+  **no tocan los flags** — tampoco `MOVB`, `MOVW`, `INC`/`DEC` de 16 bits ni
+  `ADD`/`SUB` en su forma de 16 bits (sección 4d): son aritmética de
+  *punteros*, no de programa. **Regla general**: si la instrucción calcula
+  un valor de 8 bits que el programa puede querer comparar (`ADD` `SUB`
+  `AND` `OR` `XOR` `NOT` `CMP` `SHR` `SHL` `MUL` `DIV`), toca flags; si
+  mueve datos o punteros de 16 bits sin más, no los toca.
 - `reset` (arranque de ejecución): todos los flags a 0.
 
 ---

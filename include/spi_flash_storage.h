@@ -23,6 +23,8 @@ public:
     bool previewProgram(int slot, uint8_t* dest, uint32_t len) override;
     bool saveProgram(int slot, const uint8_t* src) override;
     bool deleteProgram(int slot) override;
+    bool readEeprom(int slot, uint8_t* dest) override;
+    bool writeEeprom(int slot, const uint8_t* src) override;
 
     // Diagnóstico: JEDEC ID. Para el 25Q32FVSIG: 0xEF, 0x40, 0x16.
     void readJedecId(uint8_t* manufacturer, uint8_t* memType, uint8_t* capacity);
@@ -43,6 +45,17 @@ private:
     static constexpr uint32_t IMAGE_OFFSET     = 16;   // la imagen empieza aquí
     static constexpr uint8_t  USED_MARK        = 0xA5;
 
+    // --- EEPROM emulada (storage.h EEPROM_SLOT_SIZE bytes/slot) -----------
+    // Justo despues del ultimo slot de programa, en lo que sobra del chip de
+    // 4 MiB (60*SLOT_STRIDE = 4177920; 4194304-4177920 = 16384 = exactamente
+    // 60*EEPROM_SLOT_SIZE, sin desperdiciar nada). SECTOR_SIZE/EEPROM_SLOT_
+    // SIZE = 16 slots por sector de borrado: cada escritura solo toca (lee,
+    // borra, reescribe) el sector de 4 KiB que contiene ESE slot, no los 4
+    // sectores enteros de la zona -- 15 de los otros 59 slots como mucho
+    // comparten sector con el que se esta escribiendo.
+    static constexpr uint32_t EEPROM_BASE_ADDR    = MAX_PROGRAM_SLOTS * SLOT_STRIDE; // 0x3FC000
+    static constexpr uint32_t EEPROM_SLOTS_PER_SECTOR = SECTOR_SIZE / EEPROM_SLOT_SIZE; // 16
+
     uint8_t csPin_;
 
     void select();
@@ -56,6 +69,9 @@ private:
 
     uint32_t slotAddr(int slot) const { return (uint32_t)slot * SLOT_STRIDE; }
     bool validSlot(int slot) const { return slot >= 0 && (size_t)slot < MAX_PROGRAM_SLOTS; }
+    uint32_t eepromAddr(int slot) const {
+        return EEPROM_BASE_ADDR + (uint32_t)slot * EEPROM_SLOT_SIZE;
+    }
 };
 
 } // namespace compi

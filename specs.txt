@@ -202,13 +202,57 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi)
                     C = bit que sale en el ULTIMO de los N pasos
                     N = bit7 del resultado final; V = (C != N); Z
                     Mismo resultado/flags que repetir "SHL reg" N veces.
-  27..30                           RESERVADAS: se ejecutan como NOP (LEN 1)
+  27 MUL    LEN 1   reg            AX = AL * reg           (sin signo, 8x8->16)
+                    Z,N del resultado de 16 bits; C=V=1 si el producto no
+                    cupo en 8 bits (AH != 0) -- si no, C=V=0.
+  28 DIV    LEN 1   reg            AL=AX/reg  AH=AX mod reg  (sin signo)
+                    Sin interrupciones/excepciones en esta CPU: dividir
+                    entre 0, O UN COCIENTE que no quepa en 8 bits (AX/reg >
+                    255), saturan AL=AH=0xFF con C=V=1. Si no: C=V=0, Z/N
+                    del cociente (AL).
+  29 INCDEC16 LEN 1 reg16          reg16 += 1 (dir=0) / reg16 -= 1 (dir=1)
+                    opcode = 29*8 + dir*4+reg16 (reg16: 0=AX 1=BX 2=CX 3=DX).
+                    Vuelta 0xFFFF<->0. NO toca flags (aritmetica de punteros,
+                    no de programa). Mnemonicos: INC reg16 / DEC reg16.
+  30 EXT2   LEN variable -- subop en bits 2..0 del opcode (mezcla longitudes
+             a proposito, unica familia que lo hace):
+     subop 0  ADD dst16,src8  LEN 2   dst16 += src8 (sin signo, sin flags)
+     subop 1  SUB dst16,src8  LEN 2   dst16 -= src8 (sin signo, sin flags)
+             operando de 1 byte: [dst16(2) << 3 | src8(3)]. MISMO mnemonico
+             ADD/SUB de siempre -- el ensamblador detecta la forma de 16
+             bits por que el destino es un nombre de registro de 16 bits
+             (AX/BX/CX/DX), no hace falta un mnemonico aparte. Reemplazo
+             directo de "BL+=CL con acarreo a mano a BH" (idx_ptr).
+     subop 2  MOVB             LEN 1   copia CX bytes [BX]->[DX]
+     subop 3  MOVW             LEN 1   copia CX PALABRAS de 16 bits [BX]->[DX]
+             sin operando: BX=origen, DX=destino, CX=cuenta (implicitos).
+             Al terminar: BX+=copiado, DX+=copiado, CX=0. Copia siempre
+             hacia adelante (no es memmove-seguro si los rangos se
+             solapan con DX<BX). Sin flags.
+     subop 4  JMPNV addr16     LEN 3   si V=0: pc = addr16
+     subop 5  CALLNV addr16    LEN 3   si V=0: push(pc_hi); push(pc_lo); pc=addr16
+             NV no cabe en el campo de 3 bits de JMP/CALL (ya las 8
+             combinaciones usadas, ver CONDICIONES abajo) -- se codifican
+             aparte, aqui, pero el selector del panel los ofrece igual que
+             el resto: un 9o valor del campo COND bajo el verbo JMP/CALL
+             de siempre, no un verbo aparte (ver seccion 12).
+     subop 6  MOV reg16,#imm16 LEN 4  reg16 = imm16 ; operando: [reg16(2)|
+             --(6)][imm16 lo][imm16 hi]. MISMO mnemonico MOV de siempre,
+             detectado por que el destino es AX/BX/CX/DX -- reemplaza los
+             dos "MOV reg,#imm8" (uno por mitad) que hacia falta antes de
+             un MOVB/MOVW para montar BX/DX. Sin flags. UNICA instruccion
+             de toda la ISA que ocupa mas de 3 bytes -- al insertar a mano
+             en el panel, el margen de "3 NOP" que basta para cualquier
+             otra instruccion no basta para esta: hacen falta 4.
+     subop 7  reservado: se ejecuta como NOP (LEN 1)
   31 EXT    LEN 2   <op> dst,src    op en bits 2..0 del opcode (AluOp);
                                     operando de 1 byte:  [ -- | dst(3) | src(3) ]
 
 CONDICIONES (bits 2..0 de JMP / CALL)
-  0 ALWAYS   1 Z    2 NZ    3 C    4 NC    5 N    6 NN
-  (valor 7: se trata como ALWAYS)
+  0 ALWAYS   1 Z    2 NZ    3 C    4 NC    5 N    6 NN   7 V
+  V = 1 (overflow con signo, ver MUL/DIV arriba). NV (salta si V=0) NO
+  cabe en este campo (las 8 combinaciones ya llenas) -- ver family 30
+  subop 4/5 arriba.
 
 OPERACIONES DE LA ALU (AluOp, bits 2..0 del opcode en EXT y ALUI)
   0 MOV   dst = src               (NO toca flags)
@@ -235,7 +279,18 @@ CÁLCULO DE FLAGS  (iguales en cualquier forma: reg,src / reg,#imm / reg,[addr])
                 V = (~(a ^ b) & (a ^ resultado) & 0x80) != 0
   Lógica (AND, OR, XOR, NOT):
     Z y N según el resultado; C = 0; V = 0.
+  MUL/DIV (ver family 27/28 arriba): Z/N del resultado (AX para MUL, AL
+    -cociente- para DIV); C=V=1 si el producto de MUL no cupo en 8 bits, o
+    si la division no dio un resultado valido de 8 bits (entre 0 o
+    cociente > 255); si no, C=V=0.
   reset(): FLAGS = 0.
+
+  REGLA GENERAL: si la instruccion calcula un valor de 8 bits que el
+  programa puede querer comparar (ADD SUB AND OR XOR NOT CMP SHR SHL MUL
+  DIV), toca flags. Las de movimiento de datos o de aritmetica de
+  PUNTEROS de 16 bits (MOV LDA STA IN OUT PUSH POP JMP CALL RET NOP, y las
+  nuevas MOVB MOVW INC/DEC de 16 bits y ADD/SUB en su forma de 16 bits) NO
+  tocan los flags.
 
 
 --------------------------------------------------------------------------------
@@ -424,6 +479,8 @@ MAPA DE PUERTOS
   0x0633            PORT_SND_DUR       sonido: duración auto = valor * 10 ms (0 = sostenida)
   0x0640            PORT_PROG_LOAD     carga un slot de flash en la RAM y reinicia la CPU (OUT slot; IN = 1 si el ultimo intento fallo)
   0x0641            PORT_PROG_SAVE     graba la RAM actual en un slot de flash (OUT slot; IN = 1 si la ultima grabacion salio bien)
+  0x0650            PORT_CFG_BRIGHTNESS  brillo de pantalla 0..255 (OUT fija; IN eco)
+  0x0651            PORT_CFG_SOUND_EN    activa/desactiva el sonido, igual que BOOT (OUT 0/!=0; IN 1=activado)
   resto            IN -> 0 ; OUT -> nada
 
 FRAMEBUFFER · gráficos (puertos 0x0000..0x03FF)
@@ -641,6 +698,38 @@ CARGA Y GRABADO DE PROGRAMAS (puertos 0x0640 / 0x0641)
   con la RAM limpia (todo NOP) como hasta ahora. Así, un "sistema operativo"
   grabado en el slot 0 (ver programs/sisop.asm) aparece nada más encender el
   aparato, sin esperar a que el usuario entre en EDITAR y pulse Cargar.
+
+CONFIGURACIÓN DEL APARATO (puertos 0x0650 / 0x0651)
+  Ajustes que antes solo se tocaban desde fuera del programa (el ahorro de
+  energía automático para el brillo, el botón BOOT para el sonido): aquí se
+  exponen para que el propio programa en ejecución los pueda pedir.
+
+    0x0650  PORT_CFG_BRIGHTNESS  OUT: brillo 0 (más tenue) .. 255 (máximo) ->
+                                  oled.contrast(valor) al instante. Además
+                                  reemplaza a OLED_CONTRAST_FULL como el
+                                  brillo "a pleno uso" (g_screenContrast,
+                                  main.cpp): el atenuado/apagado automático
+                                  por inactividad sigue funcionando igual,
+                                  solo que "pleno" pasa a ser este valor
+                                  hasta la siguiente ejecución. Se reinicia
+                                  al de fábrica en cada arranque de ejecución
+                                  nueva (clearRuntimeOutputs(), como
+                                  pantalla/LED/sonido/temporizadores) -- un
+                                  programa no le deja el brillo cambiado al
+                                  siguiente.
+                                  IN: eco del último valor escrito.
+    0x0651  PORT_CFG_SOUND_EN    OUT: 0 = silencia, !=0 = reactiva -- MISMO
+                                  interruptor general que el botón BOOT
+                                  (g_soundMuted, main.cpp). Es una preferencia
+                                  de sesión, no un ajuste de "este programa":
+                                  NO se reinicia al arrancar una ejecución
+                                  nueva (igual que pulsar BOOT a mano tampoco
+                                  se olvida al cambiar de programa). A
+                                  diferencia de BOOT, no reproduce el jingle
+                                  de reactivación (pensado para que lo note
+                                  un humano, no para dispararlo desde código).
+                                  IN: 1 si el sonido está activado ahora
+                                  mismo, 0 si está silenciado.
 
   A esta resolución (glifos de 5x7 en una celda de 8 px de alto) no hay
   margen para además encoger el carácter en subíndice/superíndice y que se
@@ -1236,7 +1325,11 @@ MENSAJE A PANTALLA COMPLETA — message(texto)
   ACTIVE_WINDOW_MS  src/main.cpp        2000 ms  (sigue a 2 ms tras la actividad)
   SCREEN_DIM_MS / SCREEN_OFF_MS / LIGHT_SLEEP_MS  src/main.cpp  20000 / 45000 / 45000 ms
   OLED_CONTRAST_FULL / OLED_CONTRAST_DIM  src/main.cpp  0xCF / 0x10
+    (OLED_CONTRAST_FULL es solo el valor de FABRICA de g_screenContrast --
+    ver PORT_CFG_BRIGHTNESS mas abajo -- que es lo que de verdad usa
+    applyScreenPower() para "pleno brillo")
   START_SCREEN_DIMMED  src/main.cpp  true (arranca atenuada, ahorra bateria)
+  PORT_CFG_BRIGHTNESS / PORT_CFG_SOUND_EN  include/iomap.h  0x0650 / 0x0651
   build_src_flags (platformio.ini)  -fjump-tables -ftree-switch-conversion
     reactiva la tabla de saltos SOLO para src/*.cpp (el framework de Espressif
     compila todo con -fno-jump-tables por defecto, pensado para ISRs que
@@ -1333,13 +1426,16 @@ portRead(port):  port < 1024 -> g_fb[port] ; celda de texto -> g_text[i] ;
   0x0600/0x0602 -> dirPos/datPos ; 0x0601/0x0603 -> dirDown/datDown ;
   0x0610 -> g_led ; 0x0620..0629 -> g_timer[i] ;
   0x0630..0633 -> eco de sonido (DUR = tiempo restante) ;
-  0x0640 -> g_lastLoadOk ; 0x0641 -> g_lastSaveOk ; resto -> 0.
+  0x0640 -> g_lastLoadOk ; 0x0641 -> g_lastSaveOk ;
+  0x0650 -> g_screenContrast ; 0x0651 -> !g_soundMuted ; resto -> 0.
 portWrite(port, v):  port < 1024 -> g_fb[port] = v ; celda de texto -> g_text[i] = v ;
   celda de atributos -> g_attr[i] = v ;
   0x0610 -> LED ; 0x0620..0629 -> arma el temporizador ;
   0x0630..0633 -> sonido (0x0631 y 0x0632 aplican el tono) ;
   0x0640 -> flash.loadProgram(v, cpu.ram()) + cpu.reset() + clearRuntimeOutputs() si sale bien ;
-  0x0641 -> flash.saveProgram(v, cpu.ram()) ; resto -> nada.
+  0x0641 -> flash.saveProgram(v, cpu.ram()) ;
+  0x0650 -> g_screenContrast = v ; oled.contrast(v) ;
+  0x0651 -> g_soundMuted = (v == 0) ; resto -> nada.
   "celda de texto" = textIndex(port) >= 0  (0x0400 + fila*32 + col, fila<8, col<21).
   "celda de atributos" = attrIndex(port) >= 0  (0x0500 + fila*32 + col, misma
   formula que el texto, comprobado DESPUES de textIndex en el orden de

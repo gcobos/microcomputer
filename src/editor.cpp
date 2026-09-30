@@ -12,8 +12,12 @@ inline uint8_t rd(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
 // Cuántas formas tiene un verbo (0 = no aplica, siempre reg,reg por defecto).
 uint8_t modeCount(uint8_t verb) {
     switch (verb) {
-        case V_MOV: case V_CMP: return 2;
-        case V_ADD: case V_SUB: case V_AND: case V_OR: case V_XOR: return 3;
+        // MOV gana un 3er mode (reg16,#imm16); CMP se queda en 2.
+        case V_MOV: return 3;
+        case V_CMP: return 2;
+        case V_AND: case V_OR: case V_XOR: return 3;
+        // ADD/SUB: + mode 3 = reg16,reg8 (dst16 += / -= src8, ver isa.h OP_EXT2)
+        case V_ADD: case V_SUB: return 4;
         // LDA/STA/IN/OUT: 0 = [addr16] (3 bytes) ; 1 = [AX|BX|CX|DX] indirecto (2 bytes)
         case V_LDA: case V_STA: case V_IN: case V_OUT: return 2;
         // SHR/SHL: 0 = desplaza 1 bit (1 byte) ; 1 = reg,#N, N=1..8 (2 bytes)
@@ -47,15 +51,39 @@ uint8_t operandFields(uint8_t verb, uint8_t mode, EField out[3]) {
         case V_JMP: case V_CALL:
             out[0] = EField::Cond; out[1] = EField::Lo; out[2] = EField::Hi;
             return 3;
-        case V_MOV: case V_CMP:
+        case V_MOV:
+            if (mode == 0) { out[0] = EField::Dst; out[1] = EField::Src; return 2; }
+            if (mode == 1) { out[0] = EField::Reg; out[1] = EField::Imm; return 2; }
+            // mode 2: reg16,#imm16 -- destino primero (Ptr), luego el
+            // inmediato de 16 bits en dos campos Lo/Hi (igual gesto que
+            // teclear un addr16 en LDA/STA/JMP/...).
+            out[0] = EField::Ptr; out[1] = EField::Lo; out[2] = EField::Hi;
+            return 3;
+        case V_CMP:
             if (mode == 0) { out[0] = EField::Dst; out[1] = EField::Src; return 2; }
             out[0] = EField::Reg; out[1] = EField::Imm;
             return 2;
-        case V_ADD: case V_SUB: case V_AND: case V_OR: case V_XOR:
+        case V_AND: case V_OR: case V_XOR:
             if (mode == 0) { out[0] = EField::Dst; out[1] = EField::Src; return 2; }
             if (mode == 1) { out[0] = EField::Reg; out[1] = EField::Imm; return 2; }
             out[0] = EField::Reg; out[1] = EField::Lo; out[2] = EField::Hi;
             return 3;
+        case V_ADD: case V_SUB:
+            if (mode == 0) { out[0] = EField::Dst; out[1] = EField::Src; return 2; }
+            if (mode == 1) { out[0] = EField::Reg; out[1] = EField::Imm; return 2; }
+            if (mode == 2) { out[0] = EField::Reg; out[1] = EField::Lo; out[2] = EField::Hi; return 3; }
+            // mode 3: reg16,reg8 -- dst16 primero (Ptr), luego src8 (Reg),
+            // igual orden que se lee/teclea "ADD BX,CL".
+            out[0] = EField::Ptr; out[1] = EField::Reg;
+            return 2;
+        case V_MUL: case V_DIV:
+            out[0] = EField::Reg;
+            return 1;
+        case V_INC: case V_DEC:
+            out[0] = EField::Ptr;
+            return 1;
+        case V_MOVB: case V_MOVW:
+            return 0;
         default:
             return 0;
     }
@@ -92,14 +120,16 @@ uint8_t memFamilyOf(uint8_t verb) {
 const char* const kVerbNames[VERB_COUNT] = {
     "NOP", "HALT", "MOV", "LDA", "STA", "ADD", "SUB", "AND", "OR", "XOR",
     "NOT", "SHR", "SHL", "IN", "OUT", "PUSH", "POP", "JMP", "CALL", "RET", "CMP",
+    "MUL", "DIV", "INC", "DEC", "MOVB", "MOVW",
 };
 
 // Orden en que DATOS los va ofreciendo al girar en el campo Verb: alfabético
 // por nombre (kVerbNames), no el orden interno del enum (que agrupa por
 // familia de opcode y es irrelevante para quien teclea).
 const uint8_t kVerbAlpha[VERB_COUNT] = {
-    V_ADD, V_AND, V_CALL, V_CMP, V_HALT, V_IN, V_JMP, V_LDA, V_MOV, V_NOP,
-    V_NOT, V_OR, V_OUT, V_POP, V_PUSH, V_RET, V_SHL, V_SHR, V_STA, V_SUB, V_XOR,
+    V_ADD, V_AND, V_CALL, V_CMP, V_DEC, V_DIV, V_HALT, V_IN, V_INC, V_JMP,
+    V_LDA, V_MOV, V_MOVB, V_MOVW, V_MUL, V_NOP, V_NOT, V_OR, V_OUT, V_POP,
+    V_PUSH, V_RET, V_SHL, V_SHR, V_STA, V_SUB, V_XOR,
 };
 
 uint8_t alphaIndexOf(uint8_t verb) {
@@ -221,17 +251,33 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
         case V_OUT:
             if (st.mode == 1) { put(addr, makeOpcode(OP_OUTR, st.reg)); put((uint16_t)(addr + 1), st.ptr); return 2; }
             put(addr, makeOpcode(OP_OUT, st.reg)); putAddr16(st.addr16); return 3;
-        case V_JMP:  put(addr, makeOpcode(OP_JMP, st.cond)); putAddr16(st.addr16); return 3;
-        case V_CALL: put(addr, makeOpcode(OP_CALL, st.cond)); putAddr16(st.addr16); return 3;
+        case V_JMP:
+            // cond==8 ("NV") no cabe en el campo de 3 bits de OP_JMP: se
+            // codifica aparte, en OP_EXT2 subop 4 (ver isa.h).
+            if (st.cond == 8) { put(addr, makeOpcode(OP_EXT2, 4)); putAddr16(st.addr16); return 3; }
+            put(addr, makeOpcode(OP_JMP, st.cond)); putAddr16(st.addr16); return 3;
+        case V_CALL:
+            if (st.cond == 8) { put(addr, makeOpcode(OP_EXT2, 5)); putAddr16(st.addr16); return 3; }
+            put(addr, makeOpcode(OP_CALL, st.cond)); putAddr16(st.addr16); return 3;
         case V_MOV:
             if (st.mode == 0) {
                 put(addr, makeOpcode(OP_EXT, ALU_MOV));
                 put((uint16_t)(addr + 1), (uint8_t)((st.dst << 3) | (st.src & 7)));
                 return 2;
             }
-            put(addr, makeOpcode(OP_LDI, st.reg));
-            put((uint16_t)(addr + 1), st.imm);
-            return 2;
+            if (st.mode == 1) {
+                put(addr, makeOpcode(OP_LDI, st.reg));
+                put((uint16_t)(addr + 1), st.imm);
+                return 2;
+            }
+            // mode 2: reg16,#imm16 -- OP_EXT2 subop 6. NO se puede usar
+            // putAddr16 (escribe fijo en addr+1/addr+2): aqui addr+1 ya lo
+            // ocupa el byte de reg16, el imm16 va en addr+2/addr+3.
+            put(addr, makeOpcode(OP_EXT2, 6));
+            put((uint16_t)(addr + 1), (uint8_t)(st.ptr & 3));
+            put((uint16_t)(addr + 2), (uint8_t)(st.addr16 & 0xFF));
+            put((uint16_t)(addr + 3), (uint8_t)(st.addr16 >> 8));
+            return 4;
         case V_CMP:
             if (st.mode == 0) {
                 put(addr, makeOpcode(OP_EXT, ALU_CMP));
@@ -242,7 +288,7 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
             put((uint16_t)(addr + 1), st.reg);
             put((uint16_t)(addr + 2), st.imm);
             return 3;
-        case V_ADD: case V_SUB: case V_AND: case V_OR: case V_XOR: {
+        case V_AND: case V_OR: case V_XOR: {
             uint8_t op = aluOpOf(st.verb);
             if (st.mode == 0) {
                 put(addr, makeOpcode(OP_EXT, op));
@@ -259,10 +305,45 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
             putAddr16(st.addr16);
             return 3;
         }
+        case V_ADD: case V_SUB: {
+            uint8_t op = aluOpOf(st.verb);
+            if (st.mode == 0) {
+                put(addr, makeOpcode(OP_EXT, op));
+                put((uint16_t)(addr + 1), (uint8_t)((st.dst << 3) | (st.src & 7)));
+                return 2;
+            }
+            if (st.mode == 1) {
+                put(addr, makeOpcode(OP_ALUI, op));
+                put((uint16_t)(addr + 1), st.reg);
+                put((uint16_t)(addr + 2), st.imm);
+                return 3;
+            }
+            if (st.mode == 2) {
+                put(addr, makeOpcode(memFamilyOf(st.verb), st.reg));
+                putAddr16(st.addr16);
+                return 3;
+            }
+            // mode 3: reg16,reg8 -- OP_EXT2 subop 0 (ADD) / 1 (SUB)
+            put(addr, makeOpcode(OP_EXT2, (st.verb == V_ADD) ? 0 : 1));
+            put((uint16_t)(addr + 1), (uint8_t)(((st.ptr & 3) << 3) | (st.reg & 7)));
+            return 2;
+        }
+        case V_MUL: put(addr, makeOpcode(OP_MUL, st.reg)); return 1;
+        case V_DIV: put(addr, makeOpcode(OP_DIV, st.reg)); return 1;
+        case V_INC: put(addr, makeOpcode(OP_INCDEC16, (uint8_t)(st.ptr & 3))); return 1;
+        case V_DEC: put(addr, makeOpcode(OP_INCDEC16, (uint8_t)(0x04 | (st.ptr & 3)))); return 1;
+        case V_MOVB: put(addr, makeOpcode(OP_EXT2, 2)); return 1;
+        case V_MOVW: put(addr, makeOpcode(OP_EXT2, 3)); return 1;
         default:
             put(addr, makeOpcode(OP_NOP, 0));
             return 1;
     }
+}
+
+uint8_t composedLength(const ComposeState& st) {
+    uint8_t scratch[8];   // ninguna instruccion pasa de 4 bytes hoy; de
+                           // sobra incluso si esta constante creciera
+    return assemble(scratch, sizeof(scratch), 0, st);
 }
 
 ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
@@ -332,8 +413,39 @@ ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
             st.src = (uint8_t)(b1 & 7);
             break;
         }
+        case OP_MUL: st.verb = V_MUL; st.reg = r; break;
+        case OP_DIV: st.verb = V_DIV; st.reg = r; break;
+        case OP_INCDEC16: {
+            bool dec = (r & 0x04) != 0;
+            st.verb = dec ? V_DEC : V_INC;
+            st.ptr = (uint8_t)(r & 3);
+            break;
+        }
+        case OP_EXT2: {
+            switch (r) {
+                case 0: st.verb = V_ADD; st.mode = 3; st.ptr = (uint8_t)((b1 >> 3) & 3); st.reg = (uint8_t)(b1 & 7); break;
+                case 1: st.verb = V_SUB; st.mode = 3; st.ptr = (uint8_t)((b1 >> 3) & 3); st.reg = (uint8_t)(b1 & 7); break;
+                case 2: st.verb = V_MOVB; break;
+                case 3: st.verb = V_MOVW; break;
+                case 4: st.verb = V_JMP;  st.cond = 8; st.addr16 = a16; break;   // JMPNV
+                case 5: st.verb = V_CALL; st.cond = 8; st.addr16 = a16; break;   // CALLNV
+                case 6: {
+                    // MOV reg16,#imm16 -- b1=reg16, imm16 en b2/b3 (NO en
+                    // a16, que aqui vale b1|b2<<8 y no es lo que hace falta)
+                    uint8_t b2 = rd(mem, memLen, (uint16_t)(addr + 2));
+                    uint8_t b3 = rd(mem, memLen, (uint16_t)(addr + 3));
+                    st.verb = V_MOV;
+                    st.mode = 2;
+                    st.ptr = (uint8_t)(b1 & 3);
+                    st.addr16 = (uint16_t)(b2 | (b3 << 8));
+                    break;
+                }
+                default: st.verb = V_NOP; break;   // subop 7: reservado
+            }
+            break;
+        }
         default:
-            st.verb = V_NOP;   // familias reservadas 21..30: se ejecutan como NOP
+            st.verb = V_NOP;   // sin familias reservadas por ahora: 27-30 ya se usan arriba
             break;
     }
     st.step = 0;

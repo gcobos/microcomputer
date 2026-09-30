@@ -1,4 +1,5 @@
 #include "spi_flash_storage.h"
+#include <string.h>
 
 namespace compi {
 
@@ -195,6 +196,39 @@ bool SpiFlashStorage::deleteProgram(int slot) {
     }
     sleep();
     return true; // marca a 0xFF = libre
+}
+
+bool SpiFlashStorage::readEeprom(int slot, uint8_t* dest) {
+    if (!validSlot(slot)) return false;
+    wake();
+    readBytes(eepromAddr(slot), dest, (uint32_t)EEPROM_SLOT_SIZE);
+    sleep();
+    return true;
+}
+
+bool SpiFlashStorage::writeEeprom(int slot, const uint8_t* src) {
+    if (!validSlot(slot)) return false;
+    wake();
+
+    // Unico modo de tocar un solo byte en NOR flash sin perder el resto:
+    // leer el sector ENTERO que contiene este slot (hasta 16 slots viven
+    // ahi, ver EEPROM_SLOTS_PER_SECTOR), parchear solo los EEPROM_SLOT_SIZE
+    // bytes de este slot, borrar ese sector y reescribirlo entero. `sector`
+    // static (no en la pila): 4096 bytes es demasiado para arriesgarse en
+    // una pila de tarea de Arduino, y esta funcion nunca se reentra (single
+    // task, ver el resto del driver).
+    static uint8_t sector[SECTOR_SIZE];
+    uint32_t addr = eepromAddr(slot);
+    uint32_t sectorAddr = addr - (addr % SECTOR_SIZE);
+    uint32_t offsetInSector = addr - sectorAddr;
+
+    readBytes(sectorAddr, sector, SECTOR_SIZE);
+    memcpy(sector + offsetInSector, src, EEPROM_SLOT_SIZE);
+    eraseSector(sectorAddr);
+    writeBytes(sectorAddr, sector, SECTOR_SIZE);
+
+    sleep();
+    return true;
 }
 
 } // namespace compi

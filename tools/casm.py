@@ -17,15 +17,20 @@ Sintaxis = la del desensamblador (src/disasm.cpp) + etiquetas y directivas.
 Instrucciones (reg = AL AH BL BH CL CH DL DH):
 
     NOP  HALT  RET
-    MOV reg,#imm     MOV dst,src
+    MOV reg,#imm     MOV dst,src     MOV AX|BX|CX|DX,#imm16
     LDA reg,[addr]   STA [addr],reg     (o [AX|BX|CX|DX]: indirecto por registro)
     ADD/SUB/AND/OR/XOR  reg,[addr] | reg,#imm | dst,src
     CMP reg,#imm | dst,src
     NOT/PUSH/POP reg
     SHR/SHL reg              (desplaza 1 bit)   o   SHR/SHL reg,#N  (N=1..8)
     IN  reg,(port)   OUT (port),reg     (o (AX|BX|CX|DX): indirecto por registro)
-    JMP/JMPZ/JMPNZ/JMPC/JMPNC/JMPN/JMPNN   addr
-    CALL/CALLZ/CALLNZ/CALLC/CALLNC/CALLN/CALLNN  addr
+    JMP/JMPZ/JMPNZ/JMPC/JMPNC/JMPN/JMPNN/JMPV/JMPNV   addr
+    CALL/CALLZ/CALLNZ/CALLC/CALLNC/CALLN/CALLNN/CALLV/CALLNV  addr
+    MUL reg   DIV reg          (AX = AL*reg ; AL=AX/reg AH=AX%reg -- sin signo)
+    INC AX|BX|CX|DX   DEC AX|BX|CX|DX      (par de 16 bits, +-1)
+    ADD AX|BX|CX|DX,reg8   SUB AX|BX|CX|DX,reg8   (dst16 +=/-= reg8 sin signo;
+                                                     MISMO mnemonico ADD/SUB)
+    MOVB   MOVW              (copia BX->DX, CX bytes o CX palabras de 16 bits)
 
 Expresiones: + - * / % , << >> & | ^ ~ , parentesis, 0x.. 0b.. decimal,
 'A' (codigo del caracter), $ o . (posicion actual), lo(x) hi(x), y etiquetas.
@@ -62,12 +67,20 @@ F_ALUI, F_EXT = 20, 31
 F_LDAR, F_STAR, F_INR, F_OUTR = 21, 22, 23, 24
 # SHR/SHL reg,#N (N=1..8, byte2 = N-1): LEN 2, familias antes reservadas.
 F_SHRN, F_SHLN = 25, 26
+# MUL/DIV (acumulador implicito AX, LEN1); INC/DEC de un par de 16 bits
+# (LEN1); "extension 2" (MOVB/MOVW, ADD/SUB reg16,reg8, JMPNV/CALLNV -- ver
+# isa.h/docs/isa.md para el detalle de por que comparten familia).
+F_MUL, F_DIV, F_INCDEC16, F_EXT2 = 27, 28, 29, 30
 REG16 = {"AX": 0, "BX": 1, "CX": 2, "DX": 3}
 
 MEM_ALU = {"ADD": F_ADD, "SUB": F_SUB, "AND": F_AND, "OR": F_OR, "XOR": F_XOR}
 # AluOp (bits bajos en EXT y ALUI)
 ALU_OP = {"MOV": 0, "ADD": 1, "SUB": 2, "CMP": 3, "AND": 4, "OR": 5, "XOR": 6}
-COND = {"": 0, "Z": 1, "NZ": 2, "C": 3, "NC": 4, "N": 5, "NN": 6}
+# "V" (overflow) cabe en el campo de 3 bits de JMP/CALL como una condicion
+# mas; "NV" NO cabe (ya estan las 8 usadas) y se resuelve aparte, como un
+# mnemonico especial JMPNV/CALLNV que emite F_EXT2 en vez de F_JMP/F_CALL
+# -- ver el bloque de JMP/CALL en _emit_instr/_instr_size mas abajo.
+COND = {"": 0, "Z": 1, "NZ": 2, "C": 3, "NC": 4, "N": 5, "NN": 6, "V": 7}
 
 
 class AsmError(Exception):
@@ -222,6 +235,13 @@ def classify(tok, lineno):
         return Operand("port", inner)
     if t.upper() in REG:
         return Operand("reg", REG[t.upper()])
+    if t.upper() in REG16:
+        # AX/BX/CX/DX sueltos (sin [] ni ()): solo tiene sentido como
+        # destino de ADD/SUB (forma de 16 bits) o de INC/DEC -- ver
+        # _emit_instr. El nombre del registro es justo lo que distingue
+        # esta forma de la de 8 bits, sin mnemonico aparte (ADD sigue
+        # siendo ADD).
+        return Operand("reg16", REG16[t.upper()])
     return Operand("addr", t)
 
 
@@ -354,11 +374,21 @@ class Assembler:
         if mnem == "MOV":
             if len(ops) != 2:
                 raise AsmError("MOV necesita 2 operandos", lineno)
+            if ops[0].kind == "reg16":
+                return 4   # reg16,#imm16 (F_EXT2 subop 6) -- unica LEN 4 de la ISA
             return 2  # LDI (reg,#imm) o EXT (dst,src)
         if mnem in ("ADD", "SUB", "AND", "OR", "XOR", "CMP"):
             if len(ops) != 2:
                 raise AsmError(f"{mnem} necesita 2 operandos", lineno)
-            src = ops[1]
+            dst, src = ops
+            if dst.kind == "reg16":
+                # ADD/SUB dst16,src8 (F_EXT2): mismo mnemonico ADD/SUB,
+                # detectado por que el destino es AX/BX/CX/DX.
+                if mnem not in ("ADD", "SUB"):
+                    raise AsmError(f"{mnem}: no hay forma de 16 bits (solo ADD/SUB)", lineno)
+                if src.kind != "reg":
+                    raise AsmError(f"{mnem} <AX|BX|CX|DX>,<reg de 8 bits>", lineno)
+                return 2
             if src.kind == "reg":
                 return 2   # EXT
             if src.kind == "imm":
@@ -366,6 +396,10 @@ class Assembler:
             if src.kind == "mem":
                 return 3   # familia con memoria
             raise AsmError(f"{mnem}: segundo operando invalido", lineno)
+        if mnem in ("MUL", "DIV", "INC", "DEC"):
+            return 1
+        if mnem in ("MOVB", "MOVW"):
+            return 1
         if mnem in ("LDA", "IN"):
             if len(ops) != 2:
                 raise AsmError(f"{mnem} necesita 2 operandos", lineno)
@@ -454,8 +488,19 @@ class Assembler:
 
         if mnem == "MOV":
             dst, src = ops
+            if dst.kind == "reg16":
+                # MOV reg16,#imm16 (F_EXT2 subop 6) -- mismo mnemonico MOV,
+                # detectado por que el destino es AX/BX/CX/DX. Unica forma
+                # de la ISA con un inmediato de 16 bits (y unica de LEN 4).
+                if src.kind != "imm":
+                    raise AsmError("MOV reg16,#imm16: la forma de 16 bits solo admite un inmediato", lineno)
+                lo, hi = self._addr16(src, pc, lineno)
+                return [opcode(F_EXT2, 6), dst.value & 3, lo, hi]
             if dst.kind != "reg":
                 raise AsmError("MOV: destino debe ser registro", lineno)
+            if src.kind == "reg16":
+                raise AsmError("MOV: el origen no puede ser AX/BX/CX/DX aqui "
+                                "(la forma de 16 bits es <AX|BX|CX|DX>,#imm16)", lineno)
             if src.kind == "imm":
                 return [opcode(F_LDI, dst.value), self._imm8(src, pc, lineno)]
             if src.kind == "reg":
@@ -464,8 +509,20 @@ class Assembler:
 
         if mnem in ("ADD", "SUB", "AND", "OR", "XOR", "CMP"):
             dst, src = ops
+            if dst.kind == "reg16":
+                # ADD/SUB dst16,src8 (F_EXT2 subop 0/1): dst16 += / -= src8
+                # sin signo. Mismo mnemonico ADD/SUB de siempre.
+                if mnem not in ("ADD", "SUB"):
+                    raise AsmError(f"{mnem}: no hay forma de 16 bits (solo ADD/SUB)", lineno)
+                if src.kind != "reg":
+                    raise AsmError(f"{mnem} <AX|BX|CX|DX>,<reg de 8 bits>", lineno)
+                sub = 0 if mnem == "ADD" else 1
+                return [opcode(F_EXT2, sub), (dst.value << 3) | src.value]
             if dst.kind != "reg":
                 raise AsmError(f"{mnem}: destino debe ser registro", lineno)
+            if src.kind == "reg16":
+                raise AsmError(f"{mnem}: el origen no puede ser AX/BX/CX/DX aqui "
+                                f"(la forma de 16 bits es <AX|BX|CX|DX>,<reg de 8 bits>)", lineno)
             if src.kind == "reg":
                 return [opcode(F_EXT, ALU_OP[mnem]), (dst.value << 3) | src.value]
             if src.kind == "imm":
@@ -477,6 +534,25 @@ class Assembler:
                 lo, hi = self._addr16(src, pc, lineno)
                 return [opcode(MEM_ALU[mnem], dst.value), lo, hi]
             raise AsmError(f"{mnem}: segundo operando invalido", lineno)
+
+        if mnem in ("MUL", "DIV"):
+            if len(ops) != 1 or ops[0].kind != "reg":
+                raise AsmError(f"{mnem} reg", lineno)
+            fam = F_MUL if mnem == "MUL" else F_DIV
+            return [opcode(fam, ops[0].value)]
+
+        if mnem in ("INC", "DEC"):
+            if len(ops) != 1 or ops[0].kind != "reg16":
+                raise AsmError(f"{mnem} AX|BX|CX|DX", lineno)
+            dirbit = 0 if mnem == "INC" else 4
+            return [opcode(F_INCDEC16, dirbit | ops[0].value)]
+
+        if mnem in ("MOVB", "MOVW"):
+            if rest.strip():
+                raise AsmError(f"{mnem} no lleva operandos "
+                                f"(usa BX=origen, DX=destino, CX=cuenta)", lineno)
+            sub = 2 if mnem == "MOVB" else 3
+            return [opcode(F_EXT2, sub)]
 
         if mnem == "LDA":
             reg, mem = ops
@@ -519,13 +595,19 @@ class Assembler:
             return [opcode(F_OUT, reg.value), lo, hi]
 
         if mnem.startswith("JMP") or mnem.startswith("CALL"):
-            base = F_JMP if mnem.startswith("JMP") else F_CALL
-            suffix = mnem[3:] if mnem.startswith("JMP") else mnem[4:]
-            if suffix not in COND:
-                raise AsmError(f"condicion desconocida: {mnem}", lineno)
+            is_jmp = mnem.startswith("JMP")
+            suffix = mnem[3:] if is_jmp else mnem[4:]
             if len(ops) != 1 or ops[0].kind not in ("addr", "mem"):
                 raise AsmError(f"{mnem} addr", lineno)
             lo, hi = self._addr16(Operand("addr", ops[0].value), pc, lineno)
+            if suffix == "NV":
+                # NV no cabe en el campo de 3 bits de JMP/CALL (ya estan las
+                # 8 condiciones usadas, incluida V): se codifica aparte, en
+                # F_EXT2 subop 4 (JMPNV) / 5 (CALLNV) -- ver COND/isa.h.
+                return [opcode(F_EXT2, 4 if is_jmp else 5), lo, hi]
+            if suffix not in COND:
+                raise AsmError(f"condicion desconocida: {mnem}", lineno)
+            base = F_JMP if is_jmp else F_CALL
             return [opcode(base, COND[suffix]), lo, hi]
 
         raise AsmError(f"instruccion desconocida: {mnem}", lineno)

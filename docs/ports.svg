@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1142" font-family="'Segoe UI',system-ui,sans-serif">
-  <rect x="0" y="0" width="1260" height="1142" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1388" font-family="'Segoe UI',system-ui,sans-serif">
+  <rect x="0" y="0" width="1260" height="1388" fill="#ffffff"/>
   <style>
     .ttl   { font-size:18px; font-weight:700; fill:#0f172a; }
     .sub   { font-size:12px; fill:#475569; }
@@ -30,25 +30,71 @@
   <!-- pantalla: atributos de texto -->
   <rect x="70" y="280" width="150" height="40" fill="#93c5fd" stroke="#0969da"/>
   <text x="145" y="305" text-anchor="middle" class="nm" fill="#0f4c81">ATRIBUTOS</text>
-  <!-- pagina de perifericos -->
-  <rect x="70" y="320" width="150" height="14" fill="#fed7aa" stroke="#d97706"/>
+  <!-- periféricos 0x06xx-0x08xx: un bloque por grupo, con su propia
+       direccion, titulo y color, igual que GRAFICOS/TEXTO/ATRIBUTOS de
+       arriba, para que ningun puerto quede escondido en una franja
+       generica sin nombre. -->
+  <g font-size="9.5px">
+    <rect x="70" y="320" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="320" width="4" height="16" fill="#0969da"/>
+    <text x="80" y="331" fill="#1e293b">ENTRADA (encoders)</text>
+
+    <rect x="70" y="336" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="336" width="4" height="16" fill="#d97706"/>
+    <text x="80" y="347" fill="#1e293b">LED</text>
+
+    <rect x="70" y="352" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="352" width="4" height="16" fill="#0d9488"/>
+    <text x="80" y="363" fill="#1e293b">TEMPORIZADORES</text>
+
+    <rect x="70" y="368" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="368" width="4" height="16" fill="#db2777"/>
+    <text x="80" y="379" fill="#1e293b">SONIDO</text>
+
+    <rect x="70" y="384" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="384" width="4" height="16" fill="#7c3aed"/>
+    <text x="80" y="395" fill="#1e293b">PROGRAMAS</text>
+
+    <rect x="70" y="400" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="400" width="4" height="16" fill="#059669"/>
+    <text x="80" y="411" fill="#1e293b">CONFIGURACIÓN</text>
+
+    <rect x="70" y="416" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="416" width="4" height="16" fill="#ca8a04"/>
+    <text x="80" y="427" fill="#1e293b">EEPROM POR SLOT</text>
+  </g>
   <!-- sin mapear -->
-  <text x="145" y="630" text-anchor="middle" class="cap">sin mapear</text>
-  <text x="145" y="648" text-anchor="middle" class="cap">IN → 0 · OUT → nada</text>
+  <text x="145" y="470" text-anchor="middle" class="cap">sin mapear</text>
+  <text x="145" y="488" text-anchor="middle" class="cap">IN → 0 · OUT → nada</text>
   <!-- etiquetas de direccion -->
   <text x="62" y="114" text-anchor="end" class="adr">0x0000</text>
   <text x="62" y="245" text-anchor="end" class="adr">0x0400</text>
   <text x="62" y="285" text-anchor="end" class="adr">0x0500</text>
-  <text x="62" y="332" text-anchor="end" class="adr">0x0600</text>
+  <g font-size="9.5px" text-anchor="end" class="adr">
+    <text x="62" y="331">0x0600</text>
+    <text x="62" y="347">0x0610</text>
+    <text x="62" y="363">0x0620</text>
+    <text x="62" y="379">0x0630</text>
+    <text x="62" y="395">0x0640</text>
+    <text x="62" y="411">0x0650</text>
+    <text x="62" y="427">0x0700</text>
+  </g>
   <text x="62" y="1059" text-anchor="end" class="adr">0xFFFF</text>
   <text x="228" y="200" class="cap">PANTALLA</text>
   <text x="228" y="214" class="cap">(gráficos + texto</text>
   <text x="228" y="228" class="cap">+ atributos van</text>
   <text x="228" y="242" class="cap">juntos)</text>
 
-  <!-- lineas de "explosion" hacia el detalle -->
+  <!-- lineas de "explosion" hacia el detalle: una por cada bloque de
+       arriba, del mismo color, hacia el principio de su seccion -->
   <path d="M220,110 L360,150" fill="none" stroke="#0969da" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,334 L360,332" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,328 L360,332" fill="none" stroke="#0969da" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,344 L360,452" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,360 L360,504" fill="none" stroke="#0d9488" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,376 L360,574" fill="none" stroke="#db2777" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,392 L360,692" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,408 L360,796" fill="none" stroke="#059669" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,424 L360,900" fill="none" stroke="#ca8a04" stroke-width="1" stroke-dasharray="3 3"/>
 
   <!-- ================= detalle ================= -->
   <text x="372" y="96" class="grp">Detalle</text>
@@ -154,7 +200,32 @@
   <rect x="696" y="756" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="766" class="ac">IO</text>
   <text x="752" y="766" class="fn">OUT nº de slot → graba la RAM actual ahí y SIGUE ejecutando · IN = 1 si falló</text>
 
-  <g transform="translate(0,92)">
+  <!-- CONFIGURACIÓN DEL APARATO -->
+  <rect x="360" y="796" width="6" height="84" fill="#059669"/>
+  <text x="372" y="809" class="grp" fill="#047857">CONFIGURACIÓN  ·  brillo de pantalla y activar/desactivar sonido</text>
+  <text x="372" y="830" class="adr">0x0650</text><text x="520" y="830" class="nm">PORT_CFG_BRIGHTNESS</text>
+  <rect x="696" y="820" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="830" class="ac">IO</text>
+  <text x="752" y="830" class="fn">OUT 0–255 → brillo real al instante (oled.contrast); además queda como "pleno brillo"</text>
+  <text x="752" y="848" class="fn">tras atenuar por inactividad · se reinicia de fábrica en cada ejecución · IN = eco</text>
+  <text x="372" y="870" class="adr">0x0651</text><text x="520" y="870" class="nm">PORT_CFG_SOUND_EN</text>
+  <rect x="696" y="860" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="870" class="ac">IO</text>
+  <text x="752" y="870" class="fn">OUT 0 = silencia, ≠0 = reactiva (mismo interruptor que BOOT, sin jingle) · IN = 1 si activado</text>
+
+  <!-- EEPROM POR SLOT -->
+  <rect x="360" y="900" width="6" height="112" fill="#ca8a04"/>
+  <text x="372" y="913" class="grp" fill="#a16207">EEPROM POR SLOT  ·  256 bytes persistentes, sobreviven a apagar el aparato</text>
+  <text x="372" y="934" class="adr">0x0700–0x07FF</text><text x="520" y="934" class="nm">PORT_EEPROM_BASE+i</text>
+  <rect x="696" y="924" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="934" class="ac">IO</text>
+  <text x="752" y="934" class="fn">byte i (0–255) del búfer de trabajo en RAM del slot EN CURSO — instantáneo, no toca la flash</text>
+  <text x="752" y="952" class="fn">se reinicia a 0 en cada ejecución nueva; hace falta 0x0800/0x0801 para que sea de verdad</text>
+  <text x="372" y="974" class="adr">0x0800</text><text x="520" y="974" class="nm">PORT_EEPROM_LOAD</text>
+  <rect x="696" y="964" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="974" class="ac">IO</text>
+  <text x="752" y="974" class="fn">OUT cualquier valor → sustituye el búfer por los 256 bytes grabados de verdad · IN = 1 si falló</text>
+  <text x="372" y="996" class="adr">0x0801</text><text x="520" y="996" class="nm">PORT_EEPROM_SAVE</text>
+  <rect x="696" y="986" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="996" class="ac">IO</text>
+  <text x="752" y="996" class="fn">OUT cualquier valor → graba el búfer de verdad, para el slot EN CURSO · IN = 1 si salió bien</text>
+
+  <g transform="translate(0,338)">
   <!-- resto -->
   <rect x="360" y="692" width="6" height="20" fill="#cbd5e1"/>
   <text x="372" y="706" class="adr">resto</text>
@@ -189,5 +260,5 @@
   <text x="820" y="982" class="cap">se calla sola a los 100 ms</text>
 
   </g>
-  <text x="40" y="1122" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8 e include/iomap.h</text>
+  <text x="40" y="1368" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8 e include/iomap.h</text>
 </svg>

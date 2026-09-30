@@ -127,11 +127,13 @@ void OledPanel::renderEditMem(const Cpu& cpu, const UiState& ui) {
         snprintf(buf, sizeof(buf), "PC=%04X A=%04X%s", pc, ui.cursor,
                  cpu.halted() ? " HLT" : "");
     } else if (fieldAt(ui.compose.verb, ui.compose.mode, ui.compose.step) == EField::Verb) {
-        // Eligiendo el verbo: nombre + tamaño ya asemblado (assemble() ya
-        // escribió en vivo la forma por defecto de este verbo en el cursor,
-        // ver main.cpp), para poder comparar opciones sin tener que confirmar
-        // cada una y mirar el listado de abajo.
-        uint8_t len = instrLen(cpu.ram(), 65536u, ui.cursor);
+        // Eligiendo el verbo: nombre + tamaño PROSPECTIVO (composedLength,
+        // sin escribir nada en RAM de verdad -- mientras se elige el verbo o
+        // el mode, main.cpp ya no toca la instrucción existente en el
+        // cursor, así que aquí NO se puede seguir mirando instrLen() del
+        // opcode real). Así se puede seguir comparando tamaños entre verbos
+        // sin confirmar cada uno ni tocar la instrucción siguiente.
+        uint8_t len = composedLength(ui.compose);
         snprintf(buf, sizeof(buf), "%04X %s (size %u)", ui.cursor, verbName(ui.compose.verb), (unsigned)len);
     } else {
         snprintf(buf, sizeof(buf), "%04X %s", ui.cursor, editFieldLabel(ui));
@@ -140,8 +142,31 @@ void OledPanel::renderEditMem(const Cpu& cpu, const UiState& ui) {
 
     uint16_t a = base;
     for (int i = 0; i < 5; ++i) {
-        uint8_t len = disassemble(cpu.ram(), 65536u, a, mnem, sizeof(mnem));
-        bool onCur = (!paso && ui.cursor >= a && ui.cursor < (uint16_t)(a + len));
+        // La línea que se está editando (EditMem, cursor siempre alineado a
+        // un límite real): mientras el verbo/mode todavía se están
+        // eligiendo (!ui.roomEnsured, ver main.cpp) la RAM real en el
+        // cursor sigue siendo la instrucción de ANTES tal cual -- así que
+        // aquí se desensambla desde lo que se está COMPONIENDO (ui.compose)
+        // en un buffer descartable (nunca cpu.ram()), para que el mnemónico
+        // se siga viendo cambiar en vivo en su sitio de siempre según se
+        // gira DATOS, y esta línea avanza `ui.origLen` (lo que había AQUÍ
+        // antes de empezar a editar) para no desalinear el resto del
+        // listado, que sí es RAM real sin tocar. En cuanto el tamaño final
+        // se sabe (ui.roomEnsured), main.cpp YA abrió hueco y escribió la
+        // forma real en la RAM -- desde ahí esta línea vuelve a leerse
+        // igual que cualquier otra (RAM real, con su longitud real, que ya
+        // incluye el hueco abierto).
+        bool isCurLine = (!paso && a == ui.cursor);
+        uint8_t len;
+        if (isCurLine && !ui.roomEnsured) {
+            uint8_t scratch[8] = {0};
+            assemble(scratch, sizeof(scratch), 0, ui.compose);
+            disassemble(scratch, sizeof(scratch), 0, mnem, sizeof(mnem));
+            len = ui.origLen;
+        } else {
+            len = disassemble(cpu.ram(), 65536u, a, mnem, sizeof(mnem));
+        }
+        bool onCur = isCurLine;
         bool onPc  = (pc >= a && pc < (uint16_t)(a + len));
         // Dirección objetivo elegida con ADDRESS en ExecPaso (ui.cursor ahí
         // no es una posición de edición, ver ui.h): '#', salvo que además

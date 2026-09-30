@@ -18,9 +18,10 @@
 ;  que se trasladan al punto de la esfera que le toque en cada momento. No
 ;  giran nunca (los numeros de un reloj de verdad tampoco).
 ;
-;  Reutiliza tal cual de programs/cubo.asm: smul64 (multiplicacion con signo,
-;  la CPU no tiene MUL), idx_ptr, calc_pix/pix_on, line_draw (Bresenham) y
-;  clsg. La geometria (agujas y numeros) usa el mismo truco de tabla de seno
+;  Reutiliza tal cual de programs/cubo.asm: smul64 (multiplicacion con signo;
+;  por dentro usa la instruccion MUL, ver docs/isa.md SS4d), idx_ptr,
+;  calc_pix/pix_on, line_draw (Bresenham) y clsg. La geometria (agujas y
+;  numeros) usa el mismo truco de tabla de seno
 ;  con "cuarto de vuelta de desfase" para el coseno, pero con una tabla de
 ;  60 pasos (no 64): asi los segundos y minutos (0..59) y las horas (de 5 en
 ;  5) caen exactos en la tabla, sin necesitar multiplicar por nada raro en
@@ -498,56 +499,16 @@ sm_apos:
     XOR AL,#1
     STA [sm_neg],AL
 sm_bpos:
-    MOV AL,#0
-    STA [sm_hi],AL
-    STA [sm_lo],AL
+    ; Multiplicacion sin signo de verdad: antes un bucle de 8 pasos de
+    ; "desplaza y suma condicional"; ahora una sola instruccion hardware --
+    ; ver MUL en docs/isa.md SS4d. Mismo cuerpo que cubo.asm (de donde se
+    ; copio esta rutina).
     LDA AL,[sm_a]
-    STA [sm_m_lo],AL
-    MOV AL,#0
-    STA [sm_m_hi],AL
-    MOV AL,#8
-    STA [sm_cnt],AL
-sm_loop:
-    LDA AL,[sm_b]
-    AND AL,#1
-    JMPZ sm_noadd
-    LDA AL,[sm_lo]
-    LDA BL,[sm_m_lo]
-    ADD AL,BL
+    LDA BL,[sm_b]
+    MUL BL
     STA [sm_lo],AL
-    LDA AL,[sm_hi]
-    LDA BL,[sm_m_hi]
-    JMPNC sm_addhi
-    ADD AL,#1
-sm_addhi:
-    ADD AL,BL
+    MOV AL,AH
     STA [sm_hi],AL
-sm_noadd:
-    LDA AL,[sm_m_lo]
-    SHL AL
-    STA [sm_m_lo],AL
-    JMPNC sm_mnocarry
-    MOV AL,#1
-    STA [sm_carry],AL
-    JMP sm_mcarrydone
-sm_mnocarry:
-    MOV AL,#0
-    STA [sm_carry],AL
-sm_mcarrydone:
-    LDA AL,[sm_m_hi]
-    SHL AL
-    LDA BL,[sm_carry]
-    OR AL,BL
-    STA [sm_m_hi],AL
-
-    LDA AL,[sm_b]
-    SHR AL
-    STA [sm_b],AL
-
-    LDA AL,[sm_cnt]
-    SUB AL,#1
-    STA [sm_cnt],AL
-    JMPNZ sm_loop
 
     MOV AL,#6
     STA [sm_cnt],AL
@@ -712,10 +673,9 @@ ln_done:
 
 ; --- idx_ptr:  BX = (BL/BH iniciales) + CL, propagando el acarreo a mano ---
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- pix_on:  enciende el pixel (px_x,px_y) --------------------------------
@@ -815,8 +775,6 @@ sm_b:       .space 1
 sm_neg:     .space 1
 sm_hi:      .space 1
 sm_lo:      .space 1
-sm_m_lo:    .space 1
-sm_m_hi:    .space 1
 sm_carry:   .space 1
 sm_cnt:     .space 1
 

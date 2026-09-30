@@ -15,10 +15,13 @@ namespace compi {
 //   0x0620 .. 0x0629   temporizadores
 //   0x0630 .. 0x0633   sonido (piezo)
 //   0x0640 .. 0x0641   carga/grabado de programas (slots de la flash)
+//   0x0650 .. 0x0651   configuración (brillo de pantalla, activar/desactivar sonido)
+//   0x0700 .. 0x07FF   EEPROM del slot en curso (256 bytes persistentes)
+//   0x0800 .. 0x0801   EEPROM: cargar/grabar de verdad en la flash
 //   resto              IN -> 0 ; OUT -> nada
 //
 // ATTR_PORT_BASE (0x0500) va pegado a TEXT_PORT_BASE (0x0400 .. 0x04FF); el
-// resto de periféricos vive en 0x06xx.
+// resto de periféricos vive en 0x06xx-0x08xx.
 
 // --- PANTALLA · gráficos: framebuffer (puertos 0x0000 .. 0x03FF) -----
 // 128x64 monocromo. 1 puerto = 1 byte = 8 píxeles horizontales,
@@ -195,5 +198,102 @@ constexpr uint8_t  SND_PORT_COUNT   = 4;
 //                          no se ha pedido ninguna.
 constexpr uint16_t PORT_PROG_LOAD = 0x0640;
 constexpr uint16_t PORT_PROG_SAVE = 0x0641;
+
+// --- Configuración del propio aparato (0x0650 .. 0x0651) --------------
+// Ajustes que hasta ahora solo se tocaban desde fuera del programa (el botón
+// BOOT para el sonido, el ahorro de energía automático para el brillo):
+// aquí se exponen para que el PROPIO programa en ejecución los pueda pedir.
+//
+//   0x0650 PORT_CFG_BRIGHTNESS  OUT: brillo de la pantalla, 0 (más tenue) a
+//                                255 (máximo) -- se aplica al instante,
+//                                directo al contraste real de la OLED (ver
+//                                oled.contrast() en display.cpp). Además
+//                                queda como el nuevo brillo "a pleno uso":
+//                                el atenuado automático por inactividad
+//                                (specs.txt, ahorro de energía) sigue
+//                                funcionando igual, y al recuperar el brillo
+//                                pleno (por actividad del panel, o porque
+//                                sigue corriendo el programa) vuelve a este
+//                                valor en vez del de fábrica. Se reinicia al
+//                                de fábrica (OLED_CONTRAST_FULL, main.cpp)
+//                                en cada arranque de ejecución nueva -- ver
+//                                clearRuntimeOutputs() -- para que un
+//                                programa no le deje el brillo cambiado al
+//                                siguiente.
+//                                IN: eco del último valor escrito (de
+//                                fábrica, el de OLED_CONTRAST_FULL).
+//   0x0651 PORT_CFG_SOUND_EN    OUT: 0 = silencia el sonido, distinto de 0 =
+//                                lo reactiva -- MISMO interruptor general
+//                                que el botón BOOT del propio aparato (ver
+//                                g_soundMuted, main.cpp): es una preferencia
+//                                de sesión, no un ajuste de este programa en
+//                                concreto, así que NO se reinicia al
+//                                arrancar una ejecución nueva (igual que
+//                                pulsar BOOT a mano tampoco se olvida al
+//                                cambiar de programa). A diferencia del
+//                                botón BOOT, no reproduce el "jingle" de
+//                                reactivación (pensado para que lo note un
+//                                humano, no para que lo dispare código).
+//                                IN: 1 si el sonido está activado ahora
+//                                mismo, 0 si está silenciado.
+constexpr uint16_t PORT_CFG_BASE       = 0x0650;
+constexpr uint16_t PORT_CFG_BRIGHTNESS = 0x0650;
+constexpr uint16_t PORT_CFG_SOUND_EN   = 0x0651;
+constexpr uint8_t  CFG_PORT_COUNT      = 2;
+
+// --- EEPROM persistente por slot (0x0700 .. 0x07FF, 0x0800 .. 0x0801) -----
+// Cada slot de programa (storage.h MAX_PROGRAM_SLOTS) tiene EEPROM_SLOT_SIZE
+// (256) bytes propios en la flash SPI, aparte de la imagen del programa y
+// con su propia dirección -- para records o ajustes que deben sobrevivir a
+// apagar el aparato (p.ej. sisop.asm guardando ahí el brillo/mute elegidos
+// en SETTINGS, o un juego guardando su mejor puntuación). Vive en el resto
+// de la flash que los 60 slots de programa no llegan a llenar (sobran
+// exactamente 60*256 bytes, ver storage.h) -- no comparte sitio con ningún
+// programa ni se borra al borrar uno (deleteProgram() no la toca).
+//
+// "El slot en curso": el aparato recuerda en todo momento a qué número de
+// slot corresponde lo que hay cargado en la RAM ahora mismo (arranque
+// automático del slot 0, un Cargar/Guardar del panel, o un OUT a
+// PORT_PROG_LOAD/PORT_PROG_SAVE -- ver g_currentSlot en main.cpp) y estos
+// puertos SIEMPRE operan sobre ESE slot: un programa nunca necesita conocer
+// ni pasar su propio número de slot.
+//
+// El acceso es en DOS pasos, como PORT_PROG_LOAD/PORT_PROG_SAVE con la RAM
+// completa, pero aquí con un búfer de trabajo de 256 bytes en vez de 64 KiB:
+//
+//   0x0700..0x07FF PORT_EEPROM_BASE+i  OUT/IN: byte i (0..255) del búfer de
+//                                       trabajo en RAM -- INSTANTÁNEO, no
+//                                       toca la flash para nada. Se puede
+//                                       leer/escribir tantas veces como se
+//                                       quiera sin coste. Se reinicia a 0 en
+//                                       cada arranque de ejecución nueva
+//                                       (clearRuntimeOutputs(), como el
+//                                       resto de "salidas" -- no hereda el
+//                                       búfer de quien corriera antes), así
+//                                       que hace falta un 0x0800 para tener
+//                                       algo de verdad.
+//   0x0800         PORT_EEPROM_LOAD    OUT (cualquier valor): SUSTITUYE el
+//                                       búfer de trabajo por los 256 bytes
+//                                       que de verdad hay grabados en la
+//                                       flash para el slot en curso. IN: 1
+//                                       si el ÚLTIMO intento falló, 0 si
+//                                       salió bien (mismo criterio que
+//                                       PORT_PROG_LOAD) -- en la práctica
+//                                       solo falla si el slot en curso
+//                                       quedara fuera de rango, lo que no
+//                                       debería poder pasar nunca.
+//   0x0801         PORT_EEPROM_SAVE    OUT (cualquier valor): graba el búfer
+//                                       de trabajo de verdad en la flash,
+//                                       para el slot en curso (borra y
+//                                       reescribe SOLO el sector de 4 KiB
+//                                       que contiene ese slot, no toda la
+//                                       zona de EEPROM -- unos cuantos ms,
+//                                       como grabar un programa). IN: 1 si
+//                                       la ÚLTIMA grabación salió bien, 0 si
+//                                       falló (mismo criterio que
+//                                       PORT_PROG_SAVE).
+constexpr uint16_t PORT_EEPROM_BASE = 0x0700;
+constexpr uint16_t PORT_EEPROM_LOAD = 0x0800;
+constexpr uint16_t PORT_EEPROM_SAVE = 0x0801;
 
 } // namespace compi

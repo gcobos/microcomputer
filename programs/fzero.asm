@@ -1435,10 +1435,9 @@ plot_skip:
 
 ; --- idx_ptr:  BX = (BL/BH iniciales) + CL, propagando el acarreo a mano ---
 idx_ptr:
-    ADD BL,CL
-    JMPNC ip_d
-    ADD BH,#1
-ip_d:
+    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
+                              ; ahora 1 instruccion (dst16+=src8 sin
+                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- shadow_set_px:  enciende el pixel (px_x,px_y) en `shadow` (RAM) -------
@@ -1458,25 +1457,23 @@ shadow_set_px:
 
 ; --- clr_shadow:  pone a 0 los 1024 bytes de `shadow` (contador de 16 bits
 ; explicito: `shadow` no cae en un limite de pagina, ver programs/cubo.asm) -
+; clr_shadow: antes un bucle de 1024 pasadas (STA+acarreo+cuenta), ahora
+; solo pone a 0 el PRIMER byte y usa MOVB con origen/destino solapados en
+; 1 (BX=shadow, DX=shadow+1) para que ese unico 0 se propague en cascada
+; a los 1023 bytes restantes -- MOVB copia [BX+i]->[DX+i] con i creciente,
+; asi que cada byte lee el que acaba de escribir el paso anterior (ver
+; docs/isa.md SS4d: MOVB no es memmove-seguro con origen<destino
+; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
+    MOV AL,#0
+    STA [shadow],AL
     MOV BL,#lo(shadow)
     MOV BH,#hi(shadow)
-    MOV AL,#0
-    MOV CL,#0
-    MOV CH,#4
-csh_l:
-    STA [BX],AL
-    ADD BL,#1
-    JMPNC csh_addr_ok
-    ADD BH,#1
-csh_addr_ok:
-    SUB CL,#1
-    JMPNC csh_cnt_ok
-    SUB CH,#1
-csh_cnt_ok:
-    MOV DL,CH
-    OR  DL,CL
-    JMPNZ csh_l
+    MOV DL,#lo(shadow+1)
+    MOV DH,#hi(shadow+1)
+    MOV CL,#0xFF
+    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que haya cambiado -

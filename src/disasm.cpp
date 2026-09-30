@@ -24,6 +24,7 @@ const char* condSuffix(uint8_t c) {
         case JC_Z:  return "Z";   case JC_NZ: return "NZ";
         case JC_C:  return "C";   case JC_NC: return "NC";
         case JC_N:  return "N";   case JC_NN: return "NN";
+        case JC_V:  return "V";
         default:    return "?";
     }
 }
@@ -38,7 +39,8 @@ const char* aluName(uint8_t op) {
 } // namespace
 
 uint8_t instrLen(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
-    switch (opFamily(rd(mem, memLen, addr))) {
+    uint8_t op0 = rd(mem, memLen, addr);
+    switch (opFamily(op0)) {
         case OP_LDI: case OP_EXT:
         case OP_LDAR: case OP_STAR: case OP_INR: case OP_OUTR:
         case OP_SHRN: case OP_SHLN:
@@ -48,6 +50,19 @@ uint8_t instrLen(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
         case OP_IN:  case OP_OUT:
         case OP_JMP: case OP_CALL: case OP_ALUI:
             return 3;
+        // OP_MUL/OP_DIV/OP_INCDEC16 son LEN 1 -- caen al "default" de abajo.
+        case OP_EXT2: {
+            // Unica familia que mezcla longitudes (documentado en isa.h):
+            // subop 0-1 (ADD/SUB dst16,src8) LEN2; 2-3 (MOVB/MOVW) LEN1;
+            // 4-5 (JMPNV/CALLNV) LEN3; 6 (MOV reg16,#imm16) LEN4; 7
+            // (reservado) LEN1.
+            uint8_t sub = opReg(op0);
+            if (sub <= 1) return 2;
+            if (sub <= 3) return 1;
+            if (sub <= 5) return 3;
+            if (sub == 6) return 4;
+            return 1;
+        }
         default:
             return 1;
     }
@@ -60,6 +75,7 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
     uint8_t r   = opReg(op);
     uint8_t b1  = rd(mem, memLen, (uint16_t)(addr + 1));
     uint8_t b2  = rd(mem, memLen, (uint16_t)(addr + 2));
+    uint8_t b3  = rd(mem, memLen, (uint16_t)(addr + 3));
     uint16_t a16 = (uint16_t)(b1 | (b2 << 8));
 
     switch (fam) {
@@ -99,6 +115,29 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
             uint8_t dst = (uint8_t)(b1 & 7);
             snprintf(out, n, "%s %s,#0x%02X", aluName(r), regName8(dst), b2);
             return 3;
+        }
+        case OP_MUL: snprintf(out, n, "MUL %s", regName8(r)); return 1;
+        case OP_DIV: snprintf(out, n, "DIV %s", regName8(r)); return 1;
+        case OP_INCDEC16: {
+            bool dec = (r & 0x04) != 0;
+            snprintf(out, n, "%s %s", dec ? "DEC" : "INC", regName16((uint8_t)(r & 3)));
+            return 1;
+        }
+        case OP_EXT2: {
+            switch (r) {
+                case 0: snprintf(out, n, "ADD %s,%s", regName16((uint8_t)((b1 >> 3) & 3)), regName8((uint8_t)(b1 & 7))); return 2;
+                case 1: snprintf(out, n, "SUB %s,%s", regName16((uint8_t)((b1 >> 3) & 3)), regName8((uint8_t)(b1 & 7))); return 2;
+                case 2: snprintf(out, n, "MOVB"); return 1;
+                case 3: snprintf(out, n, "MOVW"); return 1;
+                case 4: snprintf(out, n, "JMPNV 0x%04X", a16); return 3;
+                case 5: snprintf(out, n, "CALLNV 0x%04X", a16); return 3;
+                case 6: {
+                    uint16_t imm16 = (uint16_t)(b2 | (b3 << 8));
+                    snprintf(out, n, "MOV %s,#0x%04X", regName16((uint8_t)(b1 & 3)), imm16);
+                    return 4;
+                }
+                default: snprintf(out, n, "DB 0x%02X", op); return 1;
+            }
         }
         default:
             snprintf(out, n, "DB 0x%02X", op);

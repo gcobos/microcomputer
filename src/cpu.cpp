@@ -57,6 +57,7 @@ bool Cpu::testCond(uint8_t cond) const {
     bool z = flags_ & FLAG_Z;
     bool c = flags_ & FLAG_C;
     bool n = flags_ & FLAG_N;
+    bool v = flags_ & FLAG_V;
     switch (cond) {
         case JC_ALWAYS: return true;
         case JC_Z:  return z;
@@ -65,6 +66,7 @@ bool Cpu::testCond(uint8_t cond) const {
         case JC_NC: return !c;
         case JC_N:  return n;
         case JC_NN: return !n;
+        case JC_V:  return v;
         default: return true;
     }
 }
@@ -116,6 +118,69 @@ void Cpu::doShl(uint8_t reg, uint8_t n) {
     uint8_t neg  = (result & 0x80) != 0;
     uint8_t overflow = (carry != neg);
     flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (overflow << 3));
+}
+
+// MUL reg: AX = AL * reg, sin signo (8x8->16, nunca desborda 16 bits).
+// Flags: Z/N del resultado de 16 bits completo; C=V=1 si el producto no
+// cupo en 8 bits (AH != 0) -- asi "JMPV tras un MUL" es literalmente "hizo
+// falta el byte alto". Los dos operandos se leen ANTES de escribir AX, asi
+// que `reg` puede ser AL o AH sin problema (p.ej. "MUL AL" = AL*AL).
+void Cpu::doMul(uint8_t reg) {
+    uint16_t product = (uint16_t)((uint16_t)regs_.get8(REG_AL) * (uint16_t)regs_.get8(reg));
+    regs_.set16(REG_AX, product);
+    uint8_t hi   = (product > 0xFF);
+    uint8_t zero = (product == 0);
+    uint8_t neg  = (product & 0x8000) != 0;
+    flags_ = (uint8_t)(hi | (zero << 1) | (neg << 2) | (hi << 3));
+}
+
+// DIV reg: AL = AX/reg (cociente), AH = AX%reg (resto), sin signo. Sin
+// trampas/excepciones (esta CPU no tiene interrupciones): division entre 0
+// O cociente que no cabe en un byte (AX/reg > 255) saturan AL=AH=0xFF con
+// C=V=1 -- un solo camino de saturacion para los dos casos, asi "JMPV tras
+// un DIV" es "esto no ha dado un resultado valido de 8 bits", sin tener
+// que comprobar el divisor a mano antes. Con resultado valido: C=V=0,
+// Z/N del cociente (AL).
+void Cpu::doDiv(uint8_t reg) {
+    uint16_t ax = regs_.get16(REG_AX);
+    uint8_t divisor = regs_.get8(reg);
+    if (divisor != 0) {
+        uint16_t q = (uint16_t)(ax / divisor);
+        if (q <= 0xFF) {
+            uint8_t al = (uint8_t)q;
+            uint8_t ah = (uint8_t)(ax % divisor);
+            regs_.set8(REG_AL, al);
+            regs_.set8(REG_AH, ah);
+            uint8_t zero = (al == 0);
+            uint8_t neg  = (al & 0x80) != 0;
+            flags_ = (uint8_t)((zero << 1) | (neg << 2));
+            return;
+        }
+    }
+    regs_.set8(REG_AL, 0xFF);
+    regs_.set8(REG_AH, 0xFF);
+    flags_ = (uint8_t)(FLAG_C | FLAG_V | FLAG_N);   // AL=0xFF -> Z=0, N=1
+}
+
+// MOVB/MOVW (OP_EXT2 subop 2/3): copia de [BX] a [DX], CX bytes (MOVB) o
+// CX palabras de 16 bits (MOVW, o sea 2*CX bytes) -- registros implicitos,
+// sin operando en el opcode. Copia siempre hacia adelante (como REP MOVSB
+// de x86 o LDIR del Z80): si los rangos [BX..) y [DX..) se solapan con
+// dst<src, el resultado puede no ser el de un memmove seguro -- limitacion
+// deliberada, no es el caso de uso pensado (blits/descompresion/tablas).
+// Al terminar: BX/DX avanzan el numero de bytes copiados, CX queda a 0. No
+// toca flags (es movimiento de datos, no aritmetica -- ver isa.md).
+void Cpu::doMovBlock(bool asWords) {
+    uint16_t src = regs_.get16(REG_BX);
+    uint16_t dst = regs_.get16(REG_DX);
+    uint16_t count = regs_.get16(REG_CX);
+    uint16_t bytes = asWords ? (uint16_t)(count * 2) : count;
+    for (uint16_t i = 0; i < bytes; ++i) {
+        memory_[maskAddr((uint16_t)(dst + i))] = memory_[maskAddr((uint16_t)(src + i))];
+    }
+    regs_.set16(REG_BX, (uint16_t)(src + bytes));
+    regs_.set16(REG_DX, (uint16_t)(dst + bytes));
+    regs_.set16(REG_CX, 0);
 }
 
 uint8_t Cpu::aluOp(uint8_t op, uint8_t a, uint8_t b) {
@@ -264,8 +329,71 @@ bool Cpu::step() {
             regs_.set8(dst, aluOp(r, regs_.get8(dst), imm));
             break;
         }
+        case OP_MUL:
+            doMul(r);
+            break;
+        case OP_DIV:
+            doDiv(r);
+            break;
+        case OP_INCDEC16: {
+            // opcode = dir<<2 | reg16 (dir 0=INC 1=DEC) -- ver isa.h
+            uint8_t reg16 = (uint8_t)(r & 0x03);
+            bool dec = (r & 0x04) != 0;
+            uint16_t v = regs_.get16(reg16);
+            regs_.set16(reg16, (uint16_t)(dec ? v - 1 : v + 1));
+            break;
+        }
+        case OP_EXT2: {
+            // subop en los 3 bits bajos del opcode (r) -- ver isa.h
+            switch (r) {
+                case 0: case 1: {
+                    // ADD/SUB dst16,src8 : operando = (dst16<<3)|src8
+                    uint8_t operand = fetch8();
+                    uint8_t dst16 = (uint8_t)((operand >> 3) & 0x03);
+                    uint8_t src8  = (uint8_t)(operand & 0x07);
+                    uint16_t v = regs_.get16(dst16);
+                    uint16_t ext = regs_.get8(src8);
+                    regs_.set16(dst16, (uint16_t)(r == 0 ? v + ext : v - ext));
+                    break;
+                }
+                case 2:
+                    doMovBlock(false);   // MOVB
+                    break;
+                case 3:
+                    doMovBlock(true);    // MOVW
+                    break;
+                case 4: {
+                    // JMPNV addr16 : salta si V=0
+                    uint16_t addr = fetch16();
+                    if (!(flags_ & FLAG_V)) pc_ = addr;
+                    break;
+                }
+                case 5: {
+                    // CALLNV addr16 : llama si V=0
+                    uint16_t addr = fetch16();
+                    if (!(flags_ & FLAG_V)) {
+                        push8((pc_ >> 8) & 0xFF);
+                        push8(pc_ & 0xFF);
+                        pc_ = addr;
+                    }
+                    break;
+                }
+                case 6: {
+                    // MOV reg16,#imm16 : unica instruccion de LEN 4 de toda
+                    // la ISA. No toca flags (mismo criterio que LDI/MOV).
+                    uint8_t pair = (uint8_t)(fetch8() & 0x03);
+                    uint16_t imm = fetch16();
+                    regs_.set16(pair, imm);
+                    break;
+                }
+                default:
+                    // subop 7: reservado, se comporta como NOP.
+                    break;
+            }
+            break;
+        }
         default:
-            // Familias 27-30: reservadas, se comportan como NOP por ahora.
+            // Sin familias reservadas por ahora: 27-30 ya se usan arriba.
             break;
     }
     return !halted_;

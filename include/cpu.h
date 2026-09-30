@@ -44,6 +44,9 @@ struct Registers {
     // Par de 16 bits por código Reg16 (isa.h): para el direccionamiento
     // indirecto de LDA/STA/IN/OUT (OP_LDAR/OP_STAR/OP_INR/OP_OUTR).
     uint16_t get16(uint8_t pairCode) const { return words[pairCode & 0x03]; }
+    // Simetría con get16, para INC/DEC/ADD/SUB de 16 bits y MOVB/MOVW
+    // (OP_INCDEC16/OP_EXT2, ver isa.h).
+    void set16(uint8_t pairCode, uint16_t value) { words[pairCode & 0x03] = value; }
 };
 
 // Núcleo de la CPU, sin ninguna dependencia de hardware. El panel frontal
@@ -122,6 +125,15 @@ private:
     // ultimo paso.
     void doShr(uint8_t reg, uint8_t n);
     void doShl(uint8_t reg, uint8_t n);
+    // MUL/DIV (OP_MUL/OP_DIV, isa.h): acumulador implicito AX, operando
+    // explicito `reg` (el multiplicador/divisor). Ver el comentario de
+    // semantica en isa.h y el cuerpo en cpu.cpp para la politica de flags
+    // y de division por cero.
+    void doMul(uint8_t reg);
+    void doDiv(uint8_t reg);
+    // MOVB/MOVW (OP_EXT2 subop 2/3, isa.h): copia BX->DX, CX bytes (MOVB) o
+    // CX palabras de 16 bits (MOVW); avanza BX/DX y pone CX a 0 al terminar.
+    void doMovBlock(bool words);
     // Aplica una operación de la ALU (compi::AluOp) a (a, b), actualiza los
     // flags y devuelve el nuevo valor del destino (para CMP devuelve a).
     // NO esta forzada a inline: probado en el benchmark real, integrarla en

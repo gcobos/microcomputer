@@ -132,6 +132,14 @@ uint16_t pasoTargetPC = 0;
 bool running = false;
 unsigned long lastFlush = 0;
 uint8_t g_led = 0;                          // estado del LED (puerto PORT_LED)
+
+// Brillo "a pleno uso" (puerto PORT_CFG_BRIGHTNESS, iomap.h): reemplaza a
+// OLED_CONTRAST_FULL como el valor que usa applyScreenPower() para SCR_FULL,
+// para que un programa pueda pedir su propio brillo sin desmontar el ahorro
+// de energía automático (que sigue atenuando/apagando por inactividad igual
+// que siempre, solo que "pleno" pasa a ser este valor). Vuelve al de fábrica
+// en cada arranque de ejecución nueva, ver clearRuntimeOutputs().
+uint8_t g_screenContrast = OLED_CONTRAST_FULL;
 uint8_t g_timer[TIMER_COUNT] = {0};         // temporizadores (puertos 0x0620+)
 unsigned long g_timerLast[TIMER_COUNT] = {0};
 
@@ -168,6 +176,24 @@ unsigned long g_muteJingleNoteEndMs = 0;
 // puertos en iomap.h (el de carga solo tiene sentido leerlo tras un fallo).
 uint8_t g_lastLoadOk = 0;                   // 1 = el ultimo intento de carga FALLO
 uint8_t g_lastSaveOk = 0;
+
+// Numero de slot al que corresponde lo que hay AHORA MISMO en cpu.ram() --
+// arranque automatico del slot 0, un Cargar/Guardar del panel, o un OUT a
+// PORT_PROG_LOAD/PORT_PROG_SAVE lo actualizan (ver esas funciones/handlers
+// mas abajo). Los puertos de EEPROM por slot (iomap.h PORT_EEPROM_*)
+// siempre operan sobre ESTE slot, para que un programa no tenga que conocer
+// ni pasar su propio numero.
+uint8_t g_currentSlot = 0;
+
+// EEPROM por slot (puertos 0x0700-0x07FF/0x0800/0x0801, iomap.h): bufer de
+// trabajo en RAM -- LDA/OUT sobre 0x0700+i lo leen/escriben al instante, sin
+// tocar la flash; PORT_EEPROM_LOAD/SAVE lo sincronizan de verdad contra
+// flash.readEeprom()/writeEeprom() para g_currentSlot. Se reinicia a 0 en
+// cada arranque de ejecucion nueva (clearRuntimeOutputs(), como el resto de
+// "salidas") para no heredar el bufer de quien corriera antes.
+uint8_t g_eeprom[EEPROM_SLOT_SIZE] = {0};
+uint8_t g_lastEepromLoadOk = 0;             // 1 = el ultimo intento de carga FALLO
+uint8_t g_lastEepromSaveOk = 0;             // 1 = la ultima grabacion salio bien
 
 void setLed(bool on) {
     bool level = PIN_LED_ACTIVE_LOW ? !on : on;
@@ -308,6 +334,14 @@ void clearRuntimeOutputs() {
     g_led = 0; setLed(false);
     resetTimers();
     resetSound();
+    // Brillo (PORT_CFG_BRIGHTNESS): de fábrica en cada ejecución nueva, para
+    // que un programa no le deje el brillo cambiado al siguiente -- a
+    // diferencia del mute (g_soundMuted), que SÍ persiste (ver iomap.h).
+    g_screenContrast = OLED_CONTRAST_FULL;
+    oled.contrast(g_screenContrast);   // inofensivo aunque este apagada (DISPLAYOFF)
+    // Bufer de trabajo de la EEPROM por slot: igual que el brillo, no debe
+    // heredar lo que dejara escrito (sin grabar) el programa anterior.
+    memset(g_eeprom, 0, sizeof(g_eeprom));
 }
 
 // Índice en g_text de un puerto de la rejilla de texto, o -1 si el puerto no
@@ -354,6 +388,8 @@ uint8_t portRead(uint16_t port) {
         }
         return 0;
     }
+    if (port >= PORT_EEPROM_BASE && port < PORT_EEPROM_BASE + EEPROM_SLOT_SIZE)
+        return g_eeprom[port - PORT_EEPROM_BASE];
     switch (port) {
         case PORT_DIR_POS: return panel.dirPos();
         case PORT_DIR_BTN: return panel.dirDown() ? 1 : 0;
@@ -362,6 +398,10 @@ uint8_t portRead(uint16_t port) {
         case PORT_LED:     return g_led;
         case PORT_PROG_LOAD: return g_lastLoadOk;
         case PORT_PROG_SAVE: return g_lastSaveOk;
+        case PORT_CFG_BRIGHTNESS: return g_screenContrast;
+        case PORT_CFG_SOUND_EN:   return g_soundMuted ? 0 : 1;
+        case PORT_EEPROM_LOAD:    return g_lastEepromLoadOk;
+        case PORT_EEPROM_SAVE:    return g_lastEepromSaveOk;
         default:           return 0;
     }
 }
@@ -397,6 +437,7 @@ void portWrite(uint16_t port, uint8_t value) {
         const bool loadOk = flash.loadProgram((int)value, cpu.ram());
         g_lastLoadOk = loadOk ? 0 : 1;   // IN 0x0640 = 1 si FALLO (ver iomap.h)
         if (loadOk) {
+            g_currentSlot = value;   // ver g_currentSlot arriba
             cpu.reset();
             // el programa que arranca no debe heredar la pantalla, el LED
             // ni un tono en marcha de quien lo cargo (p.ej. un "sistema
@@ -412,6 +453,45 @@ void portWrite(uint16_t port, uint8_t value) {
         // pedido y sigue ejecutandose el mismo programa (a diferencia de
         // PORT_PROG_LOAD, esto no es un salto).
         g_lastSaveOk = flash.saveProgram((int)value, cpu.ram()) ? 1 : 0;
+        if (g_lastSaveOk) g_currentSlot = value;   // ver g_currentSlot arriba
+        return;
+    }
+    if (port >= PORT_EEPROM_BASE && port < PORT_EEPROM_BASE + EEPROM_SLOT_SIZE) {
+        g_eeprom[port - PORT_EEPROM_BASE] = value;   // solo el bufer en RAM
+        return;
+    }
+    if (port == PORT_EEPROM_LOAD) {
+        const bool ok = flash.readEeprom(g_currentSlot, g_eeprom);
+        g_lastEepromLoadOk = ok ? 0 : 1;   // IN 0x0800 = 1 si FALLO (ver iomap.h)
+        return;
+    }
+    if (port == PORT_EEPROM_SAVE) {
+        g_lastEepromSaveOk = flash.writeEeprom(g_currentSlot, g_eeprom) ? 1 : 0;
+        return;
+    }
+    if (port == PORT_CFG_BRIGHTNESS) {
+        // Se aplica al instante (aunque ahora mismo este atenuada/apagada:
+        // oled.contrast() no enciende la pantalla, solo cambia el registro
+        // de contraste real -- se vera en cuanto vuelva a encenderse) y
+        // ademas queda como el nuevo "pleno brillo" para el ahorro de
+        // energia automatico -- ver g_screenContrast e iomap.h.
+        g_screenContrast = value;
+        oled.contrast(g_screenContrast);
+        return;
+    }
+    if (port == PORT_CFG_SOUND_EN) {
+        // Mismo interruptor general que el boton BOOT (g_soundMuted), pero
+        // sin su "jingle" de reactivacion -- eso es una cortesia pensada
+        // para que la note un humano, no para dispararla desde código. Ver
+        // toggleMute() mas arriba para el equivalente con jingle.
+        bool enable = (value != 0);
+        if (!enable) {
+            if (!g_soundMuted && g_sndHz) noTone(PIN_BUZZER);
+            g_soundMuted = true;
+        } else if (g_soundMuted) {
+            g_soundMuted = false;
+            if (g_sndHz) tone(PIN_BUZZER, g_sndHz);   // retoma el tono en marcha, si habia
+        }
         return;
     }
 }
@@ -483,7 +563,7 @@ void applyScreenPower(ScreenPwr want) {
             g_forceRender = true;   // repinta vistas de depuración
             lastFlush = 0;          // fuerza volcado del framebuffer (ExecCont)
         }
-        oled.contrast(want == SCR_DIM ? OLED_CONTRAST_DIM : OLED_CONTRAST_FULL);
+        oled.contrast(want == SCR_DIM ? OLED_CONTRAST_DIM : g_screenContrast);
     }
     g_scr = want;
 }
@@ -504,6 +584,7 @@ void forceRedraw() {
 
 void loadSlot(uint8_t s) {
     if (flash.loadProgram((int)s, cpu.ram())) {
+        g_currentSlot = s;   // ver g_currentSlot arriba (EEPROM por slot)
         cpu.reset();
         ui.cursor = 0;
         ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // resincroniza el editor
@@ -514,7 +595,7 @@ void saveSlot(uint8_t s) {
     char m[24];
     snprintf(m, sizeof(m), "SAVING slot %02u", (unsigned)s);
     oled.message(m);
-    flash.saveProgram((int)s, cpu.ram());
+    if (flash.saveProgram((int)s, cpu.ram())) g_currentSlot = s;
 }
 
 // Borra la RAM (todo a 0x00 = NOP, ver isa.h) para empezar a teclear un
@@ -559,6 +640,26 @@ void deleteByteAt(uint16_t cursor) {
         mem[i] = mem[i + 1];
     }
     mem[sp - 1] = 0x00;
+}
+
+// Si `st` (ya con el verbo/mode decididos, longitud final conocida) ocupa
+// MÁS que `origLen` (lo que hubiera en `cursor` antes de empezar a
+// editarla), abre hueco insertando NOPs justo DESPUÉS de esa longitud
+// original -- nunca antes: todo lo que hay entre `cursor` y
+// `cursor+origLen` es, como mucho, la instrucción vieja o la nueva ya
+// escrita ahí dentro (ambas caben en ese hueco por definición), así que
+// solo hace falta insertar donde empezaría a invadir la instrucción
+// siguiente. Reutiliza insertByteAt (misma frontera de la pila: si no hay
+// sitio, sencillamente no llega a abrir todo el hueco pedido, igual que ya
+// pasa insertando a mano con ADDRESS). Si `st` cabe igual o mejor que
+// antes, no hace falta nada.
+void ensureRoomFor(uint16_t cursor, const ComposeState& st, uint8_t origLen) {
+    uint8_t finalLen = composedLength(st);
+    if (finalLen <= origLen) return;
+    uint16_t at = (uint16_t)(cursor + origLen);
+    for (uint8_t i = 0; i < (uint8_t)(finalLen - origLen); ++i) {
+        insertByteAt(at);
+    }
 }
 
 // --- Provisioning por USB-CDC ----------------------------------------------
@@ -783,6 +884,7 @@ void setup() {
     if (!flash.loadProgram(0, cpu.ram())) {
         cpu.clearMemory();
     }
+    g_currentSlot = 0;   // ver g_currentSlot arriba (EEPROM por slot)
     cpu.reset();
     ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // arranca el editor en lo que haya
 
@@ -793,11 +895,11 @@ void setup() {
     // propio programa (loop() lo hace ya en su primera vuelta, lastFlush=0).
     if (running) {
         g_scr = SCR_FULL;
-        oled.contrast(OLED_CONTRAST_FULL);
+        oled.contrast(g_screenContrast);
         oled.renderFramebuffer(g_fb, g_text, g_attr, false);   // pantalla limpia
     } else {
         g_scr = START_SCREEN_DIMMED ? SCR_DIM : SCR_FULL;
-        oled.contrast(START_SCREEN_DIMMED ? OLED_CONTRAST_DIM : OLED_CONTRAST_FULL);
+        oled.contrast(START_SCREEN_DIMMED ? OLED_CONTRAST_DIM : g_screenContrast);
         oled.render(cpu, ui);
     }
 
@@ -871,22 +973,64 @@ void loop() {
         // suelto en el cursor (insertByteAt), larga borra el byte del cursor
         // (deleteByteAt) -- ninguna de las dos mueve el cursor. Este gesto no
         // roba el giro de DATOS para nada más (ver más abajo).
+        //
+        // Escritura en RAM mientras se compone: NO se toca nada mientras el
+        // verbo o el mode todavía se están eligiendo (longitud final
+        // desconocida) -- así el listado de abajo sigue mostrando la
+        // instrucción que ya hubiera aquí, tal cual, sin arriesgarse a
+        // corromper el principio de la siguiente a media elección. En
+        // cuanto el tamaño final se conoce (verbo confirmado, y mode
+        // también si el verbo tiene varias formas), se abre hueco UNA vez
+        // si hace falta (ensureRoomFor, arriba) y desde ahí sí se escribe en
+        // vivo en cada giro, como siempre. `ui.origLen`/`ui.roomEnsured`
+        // (ui.h) llevan la cuenta de todo esto; resyncCompose() los
+        // reinicia cada vez que se vuelve a sincronizar con lo que haya
+        // realmente en memoria (cursor nuevo, insertar, borrar, o cerrar
+        // una instrucción y pasar a la siguiente).
+        auto resyncCompose = [&]() {
+            ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+            ui.origLen = instrLen(cpu.ram(), 65536u, ui.cursor);
+            ui.roomEnsured = false;
+        };
+        // Abre hueco (la primera vez que haga falta) y escribe la
+        // instrucción en vivo, incondicionalmente -- usarlo solo cuando el
+        // tamaño final YA se sabe seguro.
+        auto commitWrite = [&]() {
+            if (!ui.roomEnsured) {
+                ensureRoomFor(ui.cursor, ui.compose, ui.origLen);
+                ui.roomEnsured = true;
+            }
+            assemble(cpu.ram(), 65536u, ui.cursor, ui.compose);
+        };
+        // Igual, pero solo si el tamaño final ya se conoce a partir del
+        // campo activo (eligiendo verbo o mode, todavía no); para el giro
+        // de DATOS y el paso intermedio de confirmar campo. Verbos sin mode
+        // ni operandos (NOP/HALT/RET/MOVB/MOVW, lastStep==0) nunca pasan por
+        // aquí con el campo ya fuera de Verb -- su longitud se resuelve
+        // directamente en la rama de confirmación final (más abajo), que
+        // usa commitWrite() sin este filtro.
+        auto liveUpdate = [&]() {
+            EField f = fieldAt(ui.compose.verb, ui.compose.mode, ui.compose.step);
+            if (f == EField::Verb || f == EField::Mode) return;
+            commitWrite();
+        };
+
         if (changed) {
             // vista recién entrada (o venimos de otra): re-decodifica en lo
             // que ya haya en memoria en el cursor actual.
-            ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+            resyncCompose();
             dirBtnHeld = false; // por si veníamos de otra vista a media pulsación
         }
 
         if (int16_t d = panel.takeDirDelta()) {
             stepCursorByInstr(ui.cursor, d);
-            ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+            resyncCompose();
             changed = true;
         }
 
         if (int16_t v = panel.takeDatDelta()) {
             applyDelta(ui.compose, v);
-            assemble(cpu.ram(), 65536u, ui.cursor, ui.compose);   // en vivo
+            liveUpdate();
             changed = true;
         }
 
@@ -906,7 +1050,7 @@ void loop() {
                     // que ya entró en "modo borrar"). deleteByteAt() ya para
                     // sola antes de tocar la pila (cursor >= sp).
                     deleteByteAt(ui.cursor);
-                    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+                    resyncCompose();
                     dirBtnLongFired = true;
                     changed = true;
                 }
@@ -916,7 +1060,7 @@ void loop() {
                 // misma frontera de la pila que deleteByteAt).
                 if (!dirBtnLongFired) {
                     insertByteAt(ui.cursor);
-                    ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+                    resyncCompose();
                     changed = true;
                 }
                 dirBtnHeld = false;
@@ -927,10 +1071,19 @@ void loop() {
             uint8_t last = lastStep(ui.compose.verb, ui.compose.mode);
             if (ui.compose.step < last) {
                 ++ui.compose.step;
+                liveUpdate();   // aquí es donde el tamaño puede pasar a
+                                 // conocerse (p. ej. al confirmar el mode)
             } else {
-                uint8_t len = assemble(cpu.ram(), 65536u, ui.cursor, ui.compose);
+                // Último campo confirmado (para NOP/HALT/RET/MOVB/MOVW esto
+                // pasa ya en step 0, el propio campo Verb -- ver el
+                // comentario de liveUpdate arriba): el tamaño es definitivo
+                // se mire como se mire, así que aquí se escribe siempre, sin
+                // el filtro de fieldAt que sí hace falta en el giro/paso
+                // intermedio.
+                commitWrite();   // asegura hueco y escribe la forma final
+                uint8_t len = instrLen(cpu.ram(), 65536u, ui.cursor);
                 ui.cursor = clamp16((long)ui.cursor + len);
-                ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);
+                resyncCompose();
             }
             changed = true;
         }

@@ -25,6 +25,18 @@ struct UiState {
     // son mutuamente excluyentes, así que basta un solo campo.
     uint16_t cursor = 0;
     ComposeState compose;         // instrucción en construcción en `cursor` (EditMem)
+    // EditMem: longitud de la instrucción que YA HABÍA en `cursor` al
+    // empezar a editarla (capturada junto con cada decodeAt() fresco), y si
+    // ya se ha abierto hueco de sobra para la que se está componiendo --
+    // ver ensureRoomFor()/el bloque EditMem en main.cpp. Mientras el verbo
+    // o el mode todavía se están eligiendo (longitud final desconocida) no
+    // se escribe nada en RAM, así que el listado sigue mostrando la
+    // instrucción de siempre tal cual, sin arriesgarse a pisar la
+    // siguiente; en cuanto el tamaño final se sabe, se abre hueco UNA vez
+    // (si hace falta) y se marca `roomEnsured` para no repetirlo en cada
+    // giro posterior de la misma instrucción.
+    uint8_t origLen = 1;
+    bool roomEnsured = false;
     uint8_t slot = 0;             // slot seleccionado (EditPrg)
     bool slotUsed = false;        // ¿el slot tiene programa? (EditPrg)
     PrgAction prgAction = PrgAction::Cargar;
