@@ -57,6 +57,7 @@ void SpiFlashStorage::sleep() {
     select();
     SPI.transfer(CMD_POWER_DOWN);
     deselect();
+    delayMicroseconds(5);                   // tDP: termina de entrar en reposo
 }
 
 bool SpiFlashStorage::waitBusy(unsigned long timeoutMs) {
@@ -138,9 +139,16 @@ bool SpiFlashStorage::init() {
     (void)capacity;
 
     // Deja el chip dormido: solo se despierta para leer/escribir un slot.
+    // La espera tDP (hasta 3 us en el W25Q32) es imprescindible: setup()
+    // llama a loadProgram(0) justo después, y un 0xAB (despertar) que llegue
+    // mientras el chip todavía está entrando en reposo se ignora -- el chip
+    // se queda dormido, la marca del slot se lee como basura y el slot 0 no
+    // se carga (bug real reportado: a veces, tras reset, la RAM quedaba
+    // entera en NOP; con "Cargar" a mano sí funcionaba).
     select();
     SPI.transfer(CMD_POWER_DOWN);
     deselect();
+    delayMicroseconds(5);
 
     // Winbond = 0xEF. Con otro fabricante compatible, ajustar esta comprobación.
     return manufacturer == 0xEF;

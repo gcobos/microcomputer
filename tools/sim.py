@@ -67,7 +67,7 @@ class Ports:
         # configuracion (0x0650/0x0651, iomap.h) -- espejo de g_screenContrast/
         # g_soundMuted en main.cpp. sound_muted empieza en False (sonido
         # activado), igual que g_soundMuted en el firmware real.
-        self.brightness = 0xCF   # OLED_CONTRAST_FULL (main.cpp)
+        self.brightness = 0xCF   # OLED_CONTRAST_FULL (main.cpp), valor de arranque
         self.sound_muted = False
 
     def tick(self):
@@ -210,10 +210,8 @@ class Ports:
             self.timer_set_ns[i] = self.now_ns
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
         self._snd(0)
-        # brillo: de fabrica en cada ejecucion nueva (clearRuntimeOutputs());
-        # sonido silenciado/activado NO se toca -- es una preferencia de
-        # sesion, igual que main.cpp (ver iomap.h PORT_CFG_SOUND_EN).
-        self.brightness = 0xCF
+        # brillo y sonido: preferencias de TODO el aparato -- NO se tocan al
+        # cargar otro programa, igual que main.cpp (ver iomap.h).
         self.last_load_ok = 1
 
     def _prog_save(self, slot):

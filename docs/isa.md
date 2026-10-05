@@ -46,7 +46,10 @@ mismo en versión práctica. Todos los bytes están comprobados en el emulador.
      en lo que ya haya: si solo quieres cambiar un campo, ve pulsando DATA
      sin girar por los demás.
 4. Para ejecutar: `SW_MODE` = **RUN** (▲ paso a paso, ▼ continuo). Siempre
-   arranca en `PC = 0`. En paso a paso (STEP), **DATA** sigue ejecutando
+   arranca en `PC = 0` al entrar en RUN desde EDIT. Dentro de RUN, cambiar
+   entre paso a paso y continuo **no** reinicia: el programa sigue desde
+   donde estaba (sirve para parar uno en marcha, mirarlo paso a paso y
+   dejarlo seguir). En paso a paso (STEP), **DATA** sigue ejecutando
    (girar adelante = varios pasos de golpe, uno por detente; pulsar = un
    paso; girar atrás no hace nada, no hay forma de deshacer). **ADDR**
    gira para elegir una dirección objetivo sin ejecutar nada (el listado la

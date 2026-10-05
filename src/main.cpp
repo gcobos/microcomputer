@@ -137,8 +137,9 @@ uint8_t g_led = 0;                          // estado del LED (puerto PORT_LED)
 // OLED_CONTRAST_FULL como el valor que usa applyScreenPower() para SCR_FULL,
 // para que un programa pueda pedir su propio brillo sin desmontar el ahorro
 // de energía automático (que sigue atenuando/apagando por inactividad igual
-// que siempre, solo que "pleno" pasa a ser este valor). Vuelve al de fábrica
-// en cada arranque de ejecución nueva, ver clearRuntimeOutputs().
+// que siempre, solo que "pleno" pasa a ser este valor). Arranca al de
+// fábrica y PERSISTE desde ahí para todo el aparato, igual que g_soundMuted:
+// NO se reinicia en cada arranque de ejecución nueva (clearRuntimeOutputs).
 uint8_t g_screenContrast = OLED_CONTRAST_FULL;
 uint8_t g_timer[TIMER_COUNT] = {0};         // temporizadores (puertos 0x0620+)
 unsigned long g_timerLast[TIMER_COUNT] = {0};
@@ -334,10 +335,11 @@ void clearRuntimeOutputs() {
     g_led = 0; setLed(false);
     resetTimers();
     resetSound();
-    // Brillo (PORT_CFG_BRIGHTNESS): de fábrica en cada ejecución nueva, para
-    // que un programa no le deje el brillo cambiado al siguiente -- a
-    // diferencia del mute (g_soundMuted), que SÍ persiste (ver iomap.h).
-    g_screenContrast = OLED_CONTRAST_FULL;
+    // Brillo (PORT_CFG_BRIGHTNESS): NO se toca aquí -- es una preferencia de
+    // TODO el aparato, igual que el mute (g_soundMuted, ver iomap.h). Un
+    // programa nuevo hereda el brillo que hubiera puesto el anterior (p.ej.
+    // sisop.asm -> SETTINGS -> arrancar un juego). Se reaplica con el valor
+    // actual por si el atenuado automático lo había dejado en OLED_CONTRAST_DIM.
     oled.contrast(g_screenContrast);   // inofensivo aunque este apagada (DISPLAYOFF)
     // Bufer de trabajo de la EEPROM por slot: igual que el brillo, no debe
     // heredar lo que dejara escrito (sin grabar) el programa anterior.
@@ -475,8 +477,11 @@ void portWrite(uint16_t port, uint8_t value) {
         // de contraste real -- se vera en cuanto vuelva a encenderse) y
         // ademas queda como el nuevo "pleno brillo" para el ahorro de
         // energia automatico -- ver g_screenContrast e iomap.h.
+        // contrastFromSettings() == contrast(): solo SET_CONTRAST. Los dos
+        // intentos de escalar más (PRE-CHARGE/VCOMH, tramado) se descartaron
+        // en el panel real; ver display.cpp.
         g_screenContrast = value;
-        oled.contrast(g_screenContrast);
+        oled.contrastFromSettings(g_screenContrast);
         return;
     }
     if (port == PORT_CFG_SOUND_EN) {
@@ -937,17 +942,23 @@ void loop() {
     const bool pasoToggle = (exec && !enterExec && abajo != prevAbajo);
     bool changed = (view != prevView);
 
-    // Entrar en CONTINUO (por el interruptor de modo o por el de paso) siempre
-    // reinicia: "CONTINUO ejecuta el programa desde el principio". Entrar en
-    // PASO solo congela (para poder inspeccionar dónde quedó / seguir paso a
-    // paso desde ahí).
-    if (enterExec || (pasoToggle && abajo)) {
+    // Solo ENTRAR EN RUN (desde EDITAR) reinicia la ejecución. Dentro de RUN,
+    // cambiar entre PASO y CONTINUO NO toca el PC ni el resto del estado
+    // (registros, pantalla, temporizadores...): pasar a PASO congela donde
+    // esté y volver a CONTINUO sigue desde ahí -- así se puede parar un
+    // programa en marcha, inspeccionarlo paso a paso y dejarlo seguir
+    // (petición real: antes volver a CONTINUO reiniciaba desde PC=0). Para
+    // empezar de cero: volver a EDITAR y otra vez a RUN, o pulsación larga
+    // de ADDR en PASO.
+    if (enterExec) {
         cpu.reset();                       // los programas arrancan en PC=0
         clearRuntimeOutputs();
         running = abajo;                   // CONTINUO corre; PASO espera
         lastFlush = 0;
-    } else if (pasoToggle) {               // -> PASO: congelar
-        running = false;
+    } else if (pasoToggle) {
+        running = abajo;                   // -> CONTINUO sigue; -> PASO congela
+        lastFlush = 0;                     // repinta el framebuffer al volver a CONTINUO
+        pasoRunning = false;               // anula una carrera a destino a medias
     }
     prevExec = exec;
     prevAbajo = abajo;

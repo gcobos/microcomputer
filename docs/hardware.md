@@ -79,7 +79,7 @@ pines por defecto del C3; el driver de la flash los toma solo.
 | 1  | 74HC165 Q7 (datos serie) | entrada | pin 9 (Q7) |
 | 3  | Sonido (tono PWM/LEDC) | salida | zumbador piezo pasivo → GND (sección 9) |
 | 4  | SPI SCK | salida | flash pin 6 (CLK) |
-| 5  | SPI MISO | entrada | flash pin 2 (DO) |
+| 5  | SPI MISO | entrada | flash pin 2 (DO) **+ `[10 kΩ]` a 3V3** |
 | 6  | SPI MOSI | salida | flash pin 5 (DI) |
 | 7  | Flash /CS | salida | flash pin 1 (/CS) **+ `[10 kΩ]` a 3V3** |
 | 8  | LED de fallo | salida | LED azul de a bordo (**activo a nivel bajo**) |
@@ -169,15 +169,33 @@ Winbond 32 Mbit / 4 MiB. Driver propio en
 | Flash (SOIC-8) | Pin | Va a |
 |---|---|---|
 | 1 | /CS   | GPIO7 **+ `[10 kΩ]` a 3V3** |
-| 2 | DO    | GPIO5 (MISO) |
+| 2 | DO    | GPIO5 (MISO) **+ `[10 kΩ]` a 3V3** |
 | 3 | /WP   | 3V3 |
 | 4 | GND   | GND |
 | 5 | DI    | GPIO6 (MOSI) |
 | 6 | CLK   | GPIO4 (SCK) |
 | 7 | /HOLD | 3V3 |
-| 8 | VCC   | 3V3 (+ 100 nF a GND) |
+| 8 | VCC   | 3V3 **+ 100 nF y 10 µF a GND**, pegados al chip |
 
-- /WP y /HOLD **a 3V3** obligatorio.
+- /WP y /HOLD **a 3V3** obligatorio, unidos directamente (sin resistencia):
+  si /HOLD queda suelto o mal soldado y baja a 0, la flash deja de enviar
+  datos a mitad de una lectura.
+- **Desacoplo:** 100 nF **y** 10 µF cerámicos en paralelo entre VCC (pin 8) y
+  GND (pin 4), con las patas lo más cortas posible y pegados al chip.
+- **Bug real (2026-10): vías rotas en la placa breakout de la flash.** Las
+  cargas de programa llegaban cortadas, con el resto a 0x00: la flash dejaba
+  de responder a mitad de lectura y el programa arrancaba casi vacío
+  (pantalla negra, todo NOP en PASO). Era intermitente y empeoraba con la
+  alimentación más justa (interruptor en OFF con el USB conectado). Al tocar
+  la placa para soldar el 10 µF acabó en fallos de arranque: parpadeo rápido
+  del LED (flash sin respuesta) y ruido en la OLED. Se arregló resoldando
+  tres vías rotas. Ante síntomas parecidos, revisar primero la continuidad
+  de la breakout; `tools/compi_recv.py` (COMPI DUMP) permite comprobar las
+  lecturas desde el ordenador sin tocar el firmware.
+- **Pull-up de 10 kΩ en MISO:** con la flash sin conducir DO (deseleccionada,
+  reiniciándose o en deep power-down) la línea queda en 1 en vez de flotar. Una
+  lectura cortada sale entonces a 0xFF en vez de a 0x00, y se distingue de
+  una zona realmente vacía de la imagen.
 - Reloj SPI a 8 MHz (`kFlashSpiSettings` en el .cpp).
 - Un programa = imagen completa de la RAM (64 KiB). Un slot = 17 sectores de
   4 KiB (69632 B); caben **60 slots** en los 4 MiB.
@@ -230,8 +248,9 @@ Fuera del arranque, el LED lo controla el programa emulado con `OUT (0x0610),reg
 | 2 | interruptores SPST panel (SW_MODE, SW_STEP) |
 | 1 | módulo OLED SH1106 128×64 I2C |
 | 1 | módulo flash SPI W25Q32 / 25Q32FVSIG (Winbond, 4 MiB) |
-| 9 | resistencias 10 kΩ, 1/4 W (8 pull-ups de entrada + 1 en /CS de la flash) |
+| 10 | resistencias 10 kΩ, 1/4 W (8 pull-ups de entrada + /CS y MISO de la flash) |
 | ~3 | condensadores cerámicos 100 nF, 50 V, X7R (desacoplo: 74HC165, flash; el de la OLED sobra si el módulo ya lo lleva) |
+| 1 | condensador cerámico 10 µF, ≥ 6,3 V, X5R/X7R (desacoplo de la flash, junto al de 100 nF) |
 | 1 | zumbador **piezo pasivo** (sección 9) |
 | 0–1 | resistencia 100 Ω, 1/4 W, en serie con el piezo (opcional) |
 | 1 | batería LiPo 1S 3,7 V, conector JST-PH 2,0 (capacidad según la carcasa; sección 10) |
@@ -249,7 +268,7 @@ interruptor, y entra a la SuperMini por su regulador de a bordo (pin 5V/VBUS).
 ## 8. Resumen 3V3 / GND
 
 **3V3:** VCC de 74HC165, flash y OLED · flash /WP y /HOLD · un extremo de las
-9 resistencias de pull-up.
+10 resistencias de pull-up · un extremo de los condensadores de desacoplo.
 
 **GND:** GND de 74HC165, flash y OLED · 74HC165 pin 10 (SER) y pin 15 (CLK INH) ·
 común de los dos encoders · una pata de cada pulsador y de cada interruptor ·

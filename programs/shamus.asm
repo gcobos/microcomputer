@@ -1,3 +1,33 @@
+;============================================================================
+;  CHANGELOG -- indice de cambios de shamus.asm, el mas reciente primero.
+;  Mirar aqui antes de tocar generacion de salas, llaves/candados, corazones
+;  o enemigos: varios arreglos rompieron sin querer algo que dependia del
+;  mismo sitio. El porque detallado de cada uno sigue en el comentario de la
+;  seccion que toca.
+;
+;  - LLAVES Y CANDADOS rediseñados: 20 candados en la SALIDA de las salas del
+;    camino 4..23, y cada llave en su propia sala RAMAL (25..44), lejos de la
+;    entrada de esa sala (MIN_KEY_DIST). El ramal puede colgar de una sala
+;    anterior al candado (hasta 3, MAX_KEY_OFFSET), mas a menudo en los
+;    niveles avanzados. Sustituye al esquema par/impar 0..19 (10+10) --
+;    pedido real: "las llaves deberian encontrarse en salas adyacentes al
+;    camino" y "no siempre en la sala justo al lado de la puerta cerrada".
+;  - Candado movido de la ENTRADA a la SALIDA de su sala: cruzar de sala es
+;    un teletransporte al punto de aparicion, asi que un candado en la
+;    entrada se abria solo e invisible nada mas aparecer con una llave (bug
+;    real reportado, "se han perdido las puertas; las llaves se pierden").
+;  - cross_room_gap: el lado de entrada en la sala destino es siempre el
+;    opuesto del lado realmente cruzado, no el room_entry_side[] fijo (bug
+;    real reportado: al volver de un ramal se aparecia en el lado contrario).
+;  - FANTASMA recuperado (se habia perdido del .asm aunque seguia en el .bin
+;    del aparato): aparece si el jugador pasa mas de (50 - llaves usadas) s en
+;    la misma sala, atraviesa paredes, persigue y mata al tocar; el contador
+;    se reinicia al cambiar de sala y nunca aparece en la sala del jefe.
+;    Re-Mi en bucle, mas rapido cuanto mas cerca (on_room_entered/update_ghost).
+;    Avanza 1 px por eje cada GHOST_MOVE_DELAY(5) fotogramas, no en cada uno:
+;    a esa velocidad no daba tiempo a escapar (pedido real).
+;============================================================================
+
 ; ============================================================================
 ;  shamus.asm  -  laberinto de accion al estilo Shamus (compi)
 ;
@@ -82,43 +112,44 @@
 ;
 ;  Hay un CAMINO DIRECTO de PATH_ROOMS(25) salas: 0->1->2->...->24->49 (el
 ;  jefe), cada una conectada con la siguiente por un lado al azar (sin
-;  repetir lado dentro de la misma sala). Las salas MAX_ROOMS-PATH_ROOMS-1 =
-;  EXTRA_ROOMS(24) restantes (25..48) cuelgan cada una de una sala del
-;  camino elegida al azar, por uno de sus lados libres -- un solo nivel de
-;  ramas opcionales, nunca anidadas, siempre ABIERTAS (sin llave ni
-;  candado): no hace falta cruzarlas para llegar al jefe, pero tienen que
-;  poder alcanzarse igualmente (plan_dungeon solo las enlaza a lados que
-;  room_link todavia tenga libres, con un barrido determinista de repuesto
-;  si el azar no encontrara hueco a la primera, para no poder colgarse
-;  nunca esperando un hueco que no aparece).
+;  repetir lado dentro de la misma sala). Las EXTRA_ROOMS(24) restantes
+;  (25..48) cuelgan, cada una, de UNA sala del camino por uno de sus lados
+;  libres -- ninguna cuelga de otra rama, pero eso no quiere decir que la
+;  llave de un candado este siempre al lado: 20 de ellas (25..44) son los
+;  ramales de llave y pueden colgar de una sala ANTERIOR a la de su candado
+;  (ver LLAVES Y CANDADOS), asi que una llave puede quedar a mas de una sala
+;  de distancia de donde hay que usarla. Las 4 restantes (45..48) son ramales
+;  al azar, sin llave ni candado.
 ;
-;  LLAVES Y CANDADOS: de las salas del camino, las KEYLOCK_ROOMS(20)
-;  primeras (0..19) llevan el esquema fijo -- gen_and_save_current_room lo
-;  deduce del propio numero de sala, sin sortear nada:
-;    - PAR (0,2,4,...,18) -> aloja una llave, en una celda interior al azar.
-;    - IMPAR (1,3,5,...,19) -> su ENTRADA sale con CANDADO (se ve como
-;      puerta, linea sencilla, pero cell_walls se queda cerrado ahi hasta
-;      abrirse con una llave, ver door_check) -- la llave que la abre es la
-;      de la sala PAR inmediatamente anterior en el camino (N-1), siempre ya
-;      alcanzada antes de necesitarla, al ser el camino estrictamente lineal
-;      y en orden. 10 llaves y 10 candados en total, GARANTIZADO por
-;      construccion (nunca por probabilidad, a diferencia del diseño
-;      anterior: con la llave de una puerta decidida por una tirada
-;      encadenada de 1/8 dos veces seguidas, en la practica casi nunca
-;      llegaba a haber un candado de verdad, solo llaves sueltas sin nada
-;      que abrir -- bug real reportado y corregido con este rediseño).
-;  Las salas 20..24 (resto del camino) y las 25..48 (extra) no llevan ni
-;  llave ni candado -- via libre. La sala 0 (par) nunca puede salir con
-;  candado (no tiene entrada real que candar) y la del jefe (49, fuera del
-;  rango 0..19) tampoco lleva ni llave ni candado nunca.
+;  LLAVES Y CANDADOS: las llaves NO estan en el propio camino -- viven en
+;  salas RAMAL. gen_and_save_current_room lo deduce del numero de sala:
+;    - Salas 0..3 del camino: nunca llevan candado (rodaje).
+;    - ZONA DE CANDADOS (LOCK_ZONE_START=4 .. +LOCK_ZONE_LEN(20), salas
+;      4..23): cada una sale con CANDADO en su SALIDA hacia la sala siguiente
+;      del camino (N+1) -- linea sencilla, cell_walls cerrado hasta abrirse
+;      con una llave, ver door_check. NUNCA en la entrada: cruzar de sala es un
+;      teletransporte al punto de aparicion, ya a menos de DOOR_OPEN_DIST del
+;      punto medio de la entrada, asi que un candado ahi se abria solo e
+;      invisible al aparecer con una llave encima.
+;    - RAMALES DE LLAVE (KEYBRANCH_START=25 .. +KEYBRANCH_LEN(20)): la sala
+;      25+k aloja la llave del candado LOCK_ZONE_START+k, en una celda a
+;      distancia Manhattan >= MIN_KEY_DIST de su propia entrada (en medio o en
+;      el lado opuesto, nunca pegada a la puerta). plan_dungeon la cuelga de
+;      la sala del candado o de una ANTERIOR del camino, hasta
+;      MAX_KEY_OFFSET[k] salas por delante: 0 en los primeros candados, hasta
+;      3 en los mas avanzados -- en los niveles avanzados hay que acordarse de
+;      coger la llave al pasar, no basta con mirar la sala del candado. Como
+;      el ramal cuelga siempre de una sala ya cruzada (<= la del candado), la
+;      partida siempre se puede terminar.
+;  20 llaves y 20 candados, GARANTIZADO por construccion (no por probabilidad).
+;  La sala 24 y las 45..48 no llevan ni llave ni candado.
 ;
 ;  Llavero COMPARTIDO: cualquier llave abre cualquier puerta (basta con
 ;  llevar al menos una encima, [keys_held], ver door_check) -- no hay
 ;  emparejamiento llave-puerta especifico, porque el HUD no distingue una
 ;  llave de otra (solo un icono + una cifra) y exigir la exacta resultaba
-;  confuso. Con el esquema par/impar esto es sobre todo una comodidad de
-;  implementacion (la pareja "correcta" siempre esta disponible de todas
-;  formas, al ser el camino lineal), no algo de lo que dependa la solución.
+;  confuso. Con un ramal por candado colgando de una sala ya cruzada, la
+;  llave necesaria siempre esta disponible antes de llegar al candado.
 ;  Cogerla es automatico al pisar su celda; acercarse a cualquier puerta con
 ;  candado llevando al menos una llave la abre sola (gastando una del
 ;  contador), y el cambio se persiste igual que el resto de la sala.
@@ -220,6 +251,23 @@ START_DELAY = 7           ; fotogramas por paso de enemigo, al principio
 MIN_DELAY   = 2           ; tope de velocidad maxima
 MAX_LIVES   = 3
 
+; --- FANTASMA: aparece si el jugador lleva demasiado tiempo parado en la
+; misma sala (ver on_room_entered/update_ghost) --
+GHOST_W   = 5
+GHOST_H   = 5
+GHOST_HALF = 2
+GHOST_BASE_SECONDS = 50   ; espera del fantasma: 50 s menos las llaves usadas
+GHOST_FPS = 42            ; fotogramas por segundo, aprox.: 24 ms por vuelta
+GHOST_NOTE_A = 74          ; "Re5"
+GHOST_NOTE_B = 76          ; "Mi5"
+GHOST_TONE_MAX = 20        ; fotogramas entre notas, lejos (~0.5 s)
+GHOST_TONE_MIN = 3         ; fotogramas entre notas, pegado (trino rapido)
+GHOST_MOVE_DELAY = 5       ; fotogramas por paso del fantasma (1 px por eje
+                          ; cada GHOST_MOVE_DELAY fotogramas) -- a 1 por
+                          ; fotograma era imposible escaparse
+GHOST_DIST_CAP = 160       ; distancia Manhattan a partir de la cual el tono
+                          ; ya no se hace mas lento
+
 ; --- salas persistentes / jefe final --------------------------------------
 MAX_ROOMS       = 50      ; salas distintas que se pueden llegar a generar
                           ; (antes 24 "a secas"); persist_*/room_link se
@@ -229,11 +277,18 @@ BOSS_ROOM_NUM   = MAX_ROOMS-1  ; la ultima -- "nivel 50". Enlazada de forma
                           ; plan_dungeon -- ya no hace falta "saturar" nada,
                           ; las 50 salas se planifican todas de antemano.
 PATH_ROOMS      = 25     ; salas 0..24: camino directo 0->1->...->24->jefe
-KEYLOCK_ROOMS   = 20     ; de esas, 0..19 llevan el esquema de llave/candado
-                          ; (ver la nota de cabecera "LLAVES Y PUERTAS"):
-                          ; par=aloja llave, impar=entrada con candado
+LOCK_ZONE_START = 4       ; 0..3 nunca llevan candado (rodaje) -- CANDADOS
+                          ; en la SALIDA de 4..23 (ver "LLAVES Y CANDADOS")
+LOCK_ZONE_LEN   = 20      ; 4..23 -- la 24 (ultima del camino) queda lisa
 EXTRA_ROOMS     = MAX_ROOMS - PATH_ROOMS - 1  ; 24: salas 25..48, ramales
-                          ; opcionales colgando del camino (ver plan_dungeon)
+                          ; colgando del camino (ver plan_dungeon)
+KEYBRANCH_START = PATH_ROOMS               ; = 25: las salas extra 25..44 son
+                          ; los ramales de llave, uno por candado: la 25+k
+                          ; aloja la llave del candado LOCK_ZONE_START+k
+KEYBRANCH_LEN   = LOCK_ZONE_LEN             ; = 20
+; Las 4 salas extra restantes (45..48) cuelgan al azar, sin llave ni candado.
+MIN_KEY_DIST    = 3       ; distancia Manhattan minima de la llave a la
+                          ; entrada de su propia sala (ver gsc_key_roll)
 ENEMY_TYPE_BOSS = 2       ; enemy_type: 0=persegidor, 1=tirador, 2=JEFE
                           ; (persigue Y dispara -- ver update_enemy_fire,
                           ; que ya dispara con cualquier tipo != 0)
@@ -340,6 +395,7 @@ main_no_transition:
     CALL update_enemy_fire
     CALL update_enemy_shots
     CALL check_collisions
+    CALL update_ghost
 
 main_draw:
     CALL draw_frame
@@ -362,6 +418,7 @@ new_game:
     STA [score_hi],AL
     STA [room_transition_pending],AL
     STA [keys_held],AL
+    STA [keys_used],AL
     STA [low_life_rooms],AL
     MOV AL,#MAX_LIVES
     STA [lives],AL
@@ -397,7 +454,7 @@ ng_clr_l:
 
     ; entrada de la sala 0: no existe de verdad (es el punto de partida) --
     ; se sortea solo para orientar su laberinto interno (gen_maze), nunca
-    ; puede salir con candado (0 es par, ver gen_and_save_current_room).
+    ; lleva candado (la zona de candados empieza en LOCK_ZONE_START=4).
     CALL rnd
     AND AL,#3
     MOV BL,#lo(room_entry_side)
@@ -427,6 +484,7 @@ ng_gen_l:
     CALL draw_maze
     CALL place_player_spawn
     CALL setup_enemies
+    CALL on_room_entered
     CALL update_score_hud
     CALL update_lives_hud
     CALL update_keys_hud
@@ -437,11 +495,12 @@ ng_gen_l:
 ;  (room_link[]/room_entry_side[]), antes de generar ninguna. Camino directo
 ;  0->1->2->...->24->49 (el jefe): entrada/salida de cada una elegidas al
 ;  azar entre las 4 direcciones, sin repetir lado dentro de la misma sala.
-;  Las salas 25..48 ("extra") cuelgan cada una de una sala del camino
-;  (0..24) elegida al azar, por un lado libre suyo -- un solo nivel de
-;  ramas, nunca anidadas. Que sala lleva llave o candado NO se decide aqui:
-;  gen_and_save_current_room lo deduce del propio numero de sala (par o
-;  impar en 0..19), ver su comentario y la nota de cabecera.
+;  Las salas 25..48 ("extra") cuelgan cada una de UNA sala del camino
+;  (0..24): las 25..44 son los ramales de llave (cada uno cuelga de la sala
+;  de su candado o de una anterior, ver MAX_KEY_OFFSET) y las 45..48 cuelgan
+;  de una sala elegida al azar. Que sala lleva llave o candado NO se decide
+;  aqui: gen_and_save_current_room lo deduce del propio numero de sala, ver
+;  su comentario y la nota de cabecera "LLAVES Y CANDADOS".
 ; ============================================================================
 plan_dungeon:
     ; room_link[] entero a 254 ("lado libre, todavia sin decidir") -- es
@@ -553,6 +612,75 @@ pd_have_next:
     MOV AL,#PATH_ROOMS
     STA [pd_i],AL
 pd_extra_l:
+    ; Las salas 25..44 NO cuelgan al azar: la 25+k es el ramal de la llave del
+    ; candado LOCK_ZONE_START+k, y cuelga de esa sala o de una ANTERIOR del
+    ; camino (hasta MAX_KEY_OFFSET[k] salas por delante; 0 en los primeros
+    ; candados, hasta 3 en los mas avanzados). Si la sala candidata no tiene
+    ; lado libre se prueba con un desplazamiento menor: con d=0 SIEMPRE hay
+    ; hueco (ningun ramal anterior puede haber usado esa sala, porque su
+    ; candidata LOCK_ZONE_START+k'-d' es siempre < LOCK_ZONE_START+k), asi que
+    ; esto termina siempre y nunca deja una llave sin colocar.
+    LDA AL,[pd_i]
+    CMP AL,#(KEYBRANCH_START+KEYBRANCH_LEN)
+    JMPNC pd_extra_random
+
+    LDA AL,[pd_i]
+    SUB AL,#KEYBRANCH_START
+    STA [pd_k],AL
+    MOV BL,#lo(MAX_KEY_OFFSET)
+    MOV BH,#hi(MAX_KEY_OFFSET)
+    LDA CL,[pd_k]
+    CALL idx_ptr
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPZ pd_d_zero
+    ADD AL,#1
+    STA [pd_dmod],AL
+pd_d_roll:
+    CALL rnd
+    AND AL,#3
+    LDA BL,[pd_dmod]
+    CMP AL,BL
+    JMPNC pd_d_roll              ; AL >= max+1 -- reintenta
+    STA [pd_d],AL
+    JMP pd_d_try
+pd_d_zero:
+    MOV AL,#0
+    STA [pd_d],AL
+pd_d_try:
+    LDA AL,[pd_k]
+    ADD AL,#LOCK_ZONE_START
+    LDA BL,[pd_d]
+    SUB AL,BL
+    STA [pd_room],AL             ; candidata = LOCK_ZONE_START + k - d
+    MOV AL,#0
+    STA [pd_side],AL
+pd_forced_scan_s:
+    LDA AL,[pd_room]
+    SHL AL,#2
+    LDA BL,[pd_side]
+    ADD AL,BL
+    STA [tmp2],AL
+    LDA CL,[tmp2]
+    MOV BL,#lo(room_link)
+    MOV BH,#hi(room_link)
+    CALL idx_ptr
+    LDA AL,[BX]
+    CMP AL,#254
+    JMPZ pd_extra_have_slot
+    LDA AL,[pd_side]
+    ADD AL,#1
+    STA [pd_side],AL
+    CMP AL,#4
+    JMPNZ pd_forced_scan_s
+    LDA AL,[pd_d]                ; sin hueco aqui -- desplazamiento menor
+    CMP AL,#0
+    JMPZ pd_extra_next           ; (no deberia pasar nunca con d=0)
+    SUB AL,#1
+    STA [pd_d],AL
+    JMP pd_d_try
+
+pd_extra_random:
     MOV AL,#0
     STA [pd_tries],AL
 pd_extra_pick:
@@ -688,14 +816,17 @@ cross_room_gap:
     LDA AL,[BX]
     STA [tmp0],AL             ; tmp0 = sala destino (siempre real)
 
-    LDA CL,[tmp0]
-    MOV BL,#lo(room_entry_side)
-    MOV BH,#hi(room_entry_side)
+    LDA CL,[exit_dir_taken]
+    MOV BL,#lo(OPP_OF_DIR)
+    MOV BH,#hi(OPP_OF_DIR)
     CALL idx_ptr
     LDA AL,[BX]
-    STA [entry_side],AL       ; lado de entrada en la sala destino, ya fijo
-                               ; desde plan_dungeon -- place_player_spawn lo
-                               ; usa para colocar al jugador
+    STA [entry_side],AL       ; lado de entrada en la sala destino: SIEMPRE el
+                               ; opuesto del lado por el que se acaba de salir,
+                               ; no el room_entry_side[] fijo de plan_dungeon
+                               ; (que solo describe la arista del camino: al
+                               ; volver de un ramal, el jugador aparecia en el
+                               ; lado contrario de la sala -- bug real reportado)
 
     ; si se esta CRUZANDO fuera de la sala 0, marca que ya se ha dejado
     ; atras al menos una vez -- a partir de ahora, cualquier vuelta a la
@@ -733,6 +864,233 @@ crg_no_score:
     CALL draw_maze
     CALL place_player_spawn
     CALL setup_enemies
+    CALL on_room_entered
+    RET
+
+; ============================================================================
+;  on_room_entered: corre en CADA entrada real a una sala (desde new_game,
+;  para la sala 0, y al final de cross_room_gap para cualquier otra):
+;    - reinicia el contador de fotogramas de la sala a 0 y calcula el umbral
+;      (segundos_permitidos * GHOST_FPS, con segundos_permitidos =
+;      GHOST_BASE_SECONDS(50) - keys_used: llaves gastadas en candados en la
+;      partida, de 0 a 20, asi que la espera baja de 50 s a 30 s segun se
+;      avanza). Antes dependia de room_num, pero los ramales (25..48) no
+;      siguen el orden de avance y el fantasma salia muy pronto en ramales
+;      del principio -- pedido real.
+;      Guarda donde esta el jugador ahora mismo (ghost_origin_x/y): si el
+;      fantasma aparece mas tarde, lo hace ahi. La sala del jefe nunca tiene
+;      fantasma (umbral 0xFFFF, "infinito").
+; ============================================================================
+on_room_entered:
+    MOV AL,#0
+    STA [room_timer_lo],AL
+    STA [room_timer_hi],AL
+    STA [ghost_active],AL
+    OUT (P_SND_NOTE),AL          ; por si sonaba el tono del fantasma al salir
+
+    LDA AL,[player_x]
+    STA [ghost_origin_x],AL
+    LDA AL,[player_y]
+    STA [ghost_origin_y],AL
+
+    LDA AL,[room_num]
+    CMP AL,#BOSS_ROOM_NUM
+    JMPNZ ore_ghost_calc
+    MOV AL,#0xFF
+    STA [ghost_threshold_lo],AL
+    STA [ghost_threshold_hi],AL
+    RET
+ore_ghost_calc:
+    MOV AL,#GHOST_BASE_SECONDS
+    LDA BL,[keys_used]
+    SUB AL,BL                    ; AL = segundos permitidos (50 - llaves usadas)
+    MOV BL,#GHOST_FPS
+    MUL BL                       ; AX = segundos * GHOST_FPS
+    STA [ghost_threshold_lo],AL
+    MOV AL,AH
+    STA [ghost_threshold_hi],AL
+    RET
+
+; ============================================================================
+;  update_ghost: cuenta fotogramas en la sala actual; al superar el umbral
+;  activa el fantasma en ghost_origin_x/y. Activo, persigue al jugador en
+;  linea recta UN PIXEL POR EJE CADA GHOST_MOVE_DELAY FOTOGRAMAS, sin mirar cell_walls (atraviesa
+;  paredes a proposito), y si toca al jugador lo mata igual que un enemigo
+;  (on_player_hit). Tras matar se desvanece y el contador vuelve a 0, para
+;  no encadenar muertes en el mismo sitio. Suena Re-Mi-Re-Mi en bucle,
+;  mas rapido cuanto mas cerca este (distancia Manhattan, escalada con MUL/DIV).
+; ============================================================================
+update_ghost:
+    LDA AL,[room_timer_lo]
+    ADD AL,#1
+    STA [room_timer_lo],AL
+    JMPNC ug_no_carry
+    LDA AL,[room_timer_hi]
+    ADD AL,#1
+    STA [room_timer_hi],AL
+ug_no_carry:
+
+    LDA AL,[ghost_active]
+    CMP AL,#0
+    JMPNZ ug_move
+
+    ; ¿se ha superado el umbral? comparacion de 16 bits (alto primero, bajo
+    ; solo si empata)
+    LDA AL,[room_timer_hi]
+    LDA BL,[ghost_threshold_hi]
+    CMP AL,BL
+    JMPC ug_ret                 ; timer_hi < threshold_hi -- todavia no
+    JMPNZ ug_activate           ; timer_hi > threshold_hi -- ya se paso
+    LDA AL,[room_timer_lo]
+    LDA BL,[ghost_threshold_lo]
+    CMP AL,BL
+    JMPC ug_ret                 ; timer_lo < threshold_lo -- todavia no
+
+ug_activate:
+    MOV AL,#1
+    STA [ghost_active],AL
+    LDA AL,[ghost_origin_x]
+    STA [ghost_x],AL
+    LDA AL,[ghost_origin_y]
+    STA [ghost_y],AL
+    MOV AL,#GHOST_TONE_MAX
+    STA [ghost_tone_timer],AL
+    MOV AL,#0
+    STA [ghost_tone_phase],AL
+    STA [ghost_move_cnt],AL
+    RET
+
+ug_move:
+    ; solo avanza 1 de cada GHOST_MOVE_DELAY fotogramas (el choque y el
+    ; sonido se siguen comprobando todos)
+    LDA AL,[ghost_move_cnt]
+    CMP AL,#0
+    JMPZ ug_step
+    SUB AL,#1
+    STA [ghost_move_cnt],AL
+    JMP ug_y_done
+ug_step:
+    MOV AL,#(GHOST_MOVE_DELAY-1)
+    STA [ghost_move_cnt],AL
+    LDA AL,[ghost_x]
+    LDA BL,[player_x]
+    CMP AL,BL
+    JMPZ ug_x_done
+    JMPC ug_x_inc
+    SUB AL,#1
+    JMP ug_x_store
+ug_x_inc:
+    ADD AL,#1
+ug_x_store:
+    STA [ghost_x],AL
+ug_x_done:
+
+    LDA AL,[ghost_y]
+    LDA BL,[player_y]
+    CMP AL,BL
+    JMPZ ug_y_done
+    JMPC ug_y_inc
+    SUB AL,#1
+    JMP ug_y_store
+ug_y_inc:
+    ADD AL,#1
+ug_y_store:
+    STA [ghost_y],AL
+ug_y_done:
+
+    ; choque con el jugador -- mismo criterio de cajas que check_collisions
+    LDA AL,[ghost_x]
+    SUB AL,#GHOST_HALF
+    STA [ex],AL
+    LDA AL,[ghost_y]
+    SUB AL,#GHOST_HALF
+    STA [ey],AL
+
+    LDA AL,[ex]
+    ADD AL,#GHOST_W
+    LDA BL,[player_x]
+    CMP BL,AL
+    JMPNC ug_tone
+    LDA AL,[player_x]
+    ADD AL,#PLAYER_W
+    LDA BL,[ex]
+    CMP BL,AL
+    JMPNC ug_tone
+    LDA AL,[ey]
+    ADD AL,#GHOST_H
+    LDA BL,[player_y]
+    CMP BL,AL
+    JMPNC ug_tone
+    LDA AL,[player_y]
+    ADD AL,#PLAYER_H
+    LDA BL,[ey]
+    CMP BL,AL
+    JMPNC ug_tone
+
+    MOV AL,#0
+    OUT (P_SND_NOTE),AL
+    STA [ghost_active],AL
+    STA [room_timer_lo],AL
+    STA [room_timer_hi],AL
+    CALL on_player_hit
+    RET
+
+ug_tone:
+    LDA AL,[ghost_tone_timer]
+    CMP AL,#0
+    JMPZ ug_tone_toggle
+    SUB AL,#1
+    STA [ghost_tone_timer],AL
+    RET
+
+ug_tone_toggle:
+    LDA AL,[ghost_x]
+    LDA BL,[player_x]
+    SUB AL,BL
+    JMPN ugt_xneg
+    JMP ugt_xdone
+ugt_xneg:
+    NOT AL
+    ADD AL,#1
+ugt_xdone:
+    STA [tmp1],AL
+
+    LDA AL,[ghost_y]
+    LDA BL,[player_y]
+    SUB AL,BL
+    JMPN ugt_yneg
+    JMP ugt_ydone
+ugt_yneg:
+    NOT AL
+    ADD AL,#1
+ugt_ydone:
+    LDA BL,[tmp1]
+    ADD AL,BL                    ; distancia Manhattan (nunca pasa de 255)
+    CMP AL,#GHOST_DIST_CAP
+    JMPC ugt_dist_capped
+    MOV AL,#GHOST_DIST_CAP
+ugt_dist_capped:
+    MOV BL,#(GHOST_TONE_MAX-GHOST_TONE_MIN)
+    MUL BL                       ; AX = distancia_limitada * rango
+    MOV BL,#GHOST_DIST_CAP
+    DIV BL                       ; AL = AX / GHOST_DIST_CAP (0..rango)
+    ADD AL,#GHOST_TONE_MIN       ; periodo final (MIN..MAX fotogramas/nota)
+    STA [ghost_tone_timer],AL
+
+    LDA AL,[ghost_tone_phase]
+    CMP AL,#0
+    JMPNZ ugt_mi
+    MOV AL,#GHOST_NOTE_A
+    OUT (P_SND_NOTE),AL
+    MOV AL,#1
+    STA [ghost_tone_phase],AL
+    RET
+ugt_mi:
+    MOV AL,#GHOST_NOTE_B
+    OUT (P_SND_NOTE),AL
+    MOV AL,#0
+    STA [ghost_tone_phase],AL
+ug_ret:
     RET
 
 ; ============================================================================
@@ -740,12 +1098,12 @@ crg_no_score:
 ;  topologia ya decidida por plan_dungeon (room_link[]/room_entry_side[]) --
 ;  aqui no se sortea NINGUNA conexion. Por cada uno de los 4 lados, si
 ;  room_link[room_num*4+lado] apunta a una sala real (no 254), se abre ese
-;  hueco -- EXCEPTO si es el lado de ENTRADA y room_num es IMPAR en 0..19
-;  (KEYLOCK_ROOMS), en cuyo caso sale con CANDADO (linea sencilla,
-;  cell_walls cerrado hasta abrirse con una llave, ver door_check). Las
-;  salas de numero PAR en 0..19 alojan ademas una llave propia, en una
-;  celda interior al azar -- 10 llaves y 10 candados en total, garantizado
-;  por construccion (ver la nota de cabecera "LLAVES Y PUERTAS"). Guarda
+;  hueco -- EXCEPTO si room_num esta en la ZONA DE CANDADOS (4..23) y el
+;  lado es la SALIDA hacia room_num+1, en cuyo caso sale con CANDADO (linea
+;  sencilla, cell_walls cerrado hasta abrirse con una llave, ver
+;  door_check). Los ramales de llave (25..44) alojan una llave, lejos de su
+;  entrada -- 20 llaves y 20 candados en total, garantizado por construccion
+;  (ver la nota de cabecera "LLAVES Y CANDADOS"). Guarda
 ;  todo en persist_*[room_num]; no puntua nunca (eso es cosa de
 ;  cross_room_gap, solo al CRUZAR, nunca al generar).
 ; ============================================================================
@@ -789,29 +1147,36 @@ gsc_side_l:
     LDA AL,[BX]
     CMP AL,#254
     JMPZ gsc_side_next          ; nada por este lado -- pared, no hace falta nada
+    STA [tmp4],AL               ; tmp4 = sala vecina por este lado
 
-    LDA AL,[d]
-    LDA BL,[entry_side]
-    CMP AL,BL
-    JMPNZ gsc_side_open         ; no es la entrada -- siempre se abre normal
-
-    ; es la entrada: candado SOLO si esta sala es IMPAR en 0..19
+    ; candado SOLO en la ZONA DE CANDADOS (4..23) y en la SALIDA hacia la sala
+    ; siguiente del camino (room_num+1) -- NUNCA en la entrada: cruzar de sala
+    ; es un teletransporte al punto de aparicion, a menos de DOOR_OPEN_DIST
+    ; del punto medio de la entrada, asi que un candado ahi se abria solo e
+    ; invisible al aparecer con una llave encima (bug real reportado, "se han
+    ; perdido las puertas; las llaves se pierden al cruzar").
     LDA AL,[room_num]
-    CMP AL,#KEYLOCK_ROOMS
-    JMPNC gsc_side_open         ; room_num >= 20 -- entrada normal, sin candado
-    AND AL,#1
-    CMP AL,#0
-    JMPZ gsc_side_open          ; par -- entrada normal (esta aloja llave, no candado)
+    CMP AL,#LOCK_ZONE_START
+    JMPC gsc_side_open
+    LDA AL,[room_num]
+    CMP AL,#(LOCK_ZONE_START+LOCK_ZONE_LEN)
+    JMPNC gsc_side_open
+    LDA AL,[tmp4]
+    LDA BL,[room_num]
+    ADD BL,#1
+    CMP AL,BL
+    JMPNZ gsc_side_open         ; no es la salida hacia la siguiente
 
-    ; --- candado en la entrada ----------------------------------------------
+    ; --- candado en la salida -----------------------------------------------
     LDA AL,[d]
     STA [door_dir],AL
-    LDA CL,[entry_row]
+    CALL side_to_rc              ; AL=[d] -> rc_row/rc_col
+    LDA CL,[rc_row]
     MOV BL,#lo(ROW_MUL)
     MOV BH,#hi(ROW_MUL)
     CALL idx_ptr
     LDA AL,[BX]
-    LDA BL,[entry_col]
+    LDA BL,[rc_col]
     ADD AL,BL
     STA [door_cell],AL
 
@@ -854,19 +1219,62 @@ gsc_side_next:
     CMP AL,#4
     JMPNZ gsc_side_l
 
-    ; --- llave propia: PAR en 0..19 siempre aloja una, en una celda interior
-    ; al azar (NCELLS=18 no es potencia de 2, descarte-y-repite de siempre)
+    ; --- llave: solo en los ramales 25..44 (ver plan_dungeon), en una celda
+    ; al azar a distancia Manhattan >= MIN_KEY_DIST de la entrada de la sala
+    ; (nunca pegada a la puerta por la que se entra). Si tras 20 intentos no
+    ; sale ninguna (no deberia: en 3x6 la mas lejana esta a 7), vale la ultima.
     LDA AL,[room_num]
-    CMP AL,#KEYLOCK_ROOMS
+    CMP AL,#KEYBRANCH_START
+    JMPC gsc_no_key
+    LDA AL,[room_num]
+    CMP AL,#(KEYBRANCH_START+KEYBRANCH_LEN)
     JMPNC gsc_no_key
-    AND AL,#1
-    CMP AL,#0
-    JMPNZ gsc_no_key
 gsc_key_roll:
     CALL rnd
     AND AL,#31
     CMP AL,#NCELLS
     JMPNC gsc_key_roll
+    STA [tmp5],AL
+    LDA CL,[tmp5]
+    MOV BL,#lo(CELL_TO_ROW)
+    MOV BH,#hi(CELL_TO_ROW)
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[entry_row]
+    SUB AL,BL
+    JMPN gkd_row_neg
+    JMP gkd_row_abs
+gkd_row_neg:
+    NOT AL
+    ADD AL,#1
+gkd_row_abs:
+    STA [tmp6],AL
+    LDA CL,[tmp5]
+    MOV BL,#lo(CELL_TO_COL)
+    MOV BH,#hi(CELL_TO_COL)
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[entry_col]
+    SUB AL,BL
+    JMPN gkd_col_neg
+    JMP gkd_col_abs
+gkd_col_neg:
+    NOT AL
+    ADD AL,#1
+gkd_col_abs:
+    LDA BL,[tmp6]
+    ADD AL,BL
+    CMP AL,#MIN_KEY_DIST
+    JMPNC gsc_key_have
+    LDA AL,[key_retry]
+    ADD AL,#1
+    STA [key_retry],AL
+    CMP AL,#20
+    JMPNZ gsc_key_roll
+gsc_key_have:
+    MOV AL,#0
+    STA [key_retry],AL
+    LDA AL,[tmp5]
     STA [key_cell],AL
     MOV AL,#0
     STA [key_taken],AL
@@ -3088,6 +3496,9 @@ dc_ydone:
     SUB AL,#1
     STA [keys_held],AL
     CALL update_keys_hud
+    LDA AL,[keys_used]           ; llaves gastadas en la partida (ver
+    ADD AL,#1                    ; on_room_entered: acorta la espera del fantasma)
+    STA [keys_used],AL
 dc_no_dec:
 
     CALL draw_maze
@@ -4102,6 +4513,39 @@ df_en_next:
     STA [e],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ df_en_l
+
+    ; fantasma (si esta activo en esta sala, ver update_ghost)
+    LDA AL,[ghost_active]
+    CMP AL,#0
+    JMPZ df_no_ghost
+    MOV AL,#0
+    STA [j],AL
+df_ghost_l:
+    LDA CL,[j]
+    MOV BL,#lo(GHOST_SPRITE_DX)
+    MOV BH,#hi(GHOST_SPRITE_DX)
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[ghost_x]
+    ADD AL,BL
+    STA [px_x],AL
+
+    LDA CL,[j]
+    MOV BL,#lo(GHOST_SPRITE_DY)
+    MOV BH,#hi(GHOST_SPRITE_DY)
+    CALL idx_ptr
+    LDA AL,[BX]
+    LDA BL,[ghost_y]
+    ADD AL,BL
+    STA [px_y],AL
+    CALL shadow_set_px
+
+    LDA AL,[j]
+    ADD AL,#1
+    STA [j],AL
+    CMP AL,#GHOST_SPRITE_N
+    JMPNZ df_ghost_l
+df_no_ghost:
 
     ; llave (si esta sala GUARDA una -- puede que ni siquiera tenga puerta
     ; propia, si la llave es para la puerta de un hijo suyo -- y todavia no
@@ -5192,6 +5636,11 @@ wdr_d:
 ; ============================================================================
 BIT_OF_DIR: .db 1, 2, 4, 8            ; N,E,S,W
 OPP_OF_DIR: .db 2, 3, 0, 1            ; opuesta de N,E,S,W
+
+; MAX_KEY_OFFSET[k]: cuantas salas como mucho por delante de su candado
+; (LOCK_ZONE_START+k) puede colgar el ramal de la llave k -- 0 en los primeros
+; candados (aprendizaje), hasta 3 en los mas avanzados (ver plan_dungeon).
+MAX_KEY_OFFSET: .db 0,0,0,0, 1,1,1,1,1, 2,2,2,2,2, 3,3,3,3,3,3
 DR_OF_DIR:  .db 255, 0, 1, 0          ; delta de fila de N,E,S,W (-1,0,1,0)
 DC_OF_DIR:  .db 0, 1, 0, 255          ; delta de columna de N,E,S,W (0,1,0,-1)
 
@@ -5233,6 +5682,12 @@ PLAYER_SPRITE_DY: .db 0, 1, 2, 2, 2, 2, 2, 3, 4, 4, 5, 5
 ENEMY_SPRITE_N = 13
 ENEMY_SPRITE_DX: .db 0, 255, 0, 1, 254, 255, 0, 1, 2, 255, 0, 1, 0
 ENEMY_SPRITE_DY: .db 254, 255, 255, 255, 0, 0, 0, 0, 0, 1, 1, 1, 2
+
+; GHOST_SPRITE: cabeza redondeada (3 px) + cuerpo ancho (2 filas de 5) +
+; falda ondulada (3 puntos sueltos abajo)
+GHOST_SPRITE_N = 16
+GHOST_SPRITE_DX: .db 255,0,1, 254,255,0,1,2, 254,255,0,1,2, 254,0,2
+GHOST_SPRITE_DY: .db 254,254,254, 255,255,255,255,255, 0,0,0,0,0, 1,1,1
 
 ; jefe final: mismo rombo que el enemigo normal, pero de radio 3 en vez de
 ; radio 2 (25 puntos en vez de 13) para que se vea claramente mas grande --
@@ -5311,6 +5766,7 @@ score_lo: .space 1     ; puntuacion de 16 bits (0..65535) -- ver score_add
 score_hi: .space 1
 lives:    .space 1
 keys_held: .space 1
+keys_used: .space 1     ; llaves gastadas en candados en esta partida (0..20)
 seed:     .space 1
 
 dir_pos_prev: .space 1
@@ -5329,6 +5785,9 @@ pd_side:  .space 1
 pd_nxt:   .space 1
 pd_room:  .space 1
 pd_tries: .space 1
+pd_k:     .space 1     ; indice 0..19 del ramal forzado (pd_i-KEYBRANCH_START)
+pd_dmod:  .space 1     ; MAX_KEY_OFFSET[pd_k]+1 (tope exclusivo del sorteo)
+pd_d:     .space 1     ; salas por delante de su candado de las que cuelga el ramal
 
 ; --- salas persistentes (ver la nota de cabecera) ---
 door_bits: .space 18    ; NCELLS -- literal, .space no admite constantes
@@ -5351,6 +5810,9 @@ dcol: .space 1
 dx_pt: .space 1
 dy_pt: .space 1
 tmp3: .space 1
+tmp5: .space 1
+tmp6: .space 1
+key_retry: .space 1    ; intentos de alejar la llave de la entrada
 
 player_x: .space 1
 player_y: .space 1
@@ -5447,6 +5909,7 @@ try_cell: .space 1
 od_cell: .space 1
 od_dir:  .space 1
 tmp0: .space 1
+tmp4: .space 1
 tmp1: .space 1
 tmp2: .space 1
 
@@ -5496,6 +5959,18 @@ room_entry_side: .space 50      ; lado (DIR_N..DIR_W) por el que se entra a
                                  ; la 0, que no tiene entrada real -- new_game
                                  ; le pone un valor al azar aparte, solo para
                                  ; orientar su laberinto interno)
+room_timer_lo:  .space 1   ; fotogramas seguidos en la sala actual (16 bits)
+room_timer_hi:  .space 1
+ghost_threshold_lo: .space 1  ; = segundos_permitidos * GHOST_FPS (16 bits)
+ghost_threshold_hi: .space 1
+ghost_active:   .space 1
+ghost_x:        .space 1
+ghost_y:        .space 1
+ghost_origin_x: .space 1   ; punto de aparicion: donde estaba el jugador al entrar
+ghost_origin_y: .space 1
+ghost_tone_timer: .space 1
+ghost_tone_phase: .space 1 ; 0=Re, 1=Mi
+ghost_move_cnt: .space 1   ; fotogramas hasta el siguiente paso
 room_visited: .space 50         ; 0/1 por sala -- puesta a 1 la primera vez
                                  ; que se entra (cross_room_gap), para
                                  ; puntuar solo esa primera vez

@@ -106,10 +106,12 @@ elegida), así que si `prgAction` está en SAVE cualquiera de los dos guarda.
 (El editor de instrucciones campo a campo se explica en `editor.cpp` más abajo
 y en `specs.txt` §12; el detalle de `ExecPaso` en `specs.txt` §12 también.)
 
-- Cualquier (re)inicio de ejecución — entrar en RUN, entrar en ▼ CONTINUOUS,
-  o pulsación larga de ADDR en STEP — hace `cpu.reset()` (PC=0) +
-  `resetPositions()` + borra el framebuffer y la capa de texto + `g_led=0` +
-  `resetTimers()` + `resetSound()`. Entrar en ▲ STEP solo congela (sin reset).
+- Cualquier (re)inicio de ejecución — entrar en RUN desde EDIT, o pulsación
+  larga de ADDR en STEP — hace `cpu.reset()` (PC=0) + `resetPositions()` +
+  borra el framebuffer y la capa de texto + `g_led=0` + `resetTimers()` +
+  `resetSound()`. Dentro de RUN, cambiar entre ▲ STEP y ▼ CONTINUOUS **no**
+  resetea: STEP congela donde esté y CONTINUOUS sigue desde ahí (para poder
+  parar un programa, inspeccionarlo paso a paso y dejarlo seguir).
 - Volver a EDIT **no** resetea: se ve dónde quedó el PC.
 - `ExecCont`: la CPU corre por lotes (`EXEC_BATCH`) hasta HALT; el framebuffer
   se vuelca cada `FB_FLUSH_MS` (con aviso "HALT" si procede).
@@ -195,12 +197,16 @@ periféricos va en `0x06xx`.
 - **Configuración del aparato** (`OUT`/`IN`): `PORT_CFG_BRIGHTNESS` 0x0650 y
   `PORT_CFG_SOUND_EN` 0x0651 -- ajustes que antes solo se tocaban desde fuera
   del programa (ahorro de energía automático, botón BOOT). `OUT 0x0650, v` =
-  brillo 0–255, aplicado al instante (`oled.contrast(v)`) y guardado en
-  `g_screenContrast`, que sustituye a `OLED_CONTRAST_FULL` como el "pleno
-  brillo" que usa `applyScreenPower()` -- el atenuado/apagado automático por
-  inactividad sigue igual, solo cambia a qué vuelve. Se reinicia de fábrica en
-  cada `clearRuntimeOutputs()` (arranque de ejecución nueva), como el resto de
-  salidas. `OUT 0x0651, v` = activa (`v!=0`) o silencia (`v=0`) el sonido:
+  brillo 0–255, aplicado al instante (`oled.contrastFromSettings(v)`, solo
+  `SET_CONTRAST`: se probaron dos formas de bajar más el brillo, escalar
+  también `PRE-CHARGE`/`VCOMH` y un tramado por software tipo Bayer 4x4, y las
+  dos se descartaron en el panel real -- ver el comentario en `display.cpp`) y
+  guardado en `g_screenContrast`, que sustituye a `OLED_CONTRAST_FULL` como el
+  "pleno brillo" que usa `applyScreenPower()` -- el atenuado/apagado automático
+  por inactividad sigue igual, solo cambia a qué vuelve. Es una preferencia de
+  TODO el aparato: **no** se reinicia en `clearRuntimeOutputs()` (arranque de
+  ejecución nueva) -- bug real reportado, el brillo elegido en SETTINGS
+  (`sisop.asm`) se perdía al arrancar otro programa. `OUT 0x0651, v` = activa (`v!=0`) o silencia (`v=0`) el sonido:
   mismo interruptor que el botón BOOT (`g_soundMuted`), pero sin su jingle de
   reactivación (pensado para un humano, no para código) y, a diferencia del
   brillo, **no** se reinicia entre ejecuciones (es una preferencia de sesión).

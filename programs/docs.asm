@@ -488,7 +488,7 @@ t0p0: .asciiz "FILE LAYOUT\nmain.cpp: setup(),\nloop(), UI states\ncpu.cpp/.h: C
 t0p1: .asciiz "CPU MEMORY MODEL\nRAM = 64KiB, full\n16-bit addr space\nPC,SP are 16 bit\nreset: PC=0\nSP=0xFFFF, regs=0\nreset keeps RAM"
 t0p2: .asciiz "PANEL READING\nFrontPanel: HW-only,\nno UI state kept\none 74HC165 read\nper poll (esp_timer\ntask, not loop())\n2-8ms adaptive rate"
 t0p3: .asciiz "VIEW STATE MACHINE\nSW_MODE+SW_STEP ->\nEDIT+up: EditMem\nEDIT+dn: EditPrg\nRUN+up: ExecPaso\nRUN+dn: ExecCont\npure fn of switches"
-t0p4: .asciiz "RUN/RESET RULES\nEntering RUN, or\nCONT, or ADDR-long\nin STEP: cpu.reset,\nclears screen/led/\nsound/timers. EDIT\ndoes NOT reset PC"
+t0p4: .asciiz "RUN/RESET RULES\nEntering RUN or\nADDR-long in STEP:\ncpu.reset, clears\nscreen/led/sound.\nSTEP<->CONT and\nEDIT keep the PC"
 t0p5: .asciiz "PROGRAM SLOTS\n1 program = full\n64KiB RAM image.\n60 slots in 4MiB\nflash. Save ~1s\n(17 sector erases),\nload ~70ms"
 t0p6: .asciiz "PORT 0640/0641\nOUT 0640,slot loads\nit + resets CPU +\nclears screen/led/\nsound/timers/encs.\nOUT 0641,slot saves\nRAM, keeps running"
 t0p7: .asciiz "USB PROVISIONING\ncompi_send.py LOAD,\ncompi_recv.py DUMP,\n115200 baud, chunks\nof 1KiB w/ echo.\nOwn buffer: doesn't\ndisturb running prg"
@@ -528,7 +528,7 @@ t4p3: .asciiz "EditMem FIELDS\nDATA press confirms\nfield, advances.\nOn last fi
 t4p4: .asciiz "EditPrg CONTROLS\nADDR turn: pick\nslot 0-59. DATA\nturn: cycle action\nLOAD/SAVE/NEW.\nEither button press\nruns chosen action"
 t4p5: .asciiz "ExecPaso CONTROLS\nADDR turn: pick a\ntarget addr (no\nrun yet). ADDR short\npress: run to there.\nADDR long: reset.\nDATA: step 1 instr"
 t4p6: .asciiz "ExecCont\nBoth encoders and\nboth buttons pass\nstraight through to\nthe running program\nvia IN on their\nports (0600-0603)"
-t4p7: .asciiz "RUN/RESET RULES\nStart of RUN, or\nswitch to CONT, or\nADDR-long in STEP:\nfull reset (PC,SP,\nscreen,snd,timers).\nEDIT never resets"
+t4p7: .asciiz "RUN/RESET RULES\nStart of RUN or\nADDR-long in STEP:\nfull reset (PC,SP,\nscreen,snd,timers).\nSTEP<->CONT and\nEDIT keep the PC"
 
 ; --- tablas de paginas por tema ----------------------------------------------
 T0_PAGES: .dw t0p0, t0p1, t0p2, t0p3, t0p4, t0p5, t0p6, t0p7, t0p8

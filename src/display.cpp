@@ -311,4 +311,18 @@ void OledPanel::contrast(uint8_t level) {
     display_.setContrast(level);
 }
 
+// contrastFromSettings() == contrast(): DOS intentos de bajar más el brillo,
+// los dos DESCARTADOS tras probarlos en el panel real -- leer antes de
+// intentar un tercero.
+//   1) Escalar además PRE-CHARGE (0xD9) y VCOMH (0xDB) junto con SET_CONTRAST.
+//      Este panel no tolera tocar esos registros en marcha: se apagaba del
+//      todo, tanto en el atenuado automático como al mover el mando de brillo.
+//   2) Tramado (dither) por software (Bayer 4x4) por debajo de cierto brillo.
+//      Oscurecía, pero cambiaba el aspecto de lo que se ve (un patrón
+//      granulado), no solo el brillo. Se descartó por eso.
+// Con las dos vías descartadas, PORT_CFG_BRIGHTNESS es solo SET_CONTRAST.
+void OledPanel::contrastFromSettings(uint8_t level) {
+    display_.setContrast(level);
+}
+
 } // namespace compi

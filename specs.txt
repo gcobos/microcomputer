@@ -496,7 +496,7 @@ FRAMEBUFFER · gráficos (puertos 0x0000..0x03FF)
   HALT se superpone un aviso "HALT" en una esquina. En STEP no se vuelca (se
   ve la vista de depuración).
   BORRADO: se pone a 0 cada vez que se (re)inicia una ejecución (entrar en
-  RUN, o entrar en CONTINUOUS, o RESET en STEP). Durante la ejecución,
+  RUN, o RESET en STEP). Durante la ejecución,
   borrarlo es cosa del programa (OUT 0 a los puertos).
 
 TEXTO · rejilla de caracteres (puertos 0x0400..0x04FF)
@@ -705,18 +705,22 @@ CONFIGURACIÓN DEL APARATO (puertos 0x0650 / 0x0651)
   exponen para que el propio programa en ejecución los pueda pedir.
 
     0x0650  PORT_CFG_BRIGHTNESS  OUT: brillo 0 (más tenue) .. 255 (máximo) ->
-                                  oled.contrast(valor) al instante. Además
-                                  reemplaza a OLED_CONTRAST_FULL como el
-                                  brillo "a pleno uso" (g_screenContrast,
-                                  main.cpp): el atenuado/apagado automático
-                                  por inactividad sigue funcionando igual,
-                                  solo que "pleno" pasa a ser este valor
-                                  hasta la siguiente ejecución. Se reinicia
-                                  al de fábrica en cada arranque de ejecución
-                                  nueva (clearRuntimeOutputs(), como
-                                  pantalla/LED/sonido/temporizadores) -- un
-                                  programa no le deja el brillo cambiado al
-                                  siguiente.
+                                  oled.contrastFromSettings(valor) al
+                                  instante, solo SET_CONTRAST -- se probaron
+                                  PRE-CHARGE/VCOMH (0xD9/0xDB) y un tramado
+                                  por software para bajar mas el brillo; los
+                                  dos se descartaron en el panel real (ver
+                                  display.cpp). Ademas reemplaza a
+                                  OLED_CONTRAST_FULL como el brillo "a pleno
+                                  uso" (g_screenContrast, main.cpp): el
+                                  atenuado/apagado automatico por inactividad
+                                  sigue funcionando igual, solo que "pleno"
+                                  pasa a ser este valor. Es una preferencia de
+                                  TODO el aparato, como el sonido: NO se
+                                  reinicia en clearRuntimeOutputs() al
+                                  arrancar otra ejecucion (bug real reportado:
+                                  el brillo de SETTINGS se perdia al arrancar
+                                  otro programa).
                                   IN: eco del último valor escrito.
     0x0651  PORT_CFG_SOUND_EN    OUT: 0 = silencia, !=0 = reactiva -- MISMO
                                   interruptor general que el botón BOOT
@@ -805,7 +809,7 @@ PINES USADOS (constantes en src/main.cpp)
   IO0   PIN_HC165_CLOCK   74HC165 CP (reloj)
   IO1   PIN_HC165_DATA    74HC165 Q7 (salida serie -> micro)
   IO4   SPI SCK           flash CLK        (por defecto de SPI.begin() en C3)
-  IO5   SPI MISO          flash DO         (por defecto)
+  IO5   SPI MISO          flash DO         (por defecto; + pull-up 10 kΩ a 3V3)
   IO6   SPI MOSI          flash DI         (por defecto)
   IO7   PIN_FLASH_CS      flash /CS        (+ pull-up 10 kΩ a 3V3)
   IO8   PIN_LED          LED azul de a bordo. ACTIVO A NIVEL BAJO
@@ -832,8 +836,12 @@ PINES PROHIBIDOS
   IO18, IO19       USB nativo (no salen a los pads del SuperMini).
 
 FLASH SPI (W25Q32, SOIC-8)
-  1 /CS  -> IO7 (+ 10 kΩ a 3V3)     2 DO -> IO5     5 DI -> IO6     6 CLK -> IO4
-  3 /WP  -> 3V3     7 /HOLD -> 3V3     8 VCC -> 3V3 (+100 nF)     4 GND -> GND
+  1 /CS  -> IO7 (+ 10 kΩ a 3V3)     2 DO -> IO5 (+ 10 kΩ a 3V3)     5 DI -> IO6
+  6 CLK -> IO4     3 /WP  -> 3V3     7 /HOLD -> 3V3 (directos, sin resistencia)
+  8 VCC -> 3V3 (+100 nF y +10 µF cerámicos a GND, pegados al chip)     4 GND -> GND
+  El 10 µF y el pull-up de MISO se añadieron al investigar cargas que
+  llegaban cortadas a 0x00. La causa real eran vías rotas en la breakout
+  de la flash; ver docs/hardware.md §4.
   El driver llama a SPI.begin() SIN argumentos: usa los pines por defecto del
   C3 (SCK=4, MISO=5, MOSI=6).
 
@@ -974,13 +982,14 @@ ADDR en ExecPaso).
 BUCLE
   1. provisionPoll()  (§7)   ;   el panel lo muestrea un esp_timer, NO loop() (§16)
   2. exec = panel.ejecutar() ; abajo = panel.swAbajo() ; deriva `view`
-  3. FLANCOS que (re)inician una ejecución  ->  reset:
+  3. FLANCO que (re)inicia una ejecución  ->  reset:
        - entrar en RUN (exec && !prevExec)
-       - dentro de RUN, pasar a ▼ (CONTINUOUS)
      acción: cpu.reset() (PC=0, SP=0xFFFF, regs=0) ; panel.resetPositions() ;
              memset(g_fb, 0) ; running = abajo
-     Pasar a ▲ (STEP) dentro de RUN: solo running = false (NO reset:
-     congela para inspeccionar / seguir paso a paso desde donde quedó).
+     Dentro de RUN, cambiar entre ▲ (STEP) y ▼ (CONTINUOUS) NO resetea:
+     solo running = abajo (STEP congela donde quedó, CONTINUOUS sigue desde
+     ahí) -- para poder parar un programa, depurarlo paso a paso y dejarlo
+     seguir.
   4. Según la vista:
 
   EditMem — SELECTOR DE MNEMÓNICO (include/editor.h, src/editor.cpp)
@@ -1159,7 +1168,8 @@ BUCLE
      tiempo desde la última actividad del panel.
 
 REGLAS
-  - Los programas SIEMPRE empiezan a ejecutarse en PC = 0. Cualquier
+  - Los programas SIEMPRE empiezan a ejecutarse en PC = 0 al entrar en RUN
+    (cambiar entre STEP y CONTINUOUS dentro de RUN no reinicia). Cualquier
     (re)inicio de ejecución resetea la CPU y borra el framebuffer, pero NO el
     resto de la RAM (para volver al estado inicial, recargar el slot).
   - Volver a EDIT NO resetea: la CPU queda congelada donde estaba, se ve
@@ -1516,7 +1526,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   de I2C) la CPU no avanza, así que el rendimiento efectivo es ~40%. Subir
   FB_FLUSH_MS da más CPU al programa a costa de refresco.
 - El framebuffer y la capa de texto se borran en cada (re)inicio de ejecución
-  (entrar en RUN, entrar en CONTINUOUS, o RESET en STEP).
+  (entrar en RUN o RESET en STEP).
 - PANTALLA: gráficos (0x0000..0x03FF), texto (0x0400..0x04FF) y atributos de
   texto (0x0500..0x05FF) van juntos al principio del espacio de puertos. El
   texto es una rejilla de caracteres 21x8 (fuente 6x8) que se compone ENCIMA

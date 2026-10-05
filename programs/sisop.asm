@@ -271,45 +271,112 @@ on_back:
 ob_ret:
     RET
 
-; --- settings_dial_dat: gira DATOS -> sube/baja PORT_CFG_BRIGHTNESS
-; (BRIGHT_STEP por detente, saturando en 0/255 en vez de dar la vuelta). No
-; guarda brillo aparte: PORT_CFG_BRIGHTNESS ya hace de "memoria" (IN devuelve
-; el ultimo valor escrito, ver iomap.h), asi que siempre se parte del que hay
-; puesto de verdad. El efecto se ve al momento en la pantalla real -- no
-; hace falta pintar un numero ni una barra para saber que esta pasando.
+; --- settings_dial_dat: gira DATOS -> sube/baja PORT_CFG_BRIGHTNESS. Un paso
+; de BRIGHT_STEP por CADA detente girado (igual que brillo_cal.asm), saturando
+; en 0/255: antes solo se aplicaba un paso por fotograma aunque el encoder
+; hubiera dado varios detentes. No guarda brillo aparte: PORT_CFG_BRIGHTNESS ya
+; hace de "memoria" (IN devuelve el ultimo valor escrito, ver iomap.h).
 settings_dial_dat:
     IN  AL,(P_DAT_POS)
     STA [tmp0],AL
     LDA BL,[dat_pos_prev]
-    SUB AL,BL
+    SUB AL,BL                   ; AL = giro de este fotograma (con signo)
     LDA CL,[tmp0]
     STA [dat_pos_prev],CL
     CMP AL,#0
     JMPZ sdd_ret
 
+    STA [sdd_cnt],AL            ; se guarda ANTES del AND de signo (que lo destruye)
     AND AL,#0x80
-    JMPNZ sdd_down
+    JMPNZ sdd_neg
+sdd_up_l:
+    CALL bright_up
+    LDA AL,[sdd_cnt]
+    SUB AL,#1
+    STA [sdd_cnt],AL
+    JMPNZ sdd_up_l
+    CALL redraw_bright
+    JMP sdd_ret
 
+sdd_neg:
+    LDA AL,[sdd_cnt]
+    NOT AL
+    ADD AL,#1                   ; AL = numero de detentes hacia abajo
+    STA [sdd_cnt],AL
+sdd_dn_l:
+    CALL bright_down
+    LDA AL,[sdd_cnt]
+    SUB AL,#1
+    STA [sdd_cnt],AL
+    JMPNZ sdd_dn_l
+    CALL redraw_bright
+sdd_ret:
+    RET
+
+; --- bright_up / bright_down: un paso de BRIGHT_STEP, saturando en 255 / 0 --
+bright_up:
     IN  AL,(P_CFG_BRIGHTNESS)
     ADD AL,#BRIGHT_STEP
-    JMPC sdd_sat255
-    JMP sdd_apply
-sdd_sat255:
+    JMPC bu_sat
+    JMP bu_apply
+bu_sat:
     MOV AL,#255
-    JMP sdd_apply
+bu_apply:
+    OUT (P_CFG_BRIGHTNESS),AL
+    RET
 
-sdd_down:
+bright_down:
     IN  AL,(P_CFG_BRIGHTNESS)
     CMP AL,#BRIGHT_STEP
-    JMPC sdd_sat0           ; AL < BRIGHT_STEP -> no cabe una resta entera
+    JMPC bd_sat                 ; AL < BRIGHT_STEP -> no cabe la resta
     SUB AL,#BRIGHT_STEP
-    JMP sdd_apply
-sdd_sat0:
+    JMP bd_apply
+bd_sat:
     MOV AL,#0
-
-sdd_apply:
+bd_apply:
     OUT (P_CFG_BRIGHTNESS),AL
-sdd_ret:
+    RET
+
+; --- redraw_bright: "BRIGHT nnn" en la fila 4 de SETTINGS, con el valor REAL
+; leido de PORT_CFG_BRIGHTNESS -- se ve si el valor cambia aunque la pantalla
+; apenas lo refleje.
+redraw_bright:
+    IN  AL,(P_CFG_BRIGHTNESS)
+    STA [bv_pv],AL
+    MOV DL,#0
+bv_h:
+    LDA AL,[bv_pv]
+    CMP AL,#100
+    JMPC bv_hd
+    SUB AL,#100
+    STA [bv_pv],AL
+    ADD DL,#1
+    JMP bv_h
+bv_hd:
+    MOV AL,DL
+    ADD AL,#'0'
+    STA [bv_buf+7],AL
+    MOV DL,#0
+bv_t:
+    LDA AL,[bv_pv]
+    CMP AL,#10
+    JMPC bv_td
+    SUB AL,#10
+    STA [bv_pv],AL
+    ADD DL,#1
+    JMP bv_t
+bv_td:
+    MOV AL,DL
+    ADD AL,#'0'
+    STA [bv_buf+8],AL
+    LDA AL,[bv_pv]
+    ADD AL,#'0'
+    STA [bv_buf+9],AL
+    MOV BL,#lo(bv_buf)
+    MOV BH,#hi(bv_buf)
+    MOV CL,#1
+    MOV CH,#4
+    CALL puts
     RET
 
 ; --- settings_press_dat: pulsa DATOS -> alterna PORT_CFG_SOUND_EN (activa/
@@ -522,6 +589,7 @@ rs_snd_puts:
     MOV CL,#1
     MOV CH,#7
     CALL puts
+    CALL redraw_bright
     RET
 
 ; --- puts:  BL/BH = puntero asciiz,  CL = col,  CH = fila -------------------
@@ -614,8 +682,9 @@ f0_n1:   .asciiz "F-ZERO"
 f0_n2:   .asciiz "RAYCAST"
 f0_n3:   .asciiz "SHAMUS"
 f0_n4:   .asciiz "DODGE"
-F0_SLOTS: .db 2, 7, 9, 13, 4
-F0_NAMES: .dw f0_n0, f0_n1, f0_n2, f0_n3, f0_n4
+f0_n5:   .asciiz "SKATE"
+F0_SLOTS: .db 2, 7, 9, 13, 4, 20
+F0_NAMES: .dw f0_n0, f0_n1, f0_n2, f0_n3, f0_n4, f0_n5
 
 ; --- carpeta 1: PROGRAMAS ---------------------------------------------------
 f1_name: .asciiz "PROGRAMS"
@@ -645,8 +714,9 @@ f3_n1:   .asciiz "STARS"
 f3_n2:   .asciiz "MUSIC"
 f3_n3:   .asciiz "CHESSBOARD"
 f3_n4:   .asciiz "IMAGE"
-F3_SLOTS: .db 3, 5, 8, 12, 18
-F3_NAMES: .dw f3_n0, f3_n1, f3_n2, f3_n3, f3_n4
+f3_n5:   .asciiz "BIRD FLOCK"
+F3_SLOTS: .db 3, 5, 8, 12, 18, 19
+F3_NAMES: .dw f3_n0, f3_n1, f3_n2, f3_n3, f3_n4, f3_n5
 
 ; --- carpeta 4: DOCUMENTATION -------------------------------------------------
 ; Un solo programa (docs.asm, slot 16 -- visor de la documentacion del
@@ -672,7 +742,7 @@ F5_NAMES: .dw f5_n0
 
 ; --- tablas de nivel superior (indexadas por numero de carpeta 0..5) --------
 FOLDER_NAMES:       .dw f0_name, f1_name, f2_name, f3_name, f4_name, f5_name
-FOLDER_COUNTS:      .db 5, 2, 4, 5, 1, 1
+FOLDER_COUNTS:      .db 6, 2, 4, 6, 1, 1
 FOLDER_SLOT_TABLES: .dw F0_SLOTS, F1_SLOTS, F2_SLOTS, F3_SLOTS, F4_SLOTS, F5_SLOTS
 FOLDER_NAME_TABLES: .dw F0_NAMES, F1_NAMES, F2_NAMES, F3_NAMES, F4_NAMES, F5_NAMES
 
@@ -688,6 +758,9 @@ dat_pos_prev:     .space 1
 dat_btn_prev:     .space 1
 dir_btn_prev:     .space 1
 tmp0:             .space 1
+sdd_cnt:          .space 1     ; detentes pendientes de settings_dial_dat
+bv_pv:            .space 1
+bv_buf:           .asciiz "BRIGHT 000"
 i:                .space 1
 nb_lo:            .space 1
 nb_hi:            .space 1

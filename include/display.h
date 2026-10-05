@@ -31,9 +31,12 @@ public:
     // Ahorro de energía. La OLED consume ~10-15 mA encendida; apagarla por
     // inactividad es de lo que más alarga la batería. `power(false)` manda
     // DISPLAY OFF (baja a µA, conserva el contenido); `power(true)` la reenciende
-    // (hay que redibujar). `contrast()` la atenúa sin apagarla (0x00..0xFF).
+    // (hay que redibujar). `contrast()` la atenúa sin apagarla (0x00..0xFF, solo SET_CONTRAST).
     void power(bool on);
     void contrast(uint8_t level);
+    // Igual que contrast(). Ver display.cpp: se probaron PRE-CHARGE/VCOMH y un
+    // tramado por software para oscurecer más; los dos se descartaron.
+    void contrastFromSettings(uint8_t level);
 
 private:
     void renderEditMem(const Cpu& cpu, const UiState& ui);

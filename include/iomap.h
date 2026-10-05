@@ -207,19 +207,24 @@ constexpr uint16_t PORT_PROG_SAVE = 0x0641;
 //   0x0650 PORT_CFG_BRIGHTNESS  OUT: brillo de la pantalla, 0 (más tenue) a
 //                                255 (máximo) -- se aplica al instante,
 //                                directo al contraste real de la OLED (ver
-//                                oled.contrast() en display.cpp). Además
+//                                oled.contrastFromSettings() en display.cpp,
+//                                solo SET_CONTRAST: se probaron PRE-CHARGE/
+//                                VCOMH y un tramado por software para bajar
+//                                más el brillo, y se descartaron en el panel
+//                                real). Además
 //                                queda como el nuevo brillo "a pleno uso":
 //                                el atenuado automático por inactividad
 //                                (specs.txt, ahorro de energía) sigue
 //                                funcionando igual, y al recuperar el brillo
 //                                pleno (por actividad del panel, o porque
 //                                sigue corriendo el programa) vuelve a este
-//                                valor en vez del de fábrica. Se reinicia al
-//                                de fábrica (OLED_CONTRAST_FULL, main.cpp)
-//                                en cada arranque de ejecución nueva -- ver
-//                                clearRuntimeOutputs() -- para que un
-//                                programa no le deje el brillo cambiado al
-//                                siguiente.
+//                                valor en vez del de fábrica. Es una
+//                                preferencia de TODO el aparato, igual que
+//                                PORT_CFG_SOUND_EN: NO se reinicia en cada
+//                                arranque de ejecución nueva (bug real
+//                                reportado: el brillo elegido en SETTINGS se
+//                                perdía al arrancar otro programa; ver
+//                                clearRuntimeOutputs() en main.cpp).
 //                                IN: eco del último valor escrito (de
 //                                fábrica, el de OLED_CONTRAST_FULL).
 //   0x0651 PORT_CFG_SOUND_EN    OUT: 0 = silencia el sonido, distinto de 0 =
