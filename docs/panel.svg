@@ -1,144 +1,132 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 648" font-family="'Segoe UI',system-ui,sans-serif">
-  <rect x="0" y="0" width="1000" height="648" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 783.9" font-family="'Segoe UI',system-ui,sans-serif">
+  <rect x="0" y="0" width="1000" height="783.9" fill="#ffffff"/>
   <defs>
     <radialGradient id="knob" cx="38%" cy="34%" r="72%">
-      <stop offset="0%" stop-color="#f0f0f2"/>
-      <stop offset="58%" stop-color="#d7d7db"/>
-      <stop offset="100%" stop-color="#bababf"/>
+      <stop offset="0%" stop-color="#f0f0f2"/><stop offset="58%" stop-color="#d7d7db"/><stop offset="100%" stop-color="#bababf"/>
     </radialGradient>
     <linearGradient id="panelg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#efeff1"/>
-      <stop offset="100%" stop-color="#e1e1e4"/>
+      <stop offset="0%" stop-color="#efeff1"/><stop offset="100%" stop-color="#e1e1e4"/>
     </linearGradient>
   </defs>
   <style>
-    .name  { font-size:17px; font-weight:700; fill:#26262b; letter-spacing:.5px; }
-    .act   { font-size:11.5px; fill:#5a5a62; }
-    .tiny  { font-size:9.5px;  fill:#9a9aa2; }
-    .state { font-size:12px; font-weight:600; fill:#26262b; }
-    .sw    { font-size:10px; fill:#8a8a92; letter-spacing:1.5px; }
-    .oledtxt { font-family:ui-monospace,Consolas,'DejaVu Sans Mono',monospace; font-size:15px; fill:#cfe8e0; }
+    .name  { font-size:15px; font-weight:700; fill:#26262b; letter-spacing:.5px; }
+    .act   { font-size:10.5px; fill:#5a5a62; }
+    .tiny  { font-size:9px;  fill:#9a9aa2; }
+    .state { font-size:9.5px; font-weight:700; fill:#26262b; }
+    .sw    { font-size:9px; fill:#8a8a92; letter-spacing:1.2px; }
+    .oledtxt { font-family:ui-monospace,Consolas,'DejaVu Sans Mono',monospace; font-size:12.5px; fill:#cfe8e0; white-space:pre; }
     .lg    { font-size:11px; fill:#3a3a40; }
     .lgh   { font-size:11px; font-weight:700; fill:#26262b; }
   </style>
+  <!-- generado por un script a partir del layout real de la caja -->
+  <text x="40" y="34" font-size="20" font-weight="800" fill="#2c2c32">compi · control panel</text>
+  <text x="40" y="52" font-size="11.5" fill="#7b7b82">emulated 8-bit microcomputer — ESP32-C3 · front view of the real case</text>
+  <text x="960" y="34" text-anchor="end" class="tiny">docs/panel.svg</text>
 
-  <rect x="14" y="14" width="972" height="620" rx="18" fill="url(#panelg)" stroke="#adadb3" stroke-width="2"/>
-  <rect x="28" y="28" width="944" height="592" rx="11" fill="none" stroke="#d2d2d7"/>
-  <g fill="#c4c4c9" stroke="#a0a0a6">
-    <circle cx="46" cy="46" r="6"/><circle cx="954" cy="46" r="6"/>
-    <circle cx="46" cy="602" r="6"/><circle cx="954" cy="602" r="6"/>
+  <rect x="173.0" y="60.0" width="654.5" height="521.9" rx="71.4" fill="url(#panelg)" stroke="#8f8f96" stroke-width="2.5"/>
+  <rect x="183.2" y="70.2" width="634.1" height="501.5" rx="61.2" fill="none" stroke="#b4b4ba" stroke-width="1.5"/>
+  <!-- SW_MODE: deslizante horizontal "EDIT <-SW_MODE-> RUN" -->
+  <rect x="266.5" y="75.3" width="71.4" height="30.6" rx="3" fill="#c6c6ca" stroke="#5f5f66" stroke-width="1.5"/>
+  <rect x="271.5" y="87.6" width="61.4" height="6" rx="3" fill="#47474c"/>
+  <rect x="270.5" y="79.3" width="30.0" height="22.6" rx="3" fill="#5a5a60" stroke="#37373b"/>
+  <text x="261.5" y="94.6" text-anchor="end" class="state">EDIT</text>
+  <text x="342.9" y="94.6" class="state">RUN</text>
+  <text x="302.2" y="119.9" text-anchor="middle" class="sw">SW_MODE</text>
+  <!-- SW_STEP: deslizante horizontal "SINGLE <-SW_STEP-> CONTINUOUS" -->
+  <rect x="662.6" y="75.3" width="71.4" height="30.6" rx="3" fill="#c6c6ca" stroke="#5f5f66" stroke-width="1.5"/>
+  <rect x="667.6" y="87.6" width="61.4" height="6" rx="3" fill="#47474c"/>
+  <rect x="666.6" y="79.3" width="30.0" height="22.6" rx="3" fill="#5a5a60" stroke="#37373b"/>
+  <text x="657.6" y="94.6" text-anchor="end" class="state">SINGLE</text>
+  <text x="739.0" y="94.6" class="state">CONTINUOUS</text>
+  <text x="698.3" y="119.9" text-anchor="middle" class="sw">SW_STEP</text>
+  <!-- encoder ADDR -->
+  <rect x="237.6" y="184.1" width="96.9" height="96.9" rx="3" fill="#dcdce0" stroke="#5f5f66" stroke-width="1.5"/>
+  <g transform="translate(286.1,232.6)">
+    <circle r="38.8" fill="url(#knob)" stroke="#8f8f96" stroke-width="1.5"/>
+    <circle r="38.8" fill="none" stroke="#8f8f96" stroke-width="4" stroke-dasharray="2 4"/>
+    <circle r="27.1" fill="#e7e7ea" stroke="#c2c2c8"/>
+    <line x1="0" y1="-3" x2="0" y2="-25.2" stroke="#555" stroke-width="4" stroke-linecap="round"/>
   </g>
-
-  <text x="68" y="54" font-size="21" font-weight="800" fill="#2c2c32">compi · control panel</text>
-  <text x="68" y="74" font-size="11.5" fill="#7b7b82">emulated 8-bit microcomputer — ESP32-C3</text>
-  <text x="922" y="52" text-anchor="end" class="tiny">docs/panel.svg</text>
-
-  <!-- OLED -->
-  <rect x="326" y="92" width="348" height="186" rx="9" fill="#17181a" stroke="#3c3c40" stroke-width="3"/>
-  <rect x="340" y="104" width="320" height="162" fill="#04070a"/>
-  <g class="oledtxt">
-    <text x="347" y="119">0005 OP</text>
-    <text x="347" y="139"> 0000 MOV AL,#0x2A</text>
-    <text x="347" y="159"> 0002 MOV BL,#0x03</text>
-    <rect x="340" y="165" width="320" height="20" fill="#cfe8e0"/>
-    <text x="347" y="179" fill="#04070a">&gt;0005 ADD AL,[0x0020]</text>
-    <text x="347" y="199"> 0008 STA [0x0021],AL</text>
-    <text x="347" y="219"> 000B HALT</text>
-    <text x="347" y="239">cur 0005 = 0x2A</text>
-    <text x="347" y="259">PC 0000  SP FFFF ----</text>
+  <text x="286.1" y="303.0" text-anchor="middle" class="name">ADDR</text>
+  <text x="286.1" y="319.0" text-anchor="middle" class="act">turn — cursor / slot</text>
+  <text x="286.1" y="333.0" text-anchor="middle" class="act">press — cursor −1 / reset</text>
+  <text x="286.1" y="347.0" text-anchor="middle" class="tiny">running → IN 0x0600 · 0x0601</text>
+  <!-- encoder DATA -->
+  <rect x="669.4" y="184.1" width="96.9" height="96.9" rx="3" fill="#dcdce0" stroke="#5f5f66" stroke-width="1.5"/>
+  <g transform="translate(717.9,232.6)">
+    <circle r="38.8" fill="url(#knob)" stroke="#8f8f96" stroke-width="1.5"/>
+    <circle r="38.8" fill="none" stroke="#8f8f96" stroke-width="4" stroke-dasharray="2 4"/>
+    <circle r="27.1" fill="#e7e7ea" stroke="#c2c2c8"/>
+    <line x1="0" y1="-3" x2="0" y2="-25.2" stroke="#555" stroke-width="4" stroke-linecap="round"/>
   </g>
-  <text x="500" y="296" text-anchor="middle" class="tiny">OLED SH1106 · 128 × 64 · I2C</text>
-
-  <!-- LED de a bordo (GPIO8), salida del programa emulado -->
-  <circle cx="712" cy="108" r="8" fill="#2ea8ff" stroke="#1f6fb0" stroke-width="1.5"/>
-  <circle cx="709" cy="105" r="2.5" fill="#bfe4ff"/>
-  <text x="712" y="130" text-anchor="middle" class="tiny">onboard LED</text>
-  <text x="712" y="142" text-anchor="middle" class="tiny">OUT (0x0610)</text>
-
-  <!-- encoder izquierdo: DIRECCIÓN -->
-  <g transform="translate(150,180)">
-    <circle r="60" fill="url(#knob)" stroke="#a6a6ac" stroke-width="2"/>
-    <circle r="60" fill="none" stroke="#8f8f96" stroke-width="7" stroke-dasharray="3 6"/>
-    <circle r="43" fill="#e7e7ea" stroke="#c2c2c8"/>
-    <line x1="0" y1="-4" x2="0" y2="-41" stroke="#555" stroke-width="6" stroke-linecap="round"/>
-    <circle r="6" fill="#666"/>
+  <text x="717.9" y="303.0" text-anchor="middle" class="name">DATA</text>
+  <text x="717.9" y="319.0" text-anchor="middle" class="act">turn — edit field / action</text>
+  <text x="717.9" y="333.0" text-anchor="middle" class="act">press — confirm / do / 1 step</text>
+  <text x="717.9" y="347.0" text-anchor="middle" class="tiny">running → IN 0x0602 · 0x0603</text>
+  <!-- OLED en su marco -->
+  <rect x="371.9" y="111.0" width="256.7" height="221.0" rx="4" fill="#2a2b2e" stroke="#5f5f66" stroke-width="1.5"/>
+  <rect x="380.4" y="133.1" width="239.7" height="139.4" fill="#04070a" stroke="#17181a"/>
+  <g class="oledtxt" xml:space="preserve">
+    <text x="386.4" y="148.1">0005 OP</text>
+    <text x="386.4" y="164.7"> 0000 MOV AL,#0x2A</text>
+    <text x="386.4" y="181.3"> 0002 MOV BL,#0x03</text>
+    <rect x="380.4" y="185.9" width="239.7" height="16" fill="#cfe8e0"/>
+    <text x="386.4" y="197.9" fill="#04070a">&gt;0005 ADD AL,[0x0020]</text>
+    <text x="386.4" y="214.5"> 0008 STA [0x0021],AL</text>
+    <text x="386.4" y="231.1"> 000B HALT</text>
+    <text x="386.4" y="247.7">cur 0005 = 0x2A</text>
+    <text x="386.4" y="264.3">PC 0000 SP FFFF ----</text>
   </g>
-  <text x="150" y="268" text-anchor="middle" class="name">ADDR</text>
-  <text x="150" y="289" text-anchor="middle" class="act">turn — move cursor / pick slot</text>
-  <text x="150" y="305" text-anchor="middle" class="act">press — cursor −1  /  reset (in STEP)</text>
-  <text x="150" y="323" text-anchor="middle" class="tiny">when running → IN ports 0x0600 · 0x0601</text>
-
-  <!-- encoder derecho: DATOS -->
-  <g transform="translate(850,180)">
-    <circle r="60" fill="url(#knob)" stroke="#a6a6ac" stroke-width="2"/>
-    <circle r="60" fill="none" stroke="#8f8f96" stroke-width="7" stroke-dasharray="3 6"/>
-    <circle r="43" fill="#e7e7ea" stroke="#c2c2c8"/>
-    <line x1="0" y1="-4" x2="0" y2="-41" stroke="#555" stroke-width="6" stroke-linecap="round"/>
-    <circle r="6" fill="#666"/>
+  <text x="500.2" y="303.1" text-anchor="middle" class="tiny" fill="#9a9aa2">OLED SH1106 · 128 × 64</text>
+  <!-- LED de a bordo y rejilla del zumbador -->
+  <circle cx="441.6" cy="384.7" r="10.2" fill="#2ea8ff" stroke="#1f6fb0" stroke-width="1.5"/>
+  <circle cx="438.6" cy="381.7" r="2.5" fill="#bfe4ff"/>
+  <text x="423.40000000000003" y="382.7" text-anchor="end" class="name" style="font-size:12px">LED</text>
+  <text x="423.40000000000003" y="395.7" text-anchor="end" class="tiny">OUT 0x0610</text>
+  <rect x="484.1" y="349.0" width="34.0" height="6.8" rx="3.4" fill="#8f8f97" stroke="#5f5f66"/>
+  <rect x="473.9" y="364.3" width="61.2" height="6.8" rx="3.4" fill="#8f8f97" stroke="#5f5f66"/>
+  <rect x="463.7" y="381.3" width="74.8" height="6.8" rx="3.4" fill="#8f8f97" stroke="#5f5f66"/>
+  <rect x="473.9" y="396.6" width="61.2" height="6.8" rx="3.4" fill="#8f8f97" stroke="#5f5f66"/>
+  <rect x="484.1" y="411.90000000000003" width="34.0" height="6.8" rx="3.4" fill="#8f8f97" stroke="#5f5f66"/>
+  <text x="548.5" y="382.7" class="name" style="font-size:12px">SOUND</text>
+  <text x="548.5" y="395.7" class="tiny">piezo · OUT 0x0630–0x0633</text>
+  <!-- lenguetas flexibles recortadas en la tapa: pulsan RESET y BOOT de la SuperMini -->
+  <text x="446.9" y="483.3" text-anchor="end" class="name" style="font-size:12px">RESET · MUTE</text>
+  <text x="446.9" y="496.3" text-anchor="end" class="tiny">press tabs cut in the case, over</text>
+  <text x="446.9" y="508.3" text-anchor="end" class="tiny">the SuperMini RESET and BOOT buttons</text>
+  <text x="446.9" y="520.3" text-anchor="end" class="tiny">BOOT = sound MUTE / UNMUTE</text>
+  <g fill="none" stroke="#3a3a40" stroke-width="2.2" stroke-linecap="round">
+    <line x1="462.0" y1="451.0" x2="462.0" y2="488.4"/>
+    <line x1="496.0" y1="451.0" x2="496.0" y2="488.4"/>
+    <line x1="530.0" y1="451.0" x2="530.0" y2="488.4"/>
+    <path d="M462.0,488.4 Q462.0,498.6 472.2,500.3"/><path d="M496.0,488.4 Q496.0,498.6 485.8,500.3"/>
+    <path d="M496.0,488.4 Q496.0,498.6 506.2,500.3"/><path d="M530.0,488.4 Q530.0,498.6 519.8,500.3"/>
+    <circle cx="479.0" cy="510.5" r="10.2"/><circle cx="513.0" cy="510.5" r="10.2"/>
   </g>
-  <text x="850" y="268" text-anchor="middle" class="name">DATA</text>
-  <text x="850" y="289" text-anchor="middle" class="act">turn — edit field / pick action</text>
-  <text x="850" y="305" text-anchor="middle" class="act">press — confirm field  /  do  /  1 step</text>
-  <text x="850" y="323" text-anchor="middle" class="tiny">when running → IN ports 0x0602 · 0x0603</text>
-
-  <!-- switches -->
-  <g>
-    <text x="415" y="316" text-anchor="middle" class="state">EDIT</text>
-    <g transform="translate(415,372)">
-      <rect x="-19" y="-24" width="38" height="48" rx="9" fill="#c6c6ca" stroke="#96969c" stroke-width="1.5"/>
-      <rect x="-11" y="-30" width="22" height="13" rx="3" fill="#b2b2b7" stroke="#8c8c92"/>
-      <line x1="0" y1="-15" x2="0" y2="-45" stroke="#37373b" stroke-width="8" stroke-linecap="round"/>
-      <circle cx="0" cy="-45" r="9" fill="#47474c"/>
-    </g>
-    <text x="415" y="410" text-anchor="middle" class="state">RUN</text>
-    <text x="415" y="428" text-anchor="middle" class="sw">SW_MODE</text>
-  </g>
-  <g>
-    <text x="585" y="316" text-anchor="middle" class="state">▲</text>
-    <g transform="translate(585,372)">
-      <rect x="-19" y="-24" width="38" height="48" rx="9" fill="#c6c6ca" stroke="#96969c" stroke-width="1.5"/>
-      <rect x="-11" y="-30" width="22" height="13" rx="3" fill="#b2b2b7" stroke="#8c8c92"/>
-      <line x1="0" y1="-15" x2="0" y2="-45" stroke="#37373b" stroke-width="8" stroke-linecap="round"/>
-      <circle cx="0" cy="-45" r="9" fill="#47474c"/>
-    </g>
-    <text x="585" y="410" text-anchor="middle" class="state">▼</text>
-    <text x="585" y="428" text-anchor="middle" class="sw">SW_STEP</text>
-  </g>
-
-  <!-- salida de sonido: rejilla de agujeros sobre el zumbador piezo -->
-  <g>
-    <rect x="772" y="342" width="120" height="62" rx="10" fill="#e4e4e8" stroke="#cfcfd5"/>
-    <g fill="#8f8f97">
-      <circle cx="788" cy="358" r="3.1"/><circle cx="803" cy="358" r="3.1"/><circle cx="818" cy="358" r="3.1"/><circle cx="833" cy="358" r="3.1"/><circle cx="848" cy="358" r="3.1"/><circle cx="863" cy="358" r="3.1"/><circle cx="878" cy="358" r="3.1"/>
-      <circle cx="788" cy="373" r="3.1"/><circle cx="803" cy="373" r="3.1"/><circle cx="818" cy="373" r="3.1"/><circle cx="833" cy="373" r="3.1"/><circle cx="848" cy="373" r="3.1"/><circle cx="863" cy="373" r="3.1"/><circle cx="878" cy="373" r="3.1"/>
-      <circle cx="788" cy="388" r="3.1"/><circle cx="803" cy="388" r="3.1"/><circle cx="818" cy="388" r="3.1"/><circle cx="833" cy="388" r="3.1"/><circle cx="848" cy="388" r="3.1"/><circle cx="863" cy="388" r="3.1"/><circle cx="878" cy="388" r="3.1"/>
-    </g>
-    <text x="832" y="420" text-anchor="middle" class="name">SOUND</text>
-    <text x="832" y="436" text-anchor="middle" class="act">piezo buzzer — OUT 0x0630–0x0633</text>
-  </g>
+  <!-- ON/OFF: deslizante vertical -->
+  <rect x="575.9" y="459.5" width="35.7" height="73.1" rx="3" fill="#c6c6ca" stroke="#5f5f66" stroke-width="1.5"/>
+  <rect x="590.8" y="464.5" width="6" height="63.1" rx="3" fill="#47474c"/>
+  <rect x="579.9" y="463.5" width="27.7" height="30.7" rx="3" fill="#5a5a60" stroke="#37373b"/>
+  <text x="619.6" y="469.5" class="state">ON</text>
+  <text x="619.6" y="530.6" class="state">OFF</text>
 
   <!-- leyenda: la rejilla 2x2 de vistas -->
-  <rect x="40" y="448" width="920" height="160" rx="10" fill="#f5f5f7" stroke="#dedee3"/>
-  <text x="58" y="470" class="lgh">The 4 views — by the two switches</text>
-
-  <line x1="230" y1="480" x2="230" y2="598" stroke="#d7d7dc"/>
-  <line x1="595" y1="480" x2="595" y2="598" stroke="#d7d7dc"/>
-  <line x1="58"  y1="522" x2="944" y2="522" stroke="#d7d7dc"/>
-  <line x1="58"  y1="560" x2="944" y2="560" stroke="#d7d7dc"/>
-
-  <text x="410" y="500" text-anchor="middle" class="lgh">SW_MODE ▲  EDIT</text>
-  <text x="775" y="500" text-anchor="middle" class="lgh">SW_MODE ▼  RUN</text>
-
-  <text x="144" y="540" text-anchor="middle" class="lgh">SW_STEP ▲</text>
-  <text x="144" y="582" text-anchor="middle" class="lgh">SW_STEP ▼</text>
-
-  <text x="245" y="536" class="lgh">EDIT MEMORY</text>
-  <text x="245" y="551" class="lg">turn DATA = edit field · press DATA = confirm/next</text>
-  <text x="245" y="576" class="lgh">EDIT PROGRAMS</text>
-  <text x="245" y="591" class="lg">ADDR = slot · DATA = LOAD ⇄ SAVE</text>
-
-  <text x="610" y="536" class="lgh">SINGLE STEP</text>
-  <text x="610" y="551" class="lg">press DATA = 1 instruction · ADDR = reset</text>
-  <text x="610" y="576" class="lgh">CONTINUOUS</text>
-  <text x="610" y="591" class="lg">runs until HALT · screen = program's graphics + text</text>
+  <rect x="40" y="603.9" width="920" height="160" rx="10" fill="#f5f5f7" stroke="#dedee3"/>
+  <text x="58" y="625.9" class="lgh">The 4 views — by the two slide switches</text>
+  <line x1="230" y1="635.9" x2="230" y2="753.9" stroke="#d7d7dc"/>
+  <line x1="595" y1="635.9" x2="595" y2="753.9" stroke="#d7d7dc"/>
+  <line x1="58" y1="677.9" x2="944" y2="677.9" stroke="#d7d7dc"/>
+  <line x1="58" y1="715.9" x2="944" y2="715.9" stroke="#d7d7dc"/>
+  <text x="410" y="655.9" text-anchor="middle" class="lgh">SW_MODE ◀ EDIT</text>
+  <text x="775" y="655.9" text-anchor="middle" class="lgh">SW_MODE ▶ RUN</text>
+  <text x="144" y="695.9" text-anchor="middle" class="lgh">SW_STEP ◀ SINGLE</text>
+  <text x="144" y="737.9" text-anchor="middle" class="lgh">SW_STEP ▶ CONTINUOUS</text>
+  <text x="245" y="691.9" class="lgh">EDIT MEMORY</text>
+  <text x="245" y="706.9" class="lg">turn DATA = edit field · press DATA = confirm/next</text>
+  <text x="245" y="731.9" class="lgh">EDIT PROGRAMS</text>
+  <text x="245" y="746.9" class="lg">ADDR = slot · DATA = LOAD ⇄ SAVE</text>
+  <text x="610" y="691.9" class="lgh">SINGLE STEP</text>
+  <text x="610" y="706.9" class="lg">press DATA = 1 instruction · ADDR = reset</text>
+  <text x="610" y="731.9" class="lgh">CONTINUOUS</text>
+  <text x="610" y="746.9" class="lg">runs until HALT · screen = program's graphics + text</text>
 </svg>

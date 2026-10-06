@@ -13,6 +13,12 @@ Sintaxis = la del desensamblador (src/disasm.cpp) + etiquetas y directivas.
     .asciiz "hola"       ; idem + terminador 0
     .space N            ; N bytes a 0    (alias: .res N)
     .slot N            ; slot de flash por defecto para este programa
+    .name "PONG"       ; nombre del programa (hasta 14 caracteres) -- va a la
+                       ; cabecera del slot, sisop.asm lo usa en sus menus
+    .category GAME     ; GAME PROGRAM UTILITY DEMO DOCS SYSTEM (o un numero)
+    .include "text.asm"  ; inserta otro fichero aqui (busca junto al que lo
+                       ; incluye y luego en programs/lib/); cada fichero se
+                       ; incluye una sola vez aunque se pida varias
 
 Instrucciones (reg = AL AH BL BH CL CH DL DH):
 
@@ -49,6 +55,7 @@ compi_send.py) se queden pequenos. El SP arranca siempre en 0xFFFF y crece
 hacia abajo, eso no cambia.
 """
 import argparse
+import os
 import re
 import sys
 
@@ -56,31 +63,26 @@ IMAGE_SIZE = 65536
 
 REG = {"AL": 0, "AH": 1, "BL": 2, "BH": 3, "CL": 4, "CH": 5, "DL": 6, "DH": 7}
 
-# familias de opcode (isa.h)
-F_NOP, F_HALT, F_LDI, F_LDA, F_STA = 0, 1, 2, 3, 4
-F_ADD, F_SUB, F_AND, F_OR, F_XOR = 5, 6, 7, 8, 9
-F_NOT, F_SHR, F_SHL, F_IN, F_OUT = 10, 11, 12, 13, 14
-F_PUSH, F_POP, F_JMP, F_CALL, F_RET = 15, 16, 17, 18, 19
-F_ALUI, F_EXT = 20, 31
-# Direccionamiento indirecto por registro de 16 bits: LEN 2 (opcode + par
-# AX/BX/CX/DX), en vez de opcode + addr16/port16 de 2 bytes.
-F_LDAR, F_STAR, F_INR, F_OUTR = 21, 22, 23, 24
-# SHR/SHL reg,#N (N=1..8, byte2 = N-1): LEN 2, familias antes reservadas.
-F_SHRN, F_SHLN = 25, 26
-# MUL/DIV (acumulador implicito AX, LEN1); INC/DEC de un par de 16 bits
-# (LEN1); "extension 2" (MOVB/MOVW, ADD/SUB reg16,reg8, JMPNV/CALLNV -- ver
-# isa.h/docs/isa.md para el detalle de por que comparten familia).
-F_MUL, F_DIV, F_INCDEC16, F_EXT2 = 27, 28, 29, 30
+# familias de opcode (isa.h, ISA version 2 -- ver docs/isa.md)
+F_SYS, F_LDI, F_LDA, F_STA, F_LDAR, F_STAR = 0, 1, 2, 3, 4, 5
+F_IN, F_OUT, F_INR, F_OUTR = 6, 7, 8, 9
+F_ALURR, F_ALUI, F_ALUM, F_ALUP = 10, 11, 12, 13
+F_NOT, F_SHR, F_SHL, F_MUL, F_DIV, F_INC, F_DEC, F_PUSH, F_POP = 14, 15, 16, 17, 18, 19, 20, 21, 22
+F_JMP, F_CALL, F_JX = 23, 24, 25
+F_R16, F_R16I, F_INCDEC16, F_PUSHPOP16 = 26, 27, 28, 29
 REG16 = {"AX": 0, "BX": 1, "CX": 2, "DX": 3}
 
-MEM_ALU = {"ADD": F_ADD, "SUB": F_SUB, "AND": F_AND, "OR": F_OR, "XOR": F_XOR}
-# AluOp (bits bajos en EXT y ALUI)
-ALU_OP = {"MOV": 0, "ADD": 1, "SUB": 2, "CMP": 3, "AND": 4, "OR": 5, "XOR": 6}
-# "V" (overflow) cabe en el campo de 3 bits de JMP/CALL como una condicion
-# mas; "NV" NO cabe (ya estan las 8 usadas) y se resuelve aparte, como un
-# mnemonico especial JMPNV/CALLNV que emite F_EXT2 en vez de F_JMP/F_CALL
-# -- ver el bloque de JMP/CALL en _emit_instr/_instr_size mas abajo.
+SYS = {"NOP": 0, "HALT": 1, "RET": 2, "MOVB": 3, "MOVW": 4, "MOVBR": 5}
+# AluOp (byte de operando de F_ALU*)
+ALU_OP = {"MOV": 0, "ADD": 1, "ADC": 2, "SUB": 3, "SBC": 4, "CMP": 5,
+          "AND": 6, "OR": 7, "XOR": 8}
+UNARY = {"NOT": F_NOT, "MUL": F_MUL, "DIV": F_DIV}
+# condiciones de JMP/CALL (3 bits bajos); NV va aparte, en F_JX
 COND = {"": 0, "Z": 1, "NZ": 2, "C": 3, "NC": 4, "N": 5, "NN": 6, "V": 7}
+JX_JMPNV, JX_CALLNV, JX_JMPR, JX_CALLR = 0, 1, 2, 3
+R16_OP = {"MOV": 0, "ADD": 1, "SUB": 2, "CMP": 3}
+R16_ADD8, R16_SUB8 = 4, 5
+R16I_MOV, R16I_ADD, R16I_SUB, R16I_CMP = 0, 1, 2, 3
 
 
 class AsmError(Exception):
@@ -248,10 +250,18 @@ def classify(tok, lineno):
 # ---------------------------------------------------------------------------
 # ensamblador
 # ---------------------------------------------------------------------------
+CATEGORIES = {"SYSTEM": 1, "GAME": 2, "PROGRAM": 3, "UTILITY": 4, "DEMO": 5, "DOCS": 6}
+NAME_MAX = 14
+LIB_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "programs", "lib"))
+
+
 class Assembler:
     def __init__(self):
         self.symbols = {}
         self.slot = None
+        self.name = None        # .name    (cabecera del slot, ver storage.h)
+        self.category = None    # .category
+        self.origins = []       # linea expandida -> (fichero, linea original)
         self.image = bytearray(IMAGE_SIZE)
         self.max_addr = 0
         self.listing = []       # (lineno, addr, bytes, texto)
@@ -331,6 +341,8 @@ class Assembler:
 
     def _dir_size(self, mnem, rest, pc, lineno):
         d = mnem.lower()
+        if d in (".name", ".category"):
+            return "data", 0
         if d == ".org":
             return "org", eval_expr(rest, self.symbols, pc, lineno)
         if d in (".space", ".res"):
@@ -360,57 +372,10 @@ class Assembler:
 
     # -- tamano de una instruccion (sin evaluar expresiones) -------------
     def _instr_size(self, mnem, rest, lineno):
-        ops = [classify(t, lineno) for t in split_operands(rest)]
-        if mnem in ("NOP", "HALT", "RET"):
-            return 1
-        if mnem in ("NOT", "PUSH", "POP"):
-            return 1
-        if mnem in ("SHR", "SHL"):
-            if len(ops) == 1:
-                return 1
-            if len(ops) == 2:
-                return 2
-            raise AsmError(f"{mnem} reg  o  {mnem} reg,#N", lineno)
-        if mnem == "MOV":
-            if len(ops) != 2:
-                raise AsmError("MOV necesita 2 operandos", lineno)
-            if ops[0].kind == "reg16":
-                return 4   # reg16,#imm16 (F_EXT2 subop 6) -- unica LEN 4 de la ISA
-            return 2  # LDI (reg,#imm) o EXT (dst,src)
-        if mnem in ("ADD", "SUB", "AND", "OR", "XOR", "CMP"):
-            if len(ops) != 2:
-                raise AsmError(f"{mnem} necesita 2 operandos", lineno)
-            dst, src = ops
-            if dst.kind == "reg16":
-                # ADD/SUB dst16,src8 (F_EXT2): mismo mnemonico ADD/SUB,
-                # detectado por que el destino es AX/BX/CX/DX.
-                if mnem not in ("ADD", "SUB"):
-                    raise AsmError(f"{mnem}: no hay forma de 16 bits (solo ADD/SUB)", lineno)
-                if src.kind != "reg":
-                    raise AsmError(f"{mnem} <AX|BX|CX|DX>,<reg de 8 bits>", lineno)
-                return 2
-            if src.kind == "reg":
-                return 2   # EXT
-            if src.kind == "imm":
-                return 3   # ALUI
-            if src.kind == "mem":
-                return 3   # familia con memoria
-            raise AsmError(f"{mnem}: segundo operando invalido", lineno)
-        if mnem in ("MUL", "DIV", "INC", "DEC"):
-            return 1
-        if mnem in ("MOVB", "MOVW"):
-            return 1
-        if mnem in ("LDA", "IN"):
-            if len(ops) != 2:
-                raise AsmError(f"{mnem} necesita 2 operandos", lineno)
-            return 2 if ops[1].kind in ("memr", "portr") else 3
-        if mnem in ("STA", "OUT"):
-            if len(ops) != 2:
-                raise AsmError(f"{mnem} necesita 2 operandos", lineno)
-            return 2 if ops[0].kind in ("memr", "portr") else 3
-        if mnem.startswith("JMP") or mnem.startswith("CALL"):
-            return 3
-        raise AsmError(f"instruccion desconocida: {mnem}", lineno)
+        # mismo codificador que la pasada 2, pero sin evaluar expresiones
+        # (las etiquetas aun no se conocen): la longitud solo depende del
+        # tipo de cada operando, nunca de su valor
+        return len(self._encode(mnem, rest, 0, lineno, evaluate=False))
 
     # -- pass 2: emite bytes --------------------------------------------
     def second_pass(self, items):
@@ -429,6 +394,17 @@ class Assembler:
             return
         if d == ".slot":
             self.slot = eval_expr(rest, self.symbols, pc, lineno)
+            return
+        if d == ".name":
+            nm = parse_string(rest.strip(), lineno)
+            if len(nm) > NAME_MAX or any(c < 0x20 or c > 0x7E for c in nm):
+                raise AsmError(f".name: hasta {NAME_MAX} caracteres ASCII imprimibles", lineno)
+            self.name = nm.decode()
+            return
+        if d == ".category":
+            key = rest.strip().upper()
+            self.category = CATEGORIES[key] if key in CATEGORIES else \
+                eval_expr(rest, self.symbols, pc, lineno) & 0xFF
             return
         if d in (".space", ".res"):
             return  # ya es 0
@@ -449,177 +425,186 @@ class Assembler:
         self.listing.append((lineno, pc, bytes(data), " ".join(payload).strip()))
 
     def _imm8(self, op, pc, lineno):
+        if not self._evaluate:
+            return 0
         return eval_expr(op.value, self.symbols, pc, lineno) & 0xFF
 
     def _addr16(self, op, pc, lineno):
+        if not self._evaluate:
+            return 0, 0
         v = eval_expr(op.value, self.symbols, pc, lineno) & 0xFFFF
         return v & 0xFF, (v >> 8) & 0xFF
 
     def _emit_instr(self, pc, payload, lineno):
         mnem, rest = payload
+        return self._encode(mnem, rest, pc, lineno, evaluate=True)
+
+    def _encode(self, mnem, rest, pc, lineno, evaluate):
+        self._evaluate = evaluate
         ops = [classify(t, lineno) for t in split_operands(rest)]
+        kinds = tuple(o.kind for o in ops)
 
-        if mnem == "NOP":
-            return [opcode(F_NOP, 0)]
-        if mnem == "HALT":
-            return [opcode(F_HALT, 0)]
-        if mnem == "RET":
-            return [opcode(F_RET, 0)]
+        def need(cond, msg):
+            if not cond:
+                raise AsmError(msg, lineno)
 
-        if mnem in ("NOT", "PUSH", "POP"):
-            fam = {"NOT": F_NOT, "PUSH": F_PUSH, "POP": F_POP}[mnem]
-            if len(ops) != 1 or ops[0].kind != "reg":
-                raise AsmError(f"{mnem} reg", lineno)
-            return [opcode(fam, ops[0].value)]
+        if mnem in SYS:
+            need(not ops, f"{mnem} no lleva operandos"
+                          + (" (usa BX=origen, DX=destino, CX=cuenta)" if mnem.startswith("MOV") else ""))
+            return [opcode(F_SYS, SYS[mnem])]
 
-        if mnem in ("SHR", "SHL"):
-            if len(ops) < 1 or ops[0].kind != "reg":
-                raise AsmError(f"{mnem} reg  o  {mnem} reg,#N", lineno)
-            fam1 = F_SHR if mnem == "SHR" else F_SHL
-            if len(ops) == 1:
-                return [opcode(fam1, ops[0].value)]
-            if len(ops) == 2 and ops[1].kind == "imm":
-                n = self._imm8(ops[1], pc, lineno)
-                if not (1 <= n <= 8):
-                    raise AsmError(f"{mnem}: N debe ser 1..8 (era {n})", lineno)
-                famN = F_SHRN if mnem == "SHR" else F_SHLN
-                return [opcode(famN, ops[0].value), n - 1]
-            raise AsmError(f"{mnem} reg  o  {mnem} reg,#N", lineno)
-
-        if mnem == "MOV":
-            dst, src = ops
-            if dst.kind == "reg16":
-                # MOV reg16,#imm16 (F_EXT2 subop 6) -- mismo mnemonico MOV,
-                # detectado por que el destino es AX/BX/CX/DX. Unica forma
-                # de la ISA con un inmediato de 16 bits (y unica de LEN 4).
-                if src.kind != "imm":
-                    raise AsmError("MOV reg16,#imm16: la forma de 16 bits solo admite un inmediato", lineno)
-                lo, hi = self._addr16(src, pc, lineno)
-                return [opcode(F_EXT2, 6), dst.value & 3, lo, hi]
-            if dst.kind != "reg":
-                raise AsmError("MOV: destino debe ser registro", lineno)
-            if src.kind == "reg16":
-                raise AsmError("MOV: el origen no puede ser AX/BX/CX/DX aqui "
-                                "(la forma de 16 bits es <AX|BX|CX|DX>,#imm16)", lineno)
-            if src.kind == "imm":
-                return [opcode(F_LDI, dst.value), self._imm8(src, pc, lineno)]
-            if src.kind == "reg":
-                return [opcode(F_EXT, ALU_OP["MOV"]), (dst.value << 3) | src.value]
-            raise AsmError("MOV: fuente debe ser #imm o registro (usa LDA para memoria)", lineno)
-
-        if mnem in ("ADD", "SUB", "AND", "OR", "XOR", "CMP"):
-            dst, src = ops
-            if dst.kind == "reg16":
-                # ADD/SUB dst16,src8 (F_EXT2 subop 0/1): dst16 += / -= src8
-                # sin signo. Mismo mnemonico ADD/SUB de siempre.
-                if mnem not in ("ADD", "SUB"):
-                    raise AsmError(f"{mnem}: no hay forma de 16 bits (solo ADD/SUB)", lineno)
-                if src.kind != "reg":
-                    raise AsmError(f"{mnem} <AX|BX|CX|DX>,<reg de 8 bits>", lineno)
-                sub = 0 if mnem == "ADD" else 1
-                return [opcode(F_EXT2, sub), (dst.value << 3) | src.value]
-            if dst.kind != "reg":
-                raise AsmError(f"{mnem}: destino debe ser registro", lineno)
-            if src.kind == "reg16":
-                raise AsmError(f"{mnem}: el origen no puede ser AX/BX/CX/DX aqui "
-                                f"(la forma de 16 bits es <AX|BX|CX|DX>,<reg de 8 bits>)", lineno)
-            if src.kind == "reg":
-                return [opcode(F_EXT, ALU_OP[mnem]), (dst.value << 3) | src.value]
-            if src.kind == "imm":
-                return [opcode(F_ALUI, ALU_OP[mnem]), dst.value & 7,
-                        self._imm8(src, pc, lineno)]
-            if src.kind == "mem":
-                if mnem == "CMP":
-                    raise AsmError("CMP no tiene forma con memoria (usa SUB o carga a registro)", lineno)
-                lo, hi = self._addr16(src, pc, lineno)
-                return [opcode(MEM_ALU[mnem], dst.value), lo, hi]
-            raise AsmError(f"{mnem}: segundo operando invalido", lineno)
-
-        if mnem in ("MUL", "DIV"):
-            if len(ops) != 1 or ops[0].kind != "reg":
-                raise AsmError(f"{mnem} reg", lineno)
-            fam = F_MUL if mnem == "MUL" else F_DIV
-            return [opcode(fam, ops[0].value)]
+        if mnem in UNARY:
+            need(kinds == ("reg",), f"{mnem} reg")
+            return [opcode(UNARY[mnem], ops[0].value)]
 
         if mnem in ("INC", "DEC"):
-            if len(ops) != 1 or ops[0].kind != "reg16":
-                raise AsmError(f"{mnem} AX|BX|CX|DX", lineno)
-            dirbit = 0 if mnem == "INC" else 4
-            return [opcode(F_INCDEC16, dirbit | ops[0].value)]
+            if kinds == ("reg",):
+                return [opcode(F_INC if mnem == "INC" else F_DEC, ops[0].value)]
+            need(kinds == ("reg16",), f"{mnem} reg  o  {mnem} AX|BX|CX|DX")
+            return [opcode(F_INCDEC16, (0 if mnem == "INC" else 4) | ops[0].value)]
 
-        if mnem in ("MOVB", "MOVW"):
-            if rest.strip():
-                raise AsmError(f"{mnem} no lleva operandos "
-                                f"(usa BX=origen, DX=destino, CX=cuenta)", lineno)
-            sub = 2 if mnem == "MOVB" else 3
-            return [opcode(F_EXT2, sub)]
+        if mnem in ("PUSH", "POP"):
+            if kinds == ("reg",):
+                return [opcode(F_PUSH if mnem == "PUSH" else F_POP, ops[0].value)]
+            need(kinds == ("reg16",), f"{mnem} reg  o  {mnem} AX|BX|CX|DX")
+            return [opcode(F_PUSHPOP16, (0 if mnem == "PUSH" else 4) | ops[0].value)]
 
-        if mnem == "LDA":
-            reg, mem = ops
-            if reg.kind != "reg" or mem.kind not in ("mem", "memr"):
-                raise AsmError("LDA reg,[addr] o LDA reg,[AX|BX|CX|DX]", lineno)
-            if mem.kind == "memr":
-                return [opcode(F_LDAR, reg.value), mem.value]
-            lo, hi = self._addr16(mem, pc, lineno)
-            return [opcode(F_LDA, reg.value), lo, hi]
+        if mnem in ("SHR", "SHL"):
+            fam = F_SHR if mnem == "SHR" else F_SHL
+            if kinds == ("reg",):
+                return [opcode(fam, ops[0].value), 0]        # 1 bit
+            need(kinds == ("reg", "imm"), f"{mnem} reg  o  {mnem} reg,#N")
+            n = self._imm8(ops[1], pc, lineno) if evaluate else 1
+            need(1 <= n <= 8, f"{mnem}: N debe ser 1..8 (era {n})")
+            return [opcode(fam, ops[0].value), n - 1]
 
-        if mnem == "STA":
-            # El primer operando es el destino (mem[addr] = reg), igual que
-            # el resto de instrucciones: STA [addr],reg. Codificacion igual
-            # que LDA (mismos bytes, solo cambia el orden en que se leen).
-            mem, reg = ops
-            if mem.kind not in ("mem", "memr") or reg.kind != "reg":
-                raise AsmError("STA [addr],reg o STA [AX|BX|CX|DX],reg", lineno)
-            if mem.kind == "memr":
-                return [opcode(F_STAR, reg.value), mem.value]
-            lo, hi = self._addr16(mem, pc, lineno)
-            return [opcode(F_STA, reg.value), lo, hi]
-
-        if mnem == "IN":
-            reg, port = ops
-            if reg.kind != "reg" or port.kind not in ("port", "portr"):
-                raise AsmError("IN reg,(port) o IN reg,(AX|BX|CX|DX)", lineno)
-            if port.kind == "portr":
-                return [opcode(F_INR, reg.value), port.value]
-            lo, hi = self._addr16(port, pc, lineno)
+        if mnem in ("LDA", "IN"):
+            need(len(ops) == 2 and ops[0].kind == "reg", f"{mnem} reg,...")
+            reg, src = ops
+            if mnem == "LDA":
+                if src.kind == "memr":
+                    return [opcode(F_LDAR, reg.value), src.value]
+                need(src.kind == "mem", "LDA reg,[addr] o LDA reg,[AX|BX|CX|DX]")
+                lo, hi = self._addr16(src, pc, lineno)
+                return [opcode(F_LDA, reg.value), lo, hi]
+            if src.kind == "portr":
+                return [opcode(F_INR, reg.value), src.value]
+            need(src.kind == "port", "IN reg,(port) o IN reg,(AX|BX|CX|DX)")
+            lo, hi = self._addr16(src, pc, lineno)
             return [opcode(F_IN, reg.value), lo, hi]
 
-        if mnem == "OUT":
-            # Destino primero (port_write(port,reg)): OUT (port),reg.
-            port, reg = ops
-            if port.kind not in ("port", "portr") or reg.kind != "reg":
-                raise AsmError("OUT (port),reg o OUT (AX|BX|CX|DX),reg", lineno)
-            if port.kind == "portr":
-                return [opcode(F_OUTR, reg.value), port.value]
-            lo, hi = self._addr16(port, pc, lineno)
+        if mnem in ("STA", "OUT"):
+            # destino primero: STA [addr],reg / OUT (port),reg
+            need(len(ops) == 2 and ops[1].kind == "reg", f"{mnem} ...,reg")
+            dst, reg = ops
+            if mnem == "STA":
+                if dst.kind == "memr":
+                    return [opcode(F_STAR, reg.value), dst.value]
+                need(dst.kind == "mem", "STA [addr],reg o STA [AX|BX|CX|DX],reg")
+                lo, hi = self._addr16(dst, pc, lineno)
+                return [opcode(F_STA, reg.value), lo, hi]
+            if dst.kind == "portr":
+                return [opcode(F_OUTR, reg.value), dst.value]
+            need(dst.kind == "port", "OUT (port),reg o OUT (AX|BX|CX|DX),reg")
+            lo, hi = self._addr16(dst, pc, lineno)
             return [opcode(F_OUT, reg.value), lo, hi]
+
+        if mnem in ALU_OP:
+            need(len(ops) == 2, f"{mnem} necesita 2 operandos")
+            dst, src = ops
+            if dst.kind == "reg16":
+                # formas de 16 bits: mismo mnemonico, detectadas por que el
+                # destino es AX/BX/CX/DX
+                d = dst.value
+                if src.kind == "reg16":
+                    need(mnem in R16_OP, f"{mnem}: no hay forma reg16,reg16 (MOV/ADD/SUB/CMP)")
+                    return [opcode(F_R16, R16_OP[mnem]), (d << 3) | src.value]
+                if src.kind == "reg":
+                    need(mnem in ("ADD", "SUB"), f"{mnem}: no hay forma reg16,reg8 (ADD/SUB)")
+                    return [opcode(F_R16, R16_ADD8 if mnem == "ADD" else R16_SUB8), (d << 3) | src.value]
+                need(src.kind == "imm", f"{mnem}: segundo operando invalido para {mnem} reg16")
+                if mnem in ("MOV", "CMP"):
+                    lo, hi = self._addr16(src, pc, lineno)
+                    return [opcode(F_R16I, R16I_MOV if mnem == "MOV" else R16I_CMP), d, lo, hi]
+                need(mnem in ("ADD", "SUB"), f"{mnem}: no hay forma reg16,#imm")
+                return [opcode(F_R16I, R16I_ADD if mnem == "ADD" else R16I_SUB), d,
+                        self._imm8(src, pc, lineno)]
+            need(dst.kind == "reg", f"{mnem}: destino debe ser registro")
+            op = ALU_OP[mnem]
+            r = dst.value
+            if src.kind == "reg":
+                return [opcode(F_ALURR, r), (op << 3) | src.value]
+            if src.kind == "imm":
+                if mnem == "MOV":
+                    return [opcode(F_LDI, r), self._imm8(src, pc, lineno)]
+                return [opcode(F_ALUI, r), op, self._imm8(src, pc, lineno)]
+            if src.kind == "mem":
+                lo, hi = self._addr16(src, pc, lineno)
+                if mnem == "MOV":
+                    return [opcode(F_LDA, r), lo, hi]
+                return [opcode(F_ALUM, r), op, lo, hi]
+            if src.kind == "memr":
+                if mnem == "MOV":
+                    return [opcode(F_LDAR, r), src.value]
+                return [opcode(F_ALUP, r), (op << 2) | src.value]
+            raise AsmError(f"{mnem}: segundo operando invalido", lineno)
 
         if mnem.startswith("JMP") or mnem.startswith("CALL"):
             is_jmp = mnem.startswith("JMP")
             suffix = mnem[3:] if is_jmp else mnem[4:]
-            if len(ops) != 1 or ops[0].kind not in ("addr", "mem"):
-                raise AsmError(f"{mnem} addr", lineno)
+            need(len(ops) == 1, f"{mnem} addr  o  {mnem} AX|BX|CX|DX")
+            if ops[0].kind == "reg16":
+                need(suffix == "", f"{mnem}: el salto por registro no lleva condicion")
+                return [opcode(F_JX, JX_JMPR if is_jmp else JX_CALLR), ops[0].value]
+            need(ops[0].kind in ("addr", "mem"), f"{mnem} addr")
             lo, hi = self._addr16(Operand("addr", ops[0].value), pc, lineno)
             if suffix == "NV":
-                # NV no cabe en el campo de 3 bits de JMP/CALL (ya estan las
-                # 8 condiciones usadas, incluida V): se codifica aparte, en
-                # F_EXT2 subop 4 (JMPNV) / 5 (CALLNV) -- ver COND/isa.h.
-                return [opcode(F_EXT2, 4 if is_jmp else 5), lo, hi]
-            if suffix not in COND:
-                raise AsmError(f"condicion desconocida: {mnem}", lineno)
-            base = F_JMP if is_jmp else F_CALL
-            return [opcode(base, COND[suffix]), lo, hi]
+                return [opcode(F_JX, JX_JMPNV if is_jmp else JX_CALLNV), lo, hi]
+            need(suffix in COND, f"condicion desconocida: {mnem}")
+            return [opcode(F_JMP if is_jmp else F_CALL, COND[suffix]), lo, hi]
 
         raise AsmError(f"instruccion desconocida: {mnem}", lineno)
 
-    # -- api -----------------------------------------------------------
-    def assemble(self, text):
-        lines = text.splitlines()
+    # -- .include: expande el texto antes de ensamblar, recordando de que
+    # fichero y linea viene cada linea (para los mensajes de error) --------
+    def _expand(self, text, path, seen):
+        out = []
+        base = os.path.dirname(os.path.abspath(path)) if path else os.getcwd()
+        for i, raw in enumerate(text.splitlines(), 1):
+            m = re.match(r'^\s*\.include\s+"([^"]+)"\s*(;.*)?$', raw, re.I)
+            if not m:
+                out.append(raw)
+                self.origins.append((path or "<texto>", i))
+                continue
+            name = m.group(1)
+            cands = [os.path.join(base, name), os.path.join(LIB_DIR, name)]
+            found = next((c for c in cands if os.path.isfile(c)), None)
+            if found is None:
+                raise AsmError(f'.include: no encuentro "{name}" ({path or "<texto>"}:{i})')
+            found = os.path.abspath(found)
+            if found in seen:
+                continue            # cada fichero una sola vez
+            seen.add(found)
+            with open(found, "r", encoding="utf-8") as f:
+                out += self._expand(f.read(), found, seen)
+        return out
+
+    def assemble(self, text, path=None):
+        self.origins = []
+        try:
+            lines = self._expand(text, path, set())
+        except AsmError as e:
+            raise AsmError(str(e)) from None
         try:
             items = self.first_pass(lines)
             self.second_pass(items)
         except AsmError as e:
-            where = f" (linea {e.lineno})" if e.lineno else ""
+            where = ""
+            if e.lineno and 0 < e.lineno <= len(self.origins):
+                fn, ln = self.origins[e.lineno - 1]
+                where = f" (linea {ln})" if fn == (path or "<texto>") else f" ({os.path.basename(fn)}:{ln})"
+            elif e.lineno:
+                where = f" (linea {e.lineno})"
             raise AsmError(f"{e}{where}") from None
         return bytes(self.image)
 
@@ -648,7 +633,7 @@ def main(argv=None):
 
     asm = Assembler()
     try:
-        image = asm.assemble(text)
+        image = asm.assemble(text, args.source)
     except AsmError as e:
         print(f"casm: error: {e}", file=sys.stderr)
         return 1
@@ -663,6 +648,8 @@ def main(argv=None):
           f"lo rellena el aparato con ceros al cargar)")
     if slot is not None:
         print(f"casm: slot de destino sugerido: {slot}")
+    if asm.name is not None or asm.category is not None:
+        print(f"casm: nombre {asm.name!r}, categoria {asm.category}")
 
     if args.listing:
         with open(args.listing, "w", encoding="utf-8") as f:

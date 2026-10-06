@@ -22,11 +22,11 @@ import sys
 MASK = 0xFFFF
 FLAG_C, FLAG_Z, FLAG_N, FLAG_V = 1, 2, 4, 8
 
-# familias
-(F_NOP, F_HALT, F_LDI, F_LDA, F_STA, F_ADD, F_SUB, F_AND, F_OR, F_XOR,
- F_NOT, F_SHR, F_SHL, F_IN, F_OUT, F_PUSH, F_POP, F_JMP, F_CALL, F_RET,
- F_ALUI) = range(21)
-F_EXT = 31
+# familias de opcode (include/isa.h, ISA version 2 -- ver docs/isa.md)
+(F_SYS, F_LDI, F_LDA, F_STA, F_LDAR, F_STAR, F_IN, F_OUT, F_INR, F_OUTR,
+ F_ALURR, F_ALUI, F_ALUM, F_ALUP, F_NOT, F_SHR, F_SHL, F_MUL, F_DIV,
+ F_INC, F_DEC, F_PUSH, F_POP, F_JMP, F_CALL, F_JX, F_R16, F_R16I,
+ F_INCDEC16, F_PUSHPOP16) = range(30)
 
 CLICK_LEN = 12000  # instrucciones que dura un "click" de pulsador
 TIMER_COUNT = 10    # ver include/iomap.h
@@ -69,6 +69,24 @@ class Ports:
         # activado), igual que g_soundMuted en el firmware real.
         self.brightness = 0xCF   # OLED_CONTRAST_FULL (main.cpp), valor de arranque
         self.sound_muted = False
+        # EEPROM por slot (0x0700..0x07FF bufer, 0x0800 cargar, 0x0801 grabar
+        # -- iomap.h). Lo no grabado nunca se lee como 0xFF (flash borrada),
+        # igual que en el aparato. `current_slot` = el slot "en curso" (el
+        # que se cargo/grabo por ultima vez; 0 al arrancar, como el arranque
+        # automatico del slot 0). Con slots_dir se persiste en NN.eep.
+        self.eeprom = bytearray(256)
+        # metadatos de slot (PORT_SLOT_QUERY/PORT_SLOT_INFO/PORT_CUR_SLOT,
+        # iomap.h): con slots_dir se leen de NN.meta (tools/slots.py); el del
+        # programa cargado se graba con el en _prog_save, como en main.cpp
+        self.cur_meta = bytes([0xFF]) + bytes(14)
+        self.slot_info = bytes([0xFF]) + bytes(14)
+        self.slot_info_used = 0
+        # PORT_RANDOM: semilla fija para que una ejecucion se pueda repetir
+        self.rng = __import__("random").Random(0xC0FF1)
+        self.eeprom_store = {}
+        self.current_slot = 0
+        self.last_eep_load_fail = 0
+        self.last_eep_save_ok = 0
 
     def tick(self):
         self.now_ns += self.instr_ns
@@ -116,10 +134,24 @@ class Ports:
             return self.last_load_ok
         if port == 0x0641:
             return self.last_save_ok
+        if port == 0x0642:
+            return self.slot_info_used
+        if port == 0x0643:
+            return self.current_slot
+        if port == 0x0611:
+            return self.rng.randrange(256)
+        if 0x0660 <= port < 0x0660 + 15:
+            return self.slot_info[port - 0x0660]
         if port == 0x0650:
             return self.brightness
         if port == 0x0651:
             return 0 if self.sound_muted else 1
+        if 0x0700 <= port < 0x0800:
+            return self.eeprom[port - 0x0700]
+        if port == 0x0800:
+            return self.last_eep_load_fail
+        if port == 0x0801:
+            return self.last_eep_save_ok
         return 0
 
     def write(self, port, val):
@@ -163,12 +195,71 @@ class Ports:
         if port == 0x0641:
             self._prog_save(val)
             return
+        if port == 0x0642:
+            self.slot_info_used, self.slot_info = self._read_meta(val)
+            return
+        # brillo y sonido: ajustes del APARATO, solo los cambia SETTINGS de
+        # sisop (slot 0) -- igual que main.cpp, el resto de programas se ignora
         if port == 0x0650:
-            self.brightness = val
+            if self.current_slot == 0:
+                self.brightness = val
             return
         if port == 0x0651:
-            self.sound_muted = (val == 0)
+            if self.current_slot == 0:
+                self.sound_muted = (val == 0)
             return
+        if port == 0x0652:
+            # PORT_CFG_SAVE: en el aparato graba brillo/mute en la flash; el
+            # simulador no tiene flash de ajustes, solo cuenta las grabaciones
+            if self.current_slot == 0:
+                self.settings_saves = getattr(self, "settings_saves", 0) + 1
+            return
+        if 0x0700 <= port < 0x0800:
+            self.eeprom[port - 0x0700] = val
+            return
+        if port == 0x0800:
+            self._eep_load()
+            return
+        if port == 0x0801:
+            self._eep_save()
+            return
+
+    def _eep_path(self):
+        if self.slots_dir is None:
+            return None
+        return os.path.join(self.slots_dir, f"{self.current_slot:02d}.eep")
+
+    def _eep_load(self):
+        data = self.eeprom_store.get(self.current_slot)
+        path = self._eep_path()
+        if data is None and path and os.path.isfile(path):
+            with open(path, "rb") as f:
+                data = f.read(256)
+        if data is None:
+            data = b"\xff" * 256          # nunca grabado = flash borrada
+        self.eeprom[:] = data.ljust(256, b"\xff")[:256]
+        self.last_eep_load_fail = 0
+
+    def _eep_save(self):
+        self.eeprom_store[self.current_slot] = bytes(self.eeprom)
+        path = self._eep_path()
+        if path:
+            with open(path, "wb") as f:
+                f.write(bytes(self.eeprom))
+        self.last_eep_save_ok = 1
+
+    def _read_meta(self, slot):
+        """(usado, 15 bytes de metadatos) del slot, como readSlotMeta()."""
+        none = bytes([0xFF]) + bytes(14)
+        path = self._slot_path(slot)
+        if path is None or not os.path.isfile(path):
+            return 0, none
+        mp = path[:-4] + ".meta"
+        if not os.path.isfile(mp):
+            return 1, none
+        with open(mp, "rb") as f:
+            m = f.read(15)
+        return 1, m.ljust(15, bytes(1))
 
     def _slot_path(self, slot):
         if self.slots_dir is None or not (0 <= slot < MAX_PROGRAM_SLOTS):
@@ -212,7 +303,10 @@ class Ports:
         self._snd(0)
         # brillo y sonido: preferencias de TODO el aparato -- NO se tocan al
         # cargar otro programa, igual que main.cpp (ver iomap.h).
-        self.last_load_ok = 1
+        self.eeprom[:] = bytes(256)   # el bufer de EEPROM tampoco se hereda
+        self.current_slot = slot
+        self.cur_meta = self._read_meta(slot)[1]
+        self.last_load_ok = 0         # 0 = bien (antes ponia 1 por error)
 
     def _prog_save(self, slot):
         # espejo de PORT_PROG_SAVE: vuelca la RAM ACTUAL entera (65536 bytes,
@@ -225,6 +319,9 @@ class Ports:
             return
         with open(path, "wb") as f:
             f.write(bytes(self.cpu.m))
+        with open(path[:-4] + ".meta", "wb") as f:
+            f.write(self.cur_meta)
+        self.current_slot = slot
         self.last_save_ok = 1
 
     def _snd(self, hz):
@@ -296,50 +393,62 @@ class Cpu:
         self.sp = (self.sp + 1) & MASK
         return v
 
-    def _arith(self, a, b, is_sub):
-        full = a - b if is_sub else a + b
-        res = full & 0xFF
-        carry = (a < b) if is_sub else (full > 0xFF)
-        if is_sub:
-            overflow = ((a ^ b) & (a ^ res) & 0x80) != 0
-        else:
-            overflow = (~(a ^ b) & (a ^ res) & 0x80) != 0
-        f = 0
-        if carry:
-            f |= FLAG_C
+    def _get16(self, p):
+        return self.r[p * 2] | (self.r[p * 2 + 1] << 8)
+
+    def _set16(self, p, v):
+        self.r[p * 2] = v & 0xFF
+        self.r[p * 2 + 1] = (v >> 8) & 0xFF
+
+    def _flags(self, carry, res, neg_bit, overflow):
+        f = FLAG_C if carry else 0
         if res == 0:
             f |= FLAG_Z
-        if res & 0x80:
+        if res & neg_bit:
             f |= FLAG_N
         if overflow:
             f |= FLAG_V
         self.flags = f
+
+    def _arith(self, a, b, is_sub, cin=0):
+        full = a - b - cin if is_sub else a + b + cin
+        res = full & 0xFF
+        carry = full < 0 if is_sub else full > 0xFF
+        if is_sub:
+            overflow = ((a ^ b) & (a ^ res) & 0x80) != 0
+        else:
+            overflow = (~(a ^ b) & (a ^ res) & 0x80) != 0
+        self._flags(carry, res, 0x80, overflow)
         return res
 
     def _logic(self, res):
-        f = 0
-        if res == 0:
-            f |= FLAG_Z
-        if res & 0x80:
-            f |= FLAG_N
-        self.flags = f
+        self._flags(False, res, 0x80, False)
         return res
 
+    def _cmp16(self, a, b):
+        res = (a - b) & MASK
+        self._flags(a < b, res, 0x8000, ((a ^ b) & (a ^ res) & 0x8000) != 0)
+
     def _alu(self, op, a, b):
-        if op == 0:  # MOV
+        c = self.flags & FLAG_C
+        if op == 0:      # MOV
             return b
-        if op == 1:
+        if op == 1:      # ADD
             return self._arith(a, b, False)
-        if op == 2:
+        if op == 2:      # ADC
+            return self._arith(a, b, False, c)
+        if op == 3:      # SUB
             return self._arith(a, b, True)
-        if op == 3:
+        if op == 4:      # SBC
+            return self._arith(a, b, True, c)
+        if op == 5:      # CMP
             self._arith(a, b, True)
             return a
-        if op == 4:
-            return self._logic(a & b)
-        if op == 5:
-            return self._logic(a | b)
         if op == 6:
+            return self._logic(a & b)
+        if op == 7:
+            return self._logic(a | b)
+        if op == 8:
             return self._logic(a ^ b)
         return a
 
@@ -348,8 +457,25 @@ class Cpu:
         cy = bool(self.flags & FLAG_C)
         n = bool(self.flags & FLAG_N)
         v = bool(self.flags & FLAG_V)
-        table = [True, z, not z, cy, not cy, n, not n, v]
-        return table[c] if c < len(table) else True
+        return [True, z, not z, cy, not cy, n, not n, v][c]
+
+    def _call(self, addr):
+        self._push((self.pc >> 8) & 0xFF)
+        self._push(self.pc & 0xFF)
+        self.pc = addr
+
+    def _shift(self, r, n, left):
+        v = self.r[r]
+        if left:
+            res = (v << n) & 0xFF
+            carry = bool((v >> (8 - n)) & 1)
+            neg = bool(res & 0x80)
+            self._flags(carry, res, 0x80, carry != neg)
+        else:
+            res = (v >> n) & 0xFF
+            # V = bit 7 de ANTES de la instruccion (aunque desplace N bits)
+            self._flags((v >> (n - 1)) & 1, res, 0x80, v & 0x80)
+        self.r[r] = res
 
     def step(self):
         if self.halted:
@@ -359,72 +485,85 @@ class Cpu:
         op = self._f8()
         fam, r = op >> 3, op & 7
 
-        if fam == F_NOP:
-            pass
-        elif fam == F_HALT:
-            self.halted = True
+        if fam == F_SYS:
+            if r == 1:                       # HALT
+                self.halted = True
+            elif r == 2:                     # RET
+                lo = self._pop()
+                hi = self._pop()
+                self.pc = lo | (hi << 8)
+            elif r in (3, 4, 5):             # MOVB / MOVW / MOVBR
+                src, dst, count = self._get16(1), self._get16(3), self._get16(2)
+                if r == 5:
+                    for i in range(count):
+                        self.m[(dst - i) & MASK] = self.m[(src - i) & MASK]
+                    self._set16(1, src - count)
+                    self._set16(3, dst - count)
+                else:
+                    nbytes = count * 2 if r == 4 else count
+                    for i in range(nbytes):
+                        self.m[(dst + i) & MASK] = self.m[(src + i) & MASK]
+                    self._set16(1, src + nbytes)
+                    self._set16(3, dst + nbytes)
+                self._set16(2, 0)
         elif fam == F_LDI:
             self.r[r] = self._f8()
         elif fam == F_LDA:
             self.r[r] = self.m[self._f16()]
         elif fam == F_STA:
             self.m[self._f16()] = self.r[r]
-        elif fam in (F_ADD, F_SUB, F_AND, F_OR, F_XOR):
-            alu = {F_ADD: 1, F_SUB: 2, F_AND: 4, F_OR: 5, F_XOR: 6}[fam]
-            addr = self._f16()
-            self.r[r] = self._alu(alu, self.r[r], self.m[addr])
-        elif fam == F_NOT:
-            self.r[r] = self._logic((~self.r[r]) & 0xFF)
-        elif fam == F_SHR:
-            v = self.r[r]
-            res = v >> 1
-            self.r[r] = res
-            f = 0
-            if v & 1:
-                f |= FLAG_C
-            if res == 0:
-                f |= FLAG_Z
-            if res & 0x80:
-                f |= FLAG_N
-            if v & 0x80:
-                f |= FLAG_V
-            self.flags = f
-        elif fam == F_SHL:
-            v = self.r[r]
-            res = (v << 1) & 0xFF
-            self.r[r] = res
-            carry = bool(v & 0x80)
-            neg = bool(res & 0x80)
-            f = 0
-            if carry:
-                f |= FLAG_C
-            if res == 0:
-                f |= FLAG_Z
-            if neg:
-                f |= FLAG_N
-            if carry != neg:
-                f |= FLAG_V
-            self.flags = f
+        elif fam == F_LDAR:
+            self.r[r] = self.m[self._get16(self._f8() & 3)]
+        elif fam == F_STAR:
+            self.m[self._get16(self._f8() & 3)] = self.r[r]
         elif fam == F_IN:
             self.r[r] = self.p.read(self._f16())
         elif fam == F_OUT:
             self.p.write(self._f16(), self.r[r])
-        elif fam == 21:  # LDA reg,[reg16]
-            pair = self._f8() & 3
-            addr = self.r[pair * 2] | (self.r[pair * 2 + 1] << 8)
-            self.r[r] = self.m[addr]
-        elif fam == 22:  # STA [reg16],reg
-            pair = self._f8() & 3
-            addr = self.r[pair * 2] | (self.r[pair * 2 + 1] << 8)
-            self.m[addr] = self.r[r]
-        elif fam == 23:  # IN reg,(reg16)
-            pair = self._f8() & 3
-            port = self.r[pair * 2] | (self.r[pair * 2 + 1] << 8)
-            self.r[r] = self.p.read(port)
-        elif fam == 24:  # OUT (reg16),reg
-            pair = self._f8() & 3
-            port = self.r[pair * 2] | (self.r[pair * 2 + 1] << 8)
-            self.p.write(port, self.r[r])
+        elif fam == F_INR:
+            self.r[r] = self.p.read(self._get16(self._f8() & 3))
+        elif fam == F_OUTR:
+            self.p.write(self._get16(self._f8() & 3), self.r[r])
+        elif fam == F_ALURR:
+            b1 = self._f8()
+            self.r[r] = self._alu(b1 >> 3, self.r[r], self.r[b1 & 7])
+        elif fam == F_ALUI:
+            aop = self._f8()
+            imm = self._f8()
+            self.r[r] = self._alu(aop, self.r[r], imm)
+        elif fam == F_ALUM:
+            aop = self._f8()
+            self.r[r] = self._alu(aop, self.r[r], self.m[self._f16()])
+        elif fam == F_ALUP:
+            b1 = self._f8()
+            self.r[r] = self._alu(b1 >> 2, self.r[r], self.m[self._get16(b1 & 3)])
+        elif fam == F_NOT:
+            self.r[r] = self._logic((~self.r[r]) & 0xFF)
+        elif fam in (F_SHR, F_SHL):
+            self._shift(r, (self._f8() & 7) + 1, fam == F_SHL)
+        elif fam == F_MUL:
+            product = self.r[0] * self.r[r]
+            self._set16(0, product)
+            hi = product > 0xFF
+            self._flags(hi, product, 0x8000, hi)
+        elif fam == F_DIV:
+            # AL=AX/reg AH=AX%reg -- satura (AL=AH=0xFF, C=V=1) en division
+            # entre 0 o cociente que no cabe en 8 bits, igual que cpu.cpp
+            divisor = self.r[r]
+            ax = self._get16(0)
+            if divisor != 0 and ax // divisor <= 0xFF:
+                q, rem = divmod(ax, divisor)
+                self.r[0], self.r[1] = q, rem
+                self._flags(False, q, 0x80, False)
+            else:
+                self.r[0] = self.r[1] = 0xFF
+                self.flags = FLAG_C | FLAG_V | FLAG_N
+        elif fam in (F_INC, F_DEC):
+            a = self.r[r]
+            res = (a - 1) & 0xFF if fam == F_DEC else (a + 1) & 0xFF
+            self.r[r] = res
+            c = self.flags & FLAG_C           # C no cambia
+            self._flags(c, res, 0x80, a == (0x80 if fam == F_DEC else 0x7F))
         elif fam == F_PUSH:
             self._push(self.r[r])
         elif fam == F_POP:
@@ -436,135 +575,60 @@ class Cpu:
         elif fam == F_CALL:
             addr = self._f16()
             if self._cond(r):
-                self._push((self.pc >> 8) & 0xFF)
-                self._push(self.pc & 0xFF)
-                self.pc = addr
-        elif fam == F_RET:
-            lo = self._pop()
-            hi = self._pop()
-            self.pc = lo | (hi << 8)
-        elif fam == 25:  # SHR reg,#N (N = byte2+1, 1..8)
-            n = (self._f8() & 7) + 1
-            v = self.r[r]
-            res = (v >> n) & 0xFF
-            self.r[r] = res
-            f = 0
-            if (v >> (n - 1)) & 1:
-                f |= FLAG_C
-            if res == 0:
-                f |= FLAG_Z
-            if res & 0x80:
-                f |= FLAG_N
-            if v & 0x80:  # V = bit 7 de ANTES de esta instruccion (una sola,
-                f |= FLAG_V  # aunque desplace N bits -- no de cada paso interno)
-            self.flags = f
-        elif fam == 26:  # SHL reg,#N (N = byte2+1, 1..8)
-            n = (self._f8() & 7) + 1
-            v = self.r[r]
-            res = (v << n) & 0xFF
-            self.r[r] = res
-            carry = bool((v >> (8 - n)) & 1)
-            neg = bool(res & 0x80)
-            f = 0
-            if carry:
-                f |= FLAG_C
-            if res == 0:
-                f |= FLAG_Z
-            if neg:
-                f |= FLAG_N
-            if carry != neg:
-                f |= FLAG_V
-            self.flags = f
-        elif fam == F_EXT:
-            operand = self._f8()
-            dst, src = (operand >> 3) & 7, operand & 7
-            self.r[dst] = self._alu(r, self.r[dst], self.r[src])
-        elif fam == F_ALUI:
-            dst = self._f8() & 7
-            imm = self._f8()
-            self.r[dst] = self._alu(r, self.r[dst], imm)
-        elif fam == 27:  # MUL reg : AX = AL * reg, sin signo
-            b = self.r[r]
-            product = self.r[0] * b
-            self.r[0] = product & 0xFF
-            self.r[1] = (product >> 8) & 0xFF
-            hi = 1 if product > 0xFF else 0
-            f = hi
-            if product == 0:
-                f |= FLAG_Z
-            if product & 0x8000:
-                f |= FLAG_N
-            if hi:
-                f |= FLAG_V
-            self.flags = f
-        elif fam == 28:  # DIV reg : AL=AX/reg AH=AX%reg, sin signo -- satura
-                          # (AL=AH=0xFF, C=V=1) en division entre 0 o cociente
-                          # que no cabe en 8 bits, igual que cpu.cpp
-            divisor = self.r[r]
-            ax = self.r[0] | (self.r[1] << 8)
-            ok, q, rem = False, 0, 0
-            if divisor != 0:
-                q, rem = divmod(ax, divisor)
-                ok = q <= 0xFF
-            if ok:
-                self.r[0] = q
-                self.r[1] = rem
-                f = 0
-                if q == 0:
-                    f |= FLAG_Z
-                if q & 0x80:
-                    f |= FLAG_N
-                self.flags = f
+                self._call(addr)
+        elif fam == F_JX:
+            if r in (0, 1):                  # JMPNV / CALLNV
+                addr = self._f16()
+                if not (self.flags & FLAG_V):
+                    if r == 0:
+                        self.pc = addr
+                    else:
+                        self._call(addr)
+            elif r == 2:                     # JMP reg16
+                self.pc = self._get16(self._f8() & 3)
+            elif r == 3:                     # CALL reg16
+                self._call(self._get16(self._f8() & 3))
+        elif fam == F_R16:
+            if r <= 5:
+                b1 = self._f8()
+                d, src = (b1 >> 3) & 3, b1 & 7
+                v = self._get16(d)
+                if r == 0:
+                    self._set16(d, self._get16(src & 3))
+                elif r == 1:
+                    self._set16(d, (v + self._get16(src & 3)) & MASK)
+                elif r == 2:
+                    self._set16(d, (v - self._get16(src & 3)) & MASK)
+                elif r == 3:
+                    self._cmp16(v, self._get16(src & 3))
+                elif r == 4:
+                    self._set16(d, (v + self.r[src]) & MASK)
+                else:
+                    self._set16(d, (v - self.r[src]) & MASK)
+        elif fam == F_R16I:
+            if r <= 3:
+                d = self._f8() & 3
+                v = self._get16(d)
+                if r == 0:
+                    self._set16(d, self._f16())
+                elif r == 1:
+                    self._set16(d, (v + self._f8()) & MASK)
+                elif r == 2:
+                    self._set16(d, (v - self._f8()) & MASK)
+                else:
+                    self._cmp16(v, self._f16())
+        elif fam == F_INCDEC16:
+            v = self._get16(r & 3)
+            self._set16(r & 3, (v - 1) & MASK if r & 4 else (v + 1) & MASK)
+        elif fam == F_PUSHPOP16:
+            if r & 4:
+                lo = self._pop()
+                hi = self._pop()
+                self._set16(r & 3, lo | (hi << 8))
             else:
-                self.r[0] = 0xFF
-                self.r[1] = 0xFF
-                self.flags = FLAG_C | FLAG_V | FLAG_N
-        elif fam == 29:  # INC/DEC reg16 : opcode bajo = dir<<2|reg16, sin flags
-            reg16 = r & 3
-            dec = bool(r & 4)
-            v = self.r[reg16 * 2] | (self.r[reg16 * 2 + 1] << 8)
-            v = (v - 1) & MASK if dec else (v + 1) & MASK
-            self.r[reg16 * 2] = v & 0xFF
-            self.r[reg16 * 2 + 1] = (v >> 8) & 0xFF
-        elif fam == 30:  # "extension 2": subop en r (ver isa.h OP_EXT2)
-            sub = r
-            if sub in (0, 1):  # ADD/SUB dst16,src8 (sin signo, sin flags)
-                operand = self._f8()
-                dst16 = (operand >> 3) & 3
-                src8 = operand & 7
-                v = self.r[dst16 * 2] | (self.r[dst16 * 2 + 1] << 8)
-                ext = self.r[src8]
-                v = (v + ext) & MASK if sub == 0 else (v - ext) & MASK
-                self.r[dst16 * 2] = v & 0xFF
-                self.r[dst16 * 2 + 1] = (v >> 8) & 0xFF
-            elif sub in (2, 3):  # MOVB/MOVW: BX=origen DX=destino CX=cuenta
-                src = self.r[2] | (self.r[3] << 8)
-                dst = self.r[6] | (self.r[7] << 8)
-                count = self.r[4] | (self.r[5] << 8)
-                nbytes = count * 2 if sub == 3 else count
-                for i in range(nbytes):
-                    self.m[(dst + i) & MASK] = self.m[(src + i) & MASK]
-                newsrc = (src + nbytes) & MASK
-                newdst = (dst + nbytes) & MASK
-                self.r[2], self.r[3] = newsrc & 0xFF, (newsrc >> 8) & 0xFF
-                self.r[6], self.r[7] = newdst & 0xFF, (newdst >> 8) & 0xFF
-                self.r[4] = self.r[5] = 0
-            elif sub == 4:  # JMPNV
-                addr = self._f16()
-                if not (self.flags & FLAG_V):
-                    self.pc = addr
-            elif sub == 5:  # CALLNV
-                addr = self._f16()
-                if not (self.flags & FLAG_V):
-                    self._push((self.pc >> 8) & 0xFF)
-                    self._push(self.pc & 0xFF)
-                    self.pc = addr
-            elif sub == 6:  # MOV reg16,#imm16 -- unica LEN 4, sin flags
-                pair = self._f8() & 3
-                imm = self._f16()
-                self.r[pair * 2] = imm & 0xFF
-                self.r[pair * 2 + 1] = (imm >> 8) & 0xFF
-            # sub 7: reservado, se comporta como NOP
+                v = self._get16(r & 3)
+                self._push(v >> 8)
+                self._push(v & 0xFF)
         return not self.halted
 
 
@@ -620,6 +684,9 @@ def main(argv=None):
     ap.add_argument("--frame-every", type=int, default=0,
                     help="vuelca la pantalla cada N instrucciones")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--slot", type=int, default=0,
+                    help="slot 'en curso' para los puertos de EEPROM "
+                         "(0x0700-0x0801); por defecto 0")
     ap.add_argument("--slots-dir",
                     help="directorio con los slots de flash simulados "
                          "(NN.bin) para los puertos 0x0640/0x0641 -- ver "
@@ -630,6 +697,7 @@ def main(argv=None):
         image = f.read()
 
     ports = Ports(instr_ns=args.instr_ns, slots_dir=args.slots_dir)
+    ports.current_slot = args.slot
     cpu = Cpu(image, ports)
     events = load_script(args.script)
     ev_i = 0

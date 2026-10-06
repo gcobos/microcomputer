@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1388" font-family="'Segoe UI',system-ui,sans-serif">
-  <rect x="0" y="0" width="1260" height="1388" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1552" font-family="'Segoe UI',system-ui,sans-serif">
+  <rect x="0" y="0" width="1260" height="1552" fill="#ffffff"/>
   <style>
     .ttl   { font-size:18px; font-weight:700; fill:#0f172a; }
     .sub   { font-size:12px; fill:#475569; }
@@ -10,63 +10,52 @@
     .fn    { font-size:11.5px; fill:#334155; }
     .hd    { font-size:10px; font-weight:700; fill:#64748b; letter-spacing:.5px; }
     .note  { font-size:11.5px; fill:#334155; }
-    .mono  { font-size:11.5px; font-family:ui-monospace,Consolas,'DejaVu Sans Mono',monospace; fill:#1e293b; }
+    .mono  { white-space:pre; font-size:11.5px; font-family:ui-monospace,Consolas,'DejaVu Sans Mono',monospace; fill:#1e293b; }
     .cap   { font-size:10px; fill:#94a3b8; }
   </style>
+  <!-- generado por un script: mantener sincronizado con specs.txt §8, docs/isa.md §8 e include/iomap.h -->
 
   <text x="40" y="40" class="ttl">compi — mapa del espacio de puertos (IN / OUT)</text>
   <text x="40" y="60" class="sub">16 bits · 65536 puertos · independiente de la RAM · fuente: specs.txt §8 e include/iomap.h</text>
 
   <!-- ================= columna: espacio completo ================= -->
   <text x="70" y="96" class="grp">Espacio completo</text>
-  <rect x="70" y="110" width="150" height="952" fill="#f1f5f9" stroke="#cbd5e1"/>
-  <!-- pantalla: graficos -->
+  <rect x="70" y="110" width="150" height="1072" fill="#f1f5f9" stroke="#cbd5e1"/>
   <rect x="70" y="110" width="150" height="130" fill="#dbeafe" stroke="#0969da"/>
   <text x="145" y="162" text-anchor="middle" class="nm" fill="#0969da">GRÁFICOS</text>
   <text x="145" y="178" text-anchor="middle" class="cap">0x0000–0x03FF</text>
-  <!-- pantalla: texto -->
   <rect x="70" y="240" width="150" height="40" fill="#bfdbfe" stroke="#0969da"/>
   <text x="145" y="265" text-anchor="middle" class="nm" fill="#0969da">TEXTO</text>
-  <!-- pantalla: atributos de texto -->
   <rect x="70" y="280" width="150" height="40" fill="#93c5fd" stroke="#0969da"/>
   <text x="145" y="305" text-anchor="middle" class="nm" fill="#0f4c81">ATRIBUTOS</text>
-  <!-- periféricos 0x06xx-0x08xx: un bloque por grupo, con su propia
-       direccion, titulo y color, igual que GRAFICOS/TEXTO/ATRIBUTOS de
-       arriba, para que ningun puerto quede escondido en una franja
-       generica sin nombre. -->
   <g font-size="9.5px">
     <rect x="70" y="320" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="320" width="4" height="16" fill="#0969da"/>
     <text x="80" y="331" fill="#1e293b">ENTRADA (encoders)</text>
-
     <rect x="70" y="336" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="336" width="4" height="16" fill="#d97706"/>
-    <text x="80" y="347" fill="#1e293b">LED</text>
-
+    <text x="80" y="347" fill="#1e293b">LED · ALEATORIO</text>
     <rect x="70" y="352" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="352" width="4" height="16" fill="#0d9488"/>
     <text x="80" y="363" fill="#1e293b">TEMPORIZADORES</text>
-
     <rect x="70" y="368" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="368" width="4" height="16" fill="#db2777"/>
     <text x="80" y="379" fill="#1e293b">SONIDO</text>
-
     <rect x="70" y="384" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="384" width="4" height="16" fill="#7c3aed"/>
     <text x="80" y="395" fill="#1e293b">PROGRAMAS</text>
-
     <rect x="70" y="400" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="400" width="4" height="16" fill="#059669"/>
     <text x="80" y="411" fill="#1e293b">CONFIGURACIÓN</text>
-
     <rect x="70" y="416" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
-    <rect x="70" y="416" width="4" height="16" fill="#ca8a04"/>
-    <text x="80" y="427" fill="#1e293b">EEPROM POR SLOT</text>
+    <rect x="70" y="416" width="4" height="16" fill="#4f46e5"/>
+    <text x="80" y="427" fill="#1e293b">INFO DE SLOT</text>
+    <rect x="70" y="432" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="432" width="4" height="16" fill="#ca8a04"/>
+    <text x="80" y="443" fill="#1e293b">EEPROM POR SLOT</text>
   </g>
-  <!-- sin mapear -->
-  <text x="145" y="470" text-anchor="middle" class="cap">sin mapear</text>
-  <text x="145" y="488" text-anchor="middle" class="cap">IN → 0 · OUT → nada</text>
-  <!-- etiquetas de direccion -->
+  <text x="145" y="498" text-anchor="middle" class="cap">sin mapear</text>
+  <text x="145" y="516" text-anchor="middle" class="cap">IN → 0 · OUT → nada</text>
   <text x="62" y="114" text-anchor="end" class="adr">0x0000</text>
   <text x="62" y="245" text-anchor="end" class="adr">0x0400</text>
   <text x="62" y="285" text-anchor="end" class="adr">0x0500</text>
@@ -77,24 +66,24 @@
     <text x="62" y="379">0x0630</text>
     <text x="62" y="395">0x0640</text>
     <text x="62" y="411">0x0650</text>
-    <text x="62" y="427">0x0700</text>
+    <text x="62" y="427">0x0660</text>
+    <text x="62" y="443">0x0700</text>
   </g>
-  <text x="62" y="1059" text-anchor="end" class="adr">0xFFFF</text>
+  <text x="62" y="1179" text-anchor="end" class="adr">0xFFFF</text>
   <text x="228" y="200" class="cap">PANTALLA</text>
   <text x="228" y="214" class="cap">(gráficos + texto</text>
   <text x="228" y="228" class="cap">+ atributos van</text>
   <text x="228" y="242" class="cap">juntos)</text>
 
-  <!-- lineas de "explosion" hacia el detalle: una por cada bloque de
-       arriba, del mismo color, hacia el principio de su seccion -->
   <path d="M220,110 L360,150" fill="none" stroke="#0969da" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,328 L360,332" fill="none" stroke="#0969da" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,328 L360,336" fill="none" stroke="#0969da" stroke-width="1" stroke-dasharray="3 3"/>
   <path d="M220,344 L360,452" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,360 L360,504" fill="none" stroke="#0d9488" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,376 L360,574" fill="none" stroke="#db2777" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,392 L360,692" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,408 L360,796" fill="none" stroke="#059669" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,424 L360,900" fill="none" stroke="#ca8a04" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,360 L360,524" fill="none" stroke="#0d9488" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,376 L360,592" fill="none" stroke="#db2777" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,392 L360,726" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,408 L360,878" fill="none" stroke="#059669" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,424 L360,990" fill="none" stroke="#4f46e5" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,440 L360,1080" fill="none" stroke="#ca8a04" stroke-width="1" stroke-dasharray="3 3"/>
 
   <!-- ================= detalle ================= -->
   <text x="372" y="96" class="grp">Detalle</text>
@@ -106,159 +95,155 @@
   </g>
   <line x1="372" y1="140" x2="1240" y2="140" stroke="#cbd5e1"/>
 
-  <!-- PANTALLA: GRAFICOS -->
-  <rect x="360" y="150" width="6" height="34" fill="#0969da"/>
+  <rect x="360" y="150" width="6" height="38" fill="#0969da"/>
   <text x="372" y="163" class="grp" fill="#0969da">PANTALLA · GRÁFICOS (framebuffer)  ·  lectura y escritura</text>
-  <text x="372" y="180" class="adr">0x0000–0x03FF</text>
-  <text x="520" y="180" class="nm">g_fb</text>
-  <rect x="696" y="170" width="24" height="13" rx="2" fill="#0969da"/><text x="700" y="180" class="ac">IO</text>
-  <text x="752" y="180" class="fn">128×64 mono · 1 puerto = 8 px horizontales (bit 7 = izquierda) · puerto = y·16 + xbyte</text>
+  <text x="372" y="184" class="adr">0x0000–0x03FF</text><text x="520" y="184" class="nm">g_fb</text>
+  <rect x="696" y="174" width="24" height="13" rx="2" fill="#0969da"/><text x="700" y="184" class="ac">IO</text>
+  <text x="752" y="184" class="fn">128×64 mono · 1 puerto = 8 px horizontales (bit 7 = izquierda) · puerto = y·16 + xbyte</text>
 
-  <!-- PANTALLA: TEXTO -->
-  <rect x="360" y="196" width="6" height="56" fill="#0969da"/>
-  <text x="372" y="209" class="grp" fill="#0969da">PANTALLA · TEXTO (rejilla monospace, encima del gráfico)  ·  lectura y escritura</text>
-  <text x="372" y="228" class="adr">0x0400–0x04FF</text>
-  <text x="520" y="228" class="nm">g_text</text>
-  <rect x="696" y="218" width="24" height="13" rx="2" fill="#0969da"/><text x="700" y="228" class="ac">IO</text>
-  <text x="752" y="228" class="fn">celda 6×8 (fuente 5×7) · puerto = 0x0400 + fila·32 + col   (fila 0–7, col 0–20)</text>
-  <text x="752" y="246" class="fn">byte = código ASCII: 0 → transparente · 0x20 → celda en blanco · resto → glifo opaco</text>
+  <rect x="360" y="200" width="6" height="56" fill="#0969da"/>
+  <text x="372" y="213" class="grp" fill="#0969da">PANTALLA · TEXTO (rejilla monospace, encima del gráfico)  ·  lectura y escritura</text>
+  <text x="372" y="234" class="adr">0x0400–0x04FF</text><text x="520" y="234" class="nm">g_text</text>
+  <rect x="696" y="224" width="24" height="13" rx="2" fill="#0969da"/><text x="700" y="234" class="ac">IO</text>
+  <text x="752" y="234" class="fn">celda 6×8 (fuente 5×7) · puerto = 0x0400 + fila·32 + col   (fila 0–7, col 0–20)</text>
+  <text x="752" y="252" class="fn">byte = código ASCII: 0 → transparente · 0x20 → celda en blanco · resto → glifo opaco</text>
 
-  <!-- PANTALLA: ATRIBUTOS DE TEXTO -->
-  <rect x="360" y="264" width="6" height="56" fill="#0969da"/>
-  <text x="372" y="277" class="grp" fill="#0969da">PANTALLA · ATRIBUTOS DE TEXTO (1 byte/celda, pegado al texto)  ·  lectura y escritura</text>
-  <text x="372" y="296" class="adr">0x0500–0x05FF</text>
-  <text x="520" y="296" class="nm">g_attr</text>
-  <rect x="696" y="286" width="24" height="13" rx="2" fill="#0969da"/><text x="700" y="296" class="ac">IO</text>
-  <text x="752" y="296" class="fn">puerto = 0x0500 + fila·32 + col (misma fórmula que el texto) · bit0 inverso · bit1 parpadeo</text>
-  <text x="752" y="314" class="fn">bit2 subrayado · bit3 tachado · bit4 subíndice · bit5 superíndice · bits6-7 rotación 0/90/180/270°</text>
+  <rect x="360" y="268" width="6" height="56" fill="#0969da"/>
+  <text x="372" y="281" class="grp" fill="#0969da">PANTALLA · ATRIBUTOS DE TEXTO (1 byte/celda, pegado al texto)  ·  lectura y escritura</text>
+  <text x="372" y="302" class="adr">0x0500–0x05FF</text><text x="520" y="302" class="nm">g_attr</text>
+  <rect x="696" y="292" width="24" height="13" rx="2" fill="#0969da"/><text x="700" y="302" class="ac">IO</text>
+  <text x="752" y="302" class="fn">puerto = 0x0500 + fila·32 + col (misma fórmula que el texto) · bit0 inverso · bit1 parpadeo</text>
+  <text x="752" y="320" class="fn">bit2 subrayado · bit3 tachado · bit4 subíndice · bit5 superíndice · bits 6-7 giro 0/90/180/270°</text>
 
-  <!-- ENTRADA -->
-  <rect x="360" y="332" width="6" height="130" fill="#0969da"/>
-  <text x="372" y="345" class="grp" fill="#0969da">ENTRADA  ·  encoders e interruptores  (solo IN)</text>
-  <g>
-    <text x="372" y="366" class="adr">0x0600</text><text x="520" y="366" class="nm">PORT_DIR_POS</text>
-    <rect x="696" y="356" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="366" class="ac">IN</text>
-    <text x="752" y="366" class="fn">encoder ADDR: posición 0–255 (contador que envuelve; resta la lectura anterior)</text>
+  <rect x="360" y="336" width="6" height="104" fill="#0969da"/>
+  <text x="372" y="349" class="grp" fill="#0969da">ENTRADA  ·  encoders e interruptores  (solo IN)</text>
+  <text x="372" y="370" class="adr">0x0600</text><text x="520" y="370" class="nm">PORT_DIR_POS</text>
+  <rect x="696" y="360" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="370" class="ac">IN</text>
+  <text x="752" y="370" class="fn">encoder ADDR: posición 0–255 (contador que envuelve; resta la lectura anterior)</text>
+  <text x="372" y="392" class="adr">0x0601</text><text x="520" y="392" class="nm">PORT_DIR_BTN</text>
+  <rect x="696" y="382" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="392" class="ac">IN</text>
+  <text x="752" y="392" class="fn">encoder ADDR: bit 0 = pulsado</text>
+  <text x="372" y="414" class="adr">0x0602</text><text x="520" y="414" class="nm">PORT_DAT_POS</text>
+  <rect x="696" y="404" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="414" class="ac">IN</text>
+  <text x="752" y="414" class="fn">encoder DATA: posición 0–255</text>
+  <text x="372" y="436" class="adr">0x0603</text><text x="520" y="436" class="nm">PORT_DAT_BTN</text>
+  <rect x="696" y="426" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="436" class="ac">IN</text>
+  <text x="752" y="436" class="fn">encoder DATA: bit 0 = pulsado</text>
 
-    <text x="372" y="388" class="adr">0x0601</text><text x="520" y="388" class="nm">PORT_DIR_BTN</text>
-    <rect x="696" y="378" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="388" class="ac">IN</text>
-    <text x="752" y="388" class="fn">encoder ADDR: bit 0 = pulsado</text>
-
-    <text x="372" y="410" class="adr">0x0602</text><text x="520" y="410" class="nm">PORT_DAT_POS</text>
-    <rect x="696" y="400" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="410" class="ac">IN</text>
-    <text x="752" y="410" class="fn">encoder DATA: posición 0–255</text>
-
-    <text x="372" y="432" class="adr">0x0603</text><text x="520" y="432" class="nm">PORT_DAT_BTN</text>
-    <rect x="696" y="422" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="432" class="ac">IN</text>
-    <text x="752" y="432" class="fn">encoder DATA: bit 0 = pulsado</text>
-  </g>
-
-  <!-- SALIDA LED -->
-  <rect x="360" y="452" width="6" height="42" fill="#d97706"/>
-  <text x="372" y="465" class="grp" fill="#b45309">SALIDA  ·  LED de a bordo</text>
+  <rect x="360" y="452" width="6" height="60" fill="#d97706"/>
+  <text x="372" y="465" class="grp" fill="#b45309">LED de a bordo  ·  NÚMEROS ALEATORIOS</text>
   <text x="372" y="486" class="adr">0x0610</text><text x="520" y="486" class="nm">PORT_LED</text>
   <rect x="696" y="476" width="24" height="13" rx="2" fill="#d97706"/><text x="700" y="486" class="ac">IO</text>
   <text x="752" y="486" class="fn">OUT bit 0 → enciende el LED azul del SuperMini (GPIO8) · IN devuelve el eco</text>
+  <text x="372" y="508" class="adr">0x0611</text><text x="520" y="508" class="nm">PORT_RANDOM</text>
+  <rect x="696" y="498" width="24" height="13" rx="2" fill="#d97706"/><text x="701" y="508" class="ac">IN</text>
+  <text x="752" y="508" class="fn">byte aleatorio nuevo en cada lectura (generador por hardware del ESP32, esp_random)</text>
 
-  <!-- TEMPORIZADORES -->
-  <rect x="360" y="504" width="6" height="60" fill="#0d9488"/>
-  <text x="372" y="517" class="grp" fill="#0f766e">TEMPORIZADORES  ·  10 cuentas atrás</text>
-  <text x="372" y="538" class="adr">0x0620–0x0629</text><text x="520" y="538" class="nm">PORT_TIMER_BASE + i</text>
-  <rect x="696" y="528" width="24" height="13" rx="2" fill="#0d9488"/><text x="700" y="538" class="ac">IO</text>
-  <text x="752" y="538" class="fn">OUT arma (0–255); decrece solo hasta 0 y se queda · IN lee el valor actual</text>
-  <text x="752" y="556" class="fn">tᵢ baja 1 cada (1 &lt;&lt; i) ms  →  t0..t9 = 1,2,4,8,16,32,64,128,256,512 ms/paso</text>
+  <rect x="360" y="524" width="6" height="56" fill="#0d9488"/>
+  <text x="372" y="537" class="grp" fill="#0f766e">TEMPORIZADORES  ·  10 cuentas atrás</text>
+  <text x="372" y="558" class="adr">0x0620–0x0629</text><text x="520" y="558" class="nm">PORT_TIMER_BASE + i</text>
+  <rect x="696" y="548" width="24" height="13" rx="2" fill="#0d9488"/><text x="700" y="558" class="ac">IO</text>
+  <text x="752" y="558" class="fn">OUT arma (0–255); decrece solo hasta 0 y se queda · IN lee el valor actual</text>
+  <text x="752" y="576" class="fn">tᵢ baja 1 cada (1 &lt;&lt; i) ms  →  t0..t9 = 1,2,4,8,16,32,64,128,256,512 ms/paso</text>
 
-  <!-- SONIDO -->
-  <rect x="360" y="574" width="6" height="108" fill="#db2777"/>
-  <text x="372" y="587" class="grp" fill="#be185d">SONIDO  ·  zumbador piezo PASIVO en GPIO3</text>
-  <g>
-    <text x="372" y="608" class="adr">0x0630</text><text x="520" y="608" class="nm">PORT_SND_FREQ_LO</text>
-    <rect x="696" y="598" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="608" class="ac">IO</text>
-    <text x="752" y="608" class="fn">frecuencia en Hz, byte bajo — solo se engancha (aún no suena)</text>
+  <rect x="360" y="592" width="6" height="122" fill="#db2777"/>
+  <text x="372" y="605" class="grp" fill="#be185d">SONIDO  ·  zumbador piezo PASIVO en GPIO3</text>
+  <text x="372" y="626" class="adr">0x0630</text><text x="520" y="626" class="nm">PORT_SND_FREQ_LO</text>
+  <rect x="696" y="616" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="626" class="ac">IO</text>
+  <text x="752" y="626" class="fn">frecuencia en Hz, byte bajo — solo se engancha (aún no suena)</text>
+  <text x="372" y="648" class="adr">0x0631</text><text x="520" y="648" class="nm">PORT_SND_FREQ_HI</text>
+  <rect x="696" y="638" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="648" class="ac">IO</text>
+  <text x="752" y="648" class="fn">byte alto; al escribirlo SUENA  Hz = alto·256 + bajo  (Hz = 0 → silencio)</text>
+  <text x="372" y="670" class="adr">0x0632</text><text x="520" y="670" class="nm">PORT_SND_NOTE</text>
+  <rect x="696" y="660" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="670" class="ac">IO</text>
+  <text x="752" y="670" class="fn">nota MIDI 0–127 (0 = silencio) · 69 = LA4 = 440 Hz · +12 = una octava · la forma fácil</text>
+  <text x="372" y="692" class="adr">0x0633</text><text x="520" y="692" class="nm">PORT_SND_DUR</text>
+  <rect x="696" y="682" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="692" class="ac">IO</text>
+  <text x="752" y="692" class="fn">duración automática = valor · 10 ms, luego se calla sola (0 = sostenida; "pegajosa")</text>
+  <text x="752" y="710" class="fn">escríbelo SIEMPRE antes que 0x0632 / 0x0631</text>
 
-    <text x="372" y="630" class="adr">0x0631</text><text x="520" y="630" class="nm">PORT_SND_FREQ_HI</text>
-    <rect x="696" y="620" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="630" class="ac">IO</text>
-    <text x="752" y="630" class="fn">byte alto; al escribirlo SUENA  Hz = alto·256 + bajo  (Hz = 0 → silencio)</text>
+  <rect x="360" y="726" width="6" height="140" fill="#7c3aed"/>
+  <text x="372" y="739" class="grp" fill="#6d28d9">PROGRAMAS  ·  slots de la flash (0–59)</text>
+  <text x="372" y="760" class="adr">0x0640</text><text x="520" y="760" class="nm">PORT_PROG_LOAD</text>
+  <rect x="696" y="750" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="760" class="ac">IO</text>
+  <text x="752" y="760" class="fn">OUT nº de slot → carga esa imagen en la RAM y reinicia la CPU (salto sin vuelta)</text>
+  <text x="752" y="778" class="fn">apaga pantalla/LED/sonido · slot vacío o ≥ 60: nada · IN = 1 si falló el último intento</text>
+  <text x="372" y="800" class="adr">0x0641</text><text x="520" y="800" class="nm">PORT_PROG_SAVE</text>
+  <rect x="696" y="790" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="800" class="ac">IO</text>
+  <text x="752" y="800" class="fn">OUT nº de slot → graba la RAM actual ahí (con su nombre y categoría) y SIGUE</text>
+  <text x="752" y="818" class="fn">ejecutando · IN = 1 si la última grabación salió bien</text>
+  <text x="372" y="840" class="adr">0x0642</text><text x="520" y="840" class="nm">PORT_SLOT_QUERY</text>
+  <rect x="696" y="830" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="840" class="ac">IO</text>
+  <text x="752" y="840" class="fn">OUT nº de slot → lee su nombre y categoría a 0x0660–0x066E · IN = 1 si tiene programa</text>
+  <text x="372" y="862" class="adr">0x0643</text><text x="520" y="862" class="nm">PORT_CUR_SLOT</text>
+  <rect x="696" y="852" width="24" height="13" rx="2" fill="#7c3aed"/><text x="701" y="862" class="ac">IN</text>
+  <text x="752" y="862" class="fn">slot del que se cargó el programa en curso (para grabarse a sí mismo)</text>
 
-    <text x="372" y="652" class="adr">0x0632</text><text x="520" y="652" class="nm">PORT_SND_NOTE</text>
-    <rect x="696" y="642" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="652" class="ac">IO</text>
-    <text x="752" y="652" class="fn">nota MIDI 0–127 (0 = silencio) · 69 = LA4 = 440 Hz · +12 = una octava · la forma fácil</text>
+  <rect x="360" y="878" width="6" height="100" fill="#059669"/>
+  <text x="372" y="891" class="grp" fill="#047857">CONFIGURACIÓN  ·  ajustes globales, OUT solo desde el slot 0 (SETTINGS de sisop)</text>
+  <text x="372" y="912" class="adr">0x0650</text><text x="520" y="912" class="nm">PORT_CFG_BRIGHTNESS</text>
+  <rect x="696" y="902" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="912" class="ac">IO</text>
+  <text x="752" y="912" class="fn">OUT 0–255 → brillo real al instante; queda como "pleno brillo" tras atenuar por</text>
+  <text x="752" y="930" class="fn">inactividad y se mantiene entre programas · IN = valor actual</text>
+  <text x="372" y="952" class="adr">0x0651</text><text x="520" y="952" class="nm">PORT_CFG_SOUND_EN</text>
+  <rect x="696" y="942" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="952" class="ac">IO</text>
+  <text x="752" y="952" class="fn">OUT 0 = silencia, ≠0 = reactiva (mismo interruptor que BOOT) · IN = 1 si activado</text>
+  <text x="372" y="974" class="adr">0x0652</text><text x="520" y="974" class="nm">PORT_CFG_SAVE</text>
+  <rect x="696" y="964" width="30" height="13" rx="2" fill="#059669"/><text x="700" y="974" class="ac">OUT</text>
+  <text x="752" y="974" class="fn">graba brillo y sonido en la flash (solo si cambiaron); se leen al encender</text>
 
-    <text x="372" y="674" class="adr">0x0633</text><text x="520" y="674" class="nm">PORT_SND_DUR</text>
-    <rect x="696" y="664" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="674" class="ac">IO</text>
-    <text x="752" y="674" class="fn">duración automática = valor · 10 ms, luego se calla sola (0 = sostenida; "pegajosa")</text>
-  </g>
+  <rect x="360" y="990" width="6" height="78" fill="#4f46e5"/>
+  <text x="372" y="1003" class="grp" fill="#4338ca">INFO DEL SLOT CONSULTADO  ·  la rellena 0x0642  (solo IN)</text>
+  <text x="372" y="1024" class="adr">0x0660</text><text x="520" y="1024" class="nm">PORT_SLOT_INFO_BASE</text>
+  <rect x="696" y="1014" width="24" height="13" rx="2" fill="#4f46e5"/><text x="701" y="1024" class="ac">IN</text>
+  <text x="752" y="1024" class="fn">categoría: 1 sistema · 2 juego · 3 programa · 4 utilidad · 5 demo · 6 documentación</text>
+  <text x="752" y="1042" class="fn">0xFF = sin categoría (la pone casm con .category)</text>
+  <text x="372" y="1064" class="adr">0x0661–0x066E</text><text x="520" y="1064" class="nm">… + 1 … + 14</text>
+  <rect x="696" y="1054" width="24" height="13" rx="2" fill="#4f46e5"/><text x="701" y="1064" class="ac">IN</text>
+  <text x="752" y="1064" class="fn">nombre ASCII, hasta 14 caracteres, relleno con 0 (casm: .name "TEXTO")</text>
 
-  <!-- CARGA Y GRABADO DE PROGRAMAS -->
-  <rect x="360" y="692" width="6" height="84" fill="#7c3aed"/>
-  <text x="372" y="705" class="grp" fill="#6d28d9">PROGRAMAS  ·  cargar y grabar slots de la flash (0–59)</text>
-  <text x="372" y="726" class="adr">0x0640</text><text x="520" y="726" class="nm">PORT_PROG_LOAD</text>
-  <rect x="696" y="716" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="726" class="ac">IO</text>
-  <text x="752" y="726" class="fn">OUT nº de slot → carga esa imagen en la RAM y reinicia la CPU (salto sin vuelta)</text>
-  <text x="752" y="744" class="fn">apaga pantalla/LED/sonido · slot vacío o ≥ 60: nada · IN = 1 si falló el último intento</text>
-  <text x="372" y="766" class="adr">0x0641</text><text x="520" y="766" class="nm">PORT_PROG_SAVE</text>
-  <rect x="696" y="756" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="766" class="ac">IO</text>
-  <text x="752" y="766" class="fn">OUT nº de slot → graba la RAM actual ahí y SIGUE ejecutando · IN = 1 si falló</text>
+  <rect x="360" y="1080" width="6" height="100" fill="#ca8a04"/>
+  <text x="372" y="1093" class="grp" fill="#a16207">EEPROM POR SLOT  ·  256 bytes persistentes, sobreviven a apagar el aparato</text>
+  <text x="372" y="1114" class="adr">0x0700–0x07FF</text><text x="520" y="1114" class="nm">PORT_EEPROM_BASE+i</text>
+  <rect x="696" y="1104" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1114" class="ac">IO</text>
+  <text x="752" y="1114" class="fn">byte i (0–255) del búfer en RAM del slot EN CURSO — instantáneo, no toca la flash</text>
+  <text x="752" y="1132" class="fn">hace falta 0x0800 / 0x0801 para leer o guardar de verdad</text>
+  <text x="372" y="1154" class="adr">0x0800</text><text x="520" y="1154" class="nm">PORT_EEPROM_LOAD</text>
+  <rect x="696" y="1144" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1154" class="ac">IO</text>
+  <text x="752" y="1154" class="fn">OUT cualquier valor → sustituye el búfer por los 256 bytes grabados · IN = 1 si falló</text>
+  <text x="372" y="1176" class="adr">0x0801</text><text x="520" y="1176" class="nm">PORT_EEPROM_SAVE</text>
+  <rect x="696" y="1166" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1176" class="ac">IO</text>
+  <text x="752" y="1176" class="fn">OUT cualquier valor → graba el búfer en la flash (slot EN CURSO) · IN = 1 si salió bien</text>
 
-  <!-- CONFIGURACIÓN DEL APARATO -->
-  <rect x="360" y="796" width="6" height="84" fill="#059669"/>
-  <text x="372" y="809" class="grp" fill="#047857">CONFIGURACIÓN  ·  brillo de pantalla y activar/desactivar sonido</text>
-  <text x="372" y="830" class="adr">0x0650</text><text x="520" y="830" class="nm">PORT_CFG_BRIGHTNESS</text>
-  <rect x="696" y="820" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="830" class="ac">IO</text>
-  <text x="752" y="830" class="fn">OUT 0–255 → brillo real al instante (oled.contrast); además queda como "pleno brillo"</text>
-  <text x="752" y="848" class="fn">tras atenuar por inactividad · se reinicia de fábrica en cada ejecución · IN = eco</text>
-  <text x="372" y="870" class="adr">0x0651</text><text x="520" y="870" class="nm">PORT_CFG_SOUND_EN</text>
-  <rect x="696" y="860" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="870" class="ac">IO</text>
-  <text x="752" y="870" class="fn">OUT 0 = silencia, ≠0 = reactiva (mismo interruptor que BOOT, sin jingle) · IN = 1 si activado</text>
-
-  <!-- EEPROM POR SLOT -->
-  <rect x="360" y="900" width="6" height="112" fill="#ca8a04"/>
-  <text x="372" y="913" class="grp" fill="#a16207">EEPROM POR SLOT  ·  256 bytes persistentes, sobreviven a apagar el aparato</text>
-  <text x="372" y="934" class="adr">0x0700–0x07FF</text><text x="520" y="934" class="nm">PORT_EEPROM_BASE+i</text>
-  <rect x="696" y="924" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="934" class="ac">IO</text>
-  <text x="752" y="934" class="fn">byte i (0–255) del búfer de trabajo en RAM del slot EN CURSO — instantáneo, no toca la flash</text>
-  <text x="752" y="952" class="fn">se reinicia a 0 en cada ejecución nueva; hace falta 0x0800/0x0801 para que sea de verdad</text>
-  <text x="372" y="974" class="adr">0x0800</text><text x="520" y="974" class="nm">PORT_EEPROM_LOAD</text>
-  <rect x="696" y="964" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="974" class="ac">IO</text>
-  <text x="752" y="974" class="fn">OUT cualquier valor → sustituye el búfer por los 256 bytes grabados de verdad · IN = 1 si falló</text>
-  <text x="372" y="996" class="adr">0x0801</text><text x="520" y="996" class="nm">PORT_EEPROM_SAVE</text>
-  <rect x="696" y="986" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="996" class="ac">IO</text>
-  <text x="752" y="996" class="fn">OUT cualquier valor → graba el búfer de verdad, para el slot EN CURSO · IN = 1 si salió bien</text>
-
-  <g transform="translate(0,338)">
-  <!-- resto -->
+  <g transform="translate(0,500)">
   <rect x="360" y="692" width="6" height="20" fill="#cbd5e1"/>
   <text x="372" y="706" class="adr">resto</text>
   <text x="752" y="706" class="fn">IN → 0 · OUT → no hace nada</text>
-
   <line x1="372" y1="726" x2="1240" y2="726" stroke="#cbd5e1"/>
 
-  <!-- notas -->
   <text x="372" y="750" class="grp">Notas</text>
-  <text x="372" y="770" class="note">•  Gráficos, texto, atributos de texto, encoders, LED, temporizadores y sonido se ponen a 0 al (re)arrancar una ejecución.</text>
-  <text x="372" y="788" class="note">•  Sonido solo avanza en CONTINUO (calla en PASO y al HALT). En PASO A PASO los temporizadores avanzan según el tiempo real entre pasos, no en reposo.</text>
-  <text x="372" y="806" class="note">•  IN no modifica los flags: para esperar a que un contador/temporizador llegue a 0, haz  CMP reg,#0  antes del salto condicional.</text>
-  <text x="372" y="824" class="note">•  Codificación:  IN reg,(port16) = 0x68+r , lo , hi   ·   OUT (port16),reg = 0x70+r , lo , hi   (puerto de 16 bits, little-endian).</text>
+  <text x="372" y="770" class="note">•  Gráficos, texto, atributos, encoders, LED, temporizadores, sonido y búfer EEPROM se reinician al (re)arrancar una ejecución; brillo y sonido no.</text>
+  <text x="372" y="788" class="note">•  Sonido solo avanza en CONTINUO (calla en PASO y al HALT). En PASO A PASO los temporizadores avanzan según el tiempo real entre pasos.</text>
+  <text x="372" y="806" class="note">•  IN no modifica los flags: para esperar a que un temporizador llegue a 0, haz  CMP reg,#0  antes del salto condicional.</text>
+  <text x="372" y="824" class="note">•  Codificación (ISA 2):  IN reg,(port16) = 0x30+r, lo, hi  ·  OUT (port16),reg = 0x38+r, lo, hi  ·  con el puerto en un par: IN 0x40+r, r16 · OUT 0x48+r, r16</text>
 
-  <!-- ejemplos -->
   <rect x="372" y="844" width="410" height="150" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
   <text x="386" y="864" class="grp">Escribir "HI" arriba a la izquierda</text>
-  <text x="386" y="886" class="mono">MOV AL,#0x48     ; 'H'</text>
-  <text x="386" y="904" class="mono">OUT (0x0400),AL  ; celda (col 0, fila 0)</text>
-  <text x="386" y="922" class="mono">MOV AL,#0x49     ; 'I'</text>
-  <text x="386" y="940" class="mono">OUT (0x0401),AL  ; celda (col 1, fila 0)</text>
-  <text x="386" y="958" class="mono">HALT</text>
+  <text x="386" y="886" class="mono" xml:space="preserve">MOV AL,#0x48     ; 'H'</text>
+  <text x="386" y="904" class="mono" xml:space="preserve">OUT (0x0400),AL  ; celda (col 0, fila 0)</text>
+  <text x="386" y="922" class="mono" xml:space="preserve">MOV AL,#0x49     ; 'I'</text>
+  <text x="386" y="940" class="mono" xml:space="preserve">OUT (0x0401),AL  ; celda (col 1, fila 0)</text>
+  <text x="386" y="958" class="mono" xml:space="preserve">HALT</text>
   <text x="386" y="982" class="cap">sin salto de línea automático: incrementa el puerto</text>
 
   <rect x="806" y="844" width="424" height="150" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
-  <text x="820" y="864" class="grp">Pitido LA4 de 100 ms</text>
-  <text x="820" y="886" class="mono">MOV AL,#10       ; 10 × 10 ms</text>
-  <text x="820" y="904" class="mono">OUT (0x0633),AL  ; PORT_SND_DUR</text>
-  <text x="820" y="922" class="mono">MOV AL,#69       ; nota 69 = LA4</text>
-  <text x="820" y="940" class="mono">OUT (0x0632),AL  ; PORT_SND_NOTE</text>
-  <text x="820" y="958" class="mono">HALT</text>
-  <text x="820" y="982" class="cap">se calla sola a los 100 ms</text>
-
+  <text x="820" y="864" class="grp">Pitido de nota al azar, 100 ms</text>
+  <text x="820" y="886" class="mono" xml:space="preserve">MOV AL,#10       ; 10 × 10 ms</text>
+  <text x="820" y="904" class="mono" xml:space="preserve">OUT (0x0633),AL  ; PORT_SND_DUR (antes)</text>
+  <text x="820" y="922" class="mono" xml:space="preserve">IN  AL,(0x0611)  ; PORT_RANDOM</text>
+  <text x="820" y="940" class="mono" xml:space="preserve">SHR AL,#2        ; 0..63</text>
+  <text x="820" y="958" class="mono" xml:space="preserve">ADD AL,#48       ; DO3..RE#8</text>
+  <text x="820" y="976" class="mono" xml:space="preserve">OUT (0x0632),AL  ; PORT_SND_NOTE</text>
   </g>
-  <text x="40" y="1368" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8 e include/iomap.h</text>
+  <text x="40" y="1532" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8, docs/isa.md §8 e include/iomap.h</text>
 </svg>

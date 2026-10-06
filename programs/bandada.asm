@@ -68,6 +68,10 @@
 ; ============================================================================
 
     .slot 19
+
+    .name "BIRD FLOCK"
+
+    .category DEMO
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -107,10 +111,8 @@ start:
 init:
     CALL clsg
     CALL clst
-    MOV BL,#lo(h_title)
-    MOV BH,#hi(h_title)
-    MOV CL,#11
-    MOV CH,#3
+    MOV BX,#h_title
+    MOV CX,#0x030B
     CALL puts
     MOV AL,#0
     STA [g_exit],AL
@@ -144,9 +146,8 @@ init_l:
     ADD AL,#(Z_NEAR_MARGIN+20)
     STA [tmp_v],AL
     LDA CL,[p_i]
-    MOV BL,#lo(wz)
-    MOV BH,#hi(wz)
-    CALL idx_ptr
+    MOV BX,#wz
+    ADD BX,CL
     LDA AL,[tmp_v]
     STA [BX],AL
 
@@ -201,16 +202,14 @@ main_x:
 ; ============================================================================
 update_and_draw_particle:
     LDA CL,[p_i]
-    MOV BL,#lo(wz)
-    MOV BH,#hi(wz)
-    CALL idx_ptr
+    MOV BX,#wz
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_wz],AL
 
     LDA CL,[p_i]
-    MOV BL,#lo(zspeed)
-    MOV BH,#hi(zspeed)
-    CALL idx_ptr
+    MOV BX,#zspeed
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_speed],AL
 
@@ -231,9 +230,8 @@ update_and_draw_particle:
     SUB AL,BL
     STA [cur_wz],AL
     LDA CL,[p_i]
-    MOV BL,#lo(wz)
-    MOV BH,#hi(wz)
-    CALL idx_ptr
+    MOV BX,#wz
+    ADD BX,CL
     LDA AL,[cur_wz]
     STA [BX],AL
     JMP uadp_project
@@ -248,9 +246,8 @@ uadp_project:
     ; hace que sea "la camara" la que se mueve en el 8 -- ver update_camera
     ; y la nota de cabecera.
     LDA CL,[p_i]
-    MOV BL,#lo(wx)
-    MOV BH,#hi(wx)
-    CALL idx_ptr
+    MOV BX,#wx
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cam_x]
     SUB AL,BL
@@ -268,9 +265,8 @@ uadp_project:
 
     ; --- eje Y: proyecta (wy[p_i]-cam_y) contra CENTER_Y/LIMIT_Y ------------
     LDA CL,[p_i]
-    MOV BL,#lo(wy)
-    MOV BH,#hi(wy)
-    CALL idx_ptr
+    MOV BX,#wy
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cam_y]
     SUB AL,BL
@@ -398,9 +394,8 @@ randomize_xy_speed:
     SUB AL,#64                   ; wx: -64..63
     STA [tmp_v],AL
     LDA CL,[p_i]
-    MOV BL,#lo(wx)
-    MOV BH,#hi(wx)
-    CALL idx_ptr
+    MOV BX,#wx
+    ADD BX,CL
     LDA AL,[tmp_v]
     STA [BX],AL
 
@@ -409,9 +404,8 @@ randomize_xy_speed:
     SUB AL,#32                   ; wy: -32..31
     STA [tmp_v],AL
     LDA CL,[p_i]
-    MOV BL,#lo(wy)
-    MOV BH,#hi(wy)
-    CALL idx_ptr
+    MOV BX,#wy
+    ADD BX,CL
     LDA AL,[tmp_v]
     STA [BX],AL
 
@@ -420,9 +414,8 @@ randomize_xy_speed:
     ADD AL,#2                    ; zspeed: 2..5
     STA [tmp_v],AL
     LDA CL,[p_i]
-    MOV BL,#lo(zspeed)
-    MOV BH,#hi(zspeed)
-    CALL idx_ptr
+    MOV BX,#zspeed
+    ADD BX,CL
     LDA AL,[tmp_v]
     STA [BX],AL
     RET
@@ -438,9 +431,8 @@ respawn_far:
     ADD AL,#Z_FAR
     STA [tmp_v],AL
     LDA CL,[p_i]
-    MOV BL,#lo(wz)
-    MOV BH,#hi(wz)
-    CALL idx_ptr
+    MOV BX,#wz
+    ADD BX,CL
     LDA AL,[tmp_v]
     STA [BX],AL
     RET
@@ -469,9 +461,8 @@ update_camera:
 
 uc_recompute:
     LDA CL,[cam_t]
-    MOV BL,#lo(CAM_SINE_X)
-    MOV BH,#hi(CAM_SINE_X)
-    CALL idx_ptr
+    MOV BX,#CAM_SINE_X
+    ADD BX,CL
     LDA AL,[BX]
     STA [cam_x],AL
 
@@ -479,9 +470,8 @@ uc_recompute:
     SHL AL,#1
     AND AL,#0x3F              ; fase doble (2*cam_t mod 64) -- segundo lobulo
     MOV CL,AL
-    MOV BL,#lo(CAM_SINE_Y)
-    MOV BH,#hi(CAM_SINE_Y)
-    CALL idx_ptr
+    MOV BX,#CAM_SINE_Y
+    ADD BX,CL
     LDA AL,[BX]
     STA [cam_y],AL
     RET
@@ -507,21 +497,15 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
 
 ; --- clsg:  apaga el framebuffer real completo (0x0000..0x03FF) ------------
 clsg:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0
 cg_l:
     OUT (BX),AL
@@ -534,8 +518,7 @@ cg_l:
 
 ; --- clst:  borra la capa de texto (0x0400..0x04FF) -------------------------
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL
@@ -626,10 +609,9 @@ cpx_d:
 ; el framebuffer real -- `blit` lo copia de verdad al terminar el fotograma.
 shadow_set_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -646,21 +628,16 @@ shadow_set_px:
 clr_shadow:
     MOV AL,#0
     STA [shadow],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV DL,#lo(shadow+1)
-    MOV DH,#hi(shadow+1)
-    MOV CL,#0xFF
-    MOV CH,#0x03                 ; CX = 1023 (el resto del buffer de 1024)
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
     MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que haya cambiado --
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -669,10 +646,7 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1

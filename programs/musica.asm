@@ -27,6 +27,10 @@
 ; ============================================================================
 
     .slot 8
+
+    .name "MUSIC"
+
+    .category DEMO
     .org 0x0000
 
 ; Las variables y la tabla de la melodia van DESPUES del codigo (seccion
@@ -47,15 +51,11 @@ P_PROG_LOAD = 0x0640     ; cargar slot (OUT nº de slot): salto a otro programa
 ; ============================================================================
 start:
     CALL clst
-    MOV BL,#lo(h_t1)
-    MOV BH,#hi(h_t1)
-    MOV CL,#6
-    MOV CH,#1
+    MOV BX,#h_t1
+    MOV CX,#0x0106
     CALL puts
-    MOV BL,#lo(h_t2)
-    MOV BH,#hi(h_t2)
-    MOV CL,#4
-    MOV CH,#2
+    MOV BX,#h_t2
+    MOV CX,#0x0204
     CALL puts
     MOV AL,#0
     STA [g_exit],AL
@@ -147,21 +147,15 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
 
 ; --- clst:  borra la capa de texto (0x0400..0x04FF) -------------------------
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL

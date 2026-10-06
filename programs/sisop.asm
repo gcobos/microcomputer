@@ -7,60 +7,63 @@
 ;  src/main.cpp) -- basta con dejarlo en EJECUTAR + CONTINUO para que este
 ;  menu aparezca directamente.
 ;
-;  Cuatro carpetas (JUEGOS, PROGRAMAS, UTILIDADES, DEMOS), cada una con sus
-;  programas. Los DOS encoders mueven la seleccion (mismo sentido) -- asi se
-;  puede elegir y pulsar con una sola mano, sin ir de un mando al otro: gira
-;  DATOS y pulsa DATOS para entrar en una carpeta o arrancar el programa
-;  marcado (OUT a PORT_PROG_LOAD, 0x0640 -- ver iomap.h: carga el slot
-;  entero en la RAM y reinicia la CPU, asi que este programa deja de existir
-;  en cuanto el otro arranca), o gira DIRECCION y pulsa DIRECCION para volver
-;  de la lista de programas a las carpetas.
+;  Los menus se montan SOLOS al arrancar: se consulta cada slot de la flash
+;  (PORT_SLOT_QUERY/PORT_SLOT_INFO, ver iomap.h) y cada programa va a la
+;  carpeta de su categoria (GAMES, PROGRAMS, UTILITIES, DEMOS,
+;  DOCUMENTATION), con el nombre que lleva en la cabecera del slot -- los
+;  pone el ensamblador con las directivas .name/.category y llegan al
+;  aparato con compi_send.py. Los slots sin categoria (grabados antes de
+;  existir los metadatos) van a OTHER, como "SLOT nn". Solo se ven las
+;  carpetas que tienen algo, mas SETTINGS. No hay ninguna tabla que
+;  mantener a mano: basta con enviar un programa para que aparezca.
 ;
-;  Los nombres y numeros de slot de cada programa estan fijos aqui (no hay
-;  forma de leer "metadatos" de un slot en la flash real, solo si esta
-;  usado o no -- ver slotUsed() en spi_flash_storage.cpp): si se cambia un
-;  programa de slot hay que actualizar las tablas de mas abajo a mano.
+;  Los DOS encoders mueven la seleccion (mismo sentido) -- asi se puede
+;  elegir y pulsar con una sola mano: gira DATOS y pulsa DATOS para entrar
+;  en una carpeta o arrancar el programa marcado (OUT a PORT_PROG_LOAD), o
+;  pulsa DIRECCION para volver a las carpetas. Una carpeta con un solo
+;  programa lo arranca directamente. Las listas largas se desplazan.
 ;
 ;  Ensamblar y enviar al slot 0:
-;     python3 tools/casm.py programs/sisop.asm -o programs/sisop.bin
-;     python3 tools/compi_send.py --port /dev/ttyACM0 --slot 0 programs/sisop.bin
+;     python3 tools/compi_send.py --port /dev/ttyACM0 programs/sisop.asm
 ;
 ;  Probar sin el aparato (ver tools/slots.py para poblar la flash simulada):
 ;     python3 tools/slots.py --slots-dir mi_flash put programs/pong.asm
-;     python3 tools/slots.py --slots-dir mi_flash put --slot 0 programs/sisop.asm
+;     python3 tools/slots.py --slots-dir mi_flash put programs/sisop.asm
 ;     python3 tools/sim.py mi_flash/00.bin --slots-dir mi_flash --steps 2000000
 ;
 ;  La ISA y los puertos: ../docs/isa.md
 ; ============================================================================
 
     .slot 0
+
+    .name "SISOP"
+
+    .category SYSTEM
     .org 0x0000
 
-; --- puertos (ver ../docs/isa.md) -------------------------------------------
-P_DIR_POS  = 0x0600
-P_DIR_BTN  = 0x0601
-P_DAT_POS  = 0x0602
-P_DAT_BTN  = 0x0603
-P_PROG_LOAD = 0x0640
-P_CFG_BRIGHTNESS = 0x0650
-P_CFG_SOUND_EN   = 0x0651
+    .include "ports.asm"
 
-NUM_FOLDERS = 6
-; "Carpeta" especial (ver on_select/os_settings): no lista programas, entra
-; directo en la vista SETTINGS (view=2) -- brillo de pantalla y silenciar/
-; activar el sonido, en caliente, sin salir de este menu ni cargar otro slot.
-SETTINGS_FOLDER = 5
+; carpetas posibles (indice de carpeta "real"): 0 GAMES .. 4 DOCUMENTATION
+; = categoria - 2; 5 OTHER (sin categoria); 6 SETTINGS -- esta ultima es
+; especial (ver on_select/os_settings): no lista programas, entra directo
+; en la vista SETTINGS (view=2).
+FOLDER_OTHER    = 5
+SETTINGS_FOLDER = 6
+SLOTS_PER_FOLDER = 60     ; hueco de cada carpeta en fslots
+LIST_ROWS        = 7      ; filas visibles de una lista (filas 1-7)
 BRIGHT_STEP = 16      ; paso de brillo por detente de DATOS (0..255, 16 pasos)
 
 ; ============================================================================
 ;  ARRANQUE
 ; ============================================================================
 start:
-    CALL clst
+    CALL txt_clear
     MOV AL,#0
     STA [view],AL              ; 0 = carpetas, 1 = programas de una carpeta
     STA [cur_folder],AL
     STA [cur_prog],AL
+    STA [list_top],AL
+    CALL build_menus
 
     IN  AL,(P_DIR_POS)
     STA [dir_pos_prev],AL
@@ -147,7 +150,7 @@ ml_dirbtn:
 
 ml_wait:
     MOV AL,#2
-    CALL frame_wait
+    CALL tm_wait
     JMP main_l
 
 ; --- move_up/move_down: cambian cur_folder (view=0) o cur_prog (view=1),
@@ -180,7 +183,8 @@ move_down:
     JMPNZ md_prog
     LDA AL,[cur_folder]
     ADD AL,#1
-    CMP AL,#NUM_FOLDERS
+    LDA BL,[num_vis]
+    CMP AL,BL
     JMPC md_store_f
     RET                     ; ya en la ultima carpeta -- sin cambios
 md_store_f:
@@ -209,14 +213,12 @@ on_select:
     CMP AL,#0
     JMPNZ os_launch
 
-    LDA AL,[cur_folder]
+    CALL cur_fid
     CMP AL,#SETTINGS_FOLDER
     JMPZ os_settings
 
-    MOV BL,#lo(FOLDER_COUNTS)
-    MOV BH,#hi(FOLDER_COUNTS)
-    LDA CL,[cur_folder]
-    CALL idx_ptr
+    MOV BX,#fcount
+    ADD BX,AL
     LDA AL,[BX]
     STA [cur_folder_count],AL
     CMP AL,#1
@@ -226,6 +228,7 @@ on_select:
     STA [view],AL
     MOV AL,#0
     STA [cur_prog],AL
+    STA [list_top],AL
     CALL redraw
     RET
 
@@ -263,6 +266,11 @@ on_back:
     LDA AL,[view]
     CMP AL,#0
     JMPZ ob_ret
+    CMP AL,#2
+    JMPNZ ob_folders
+    OUT (P_CFG_SAVE),AL     ; sale de SETTINGS: graba brillo/mute en la flash
+                             ; (una sola vez, no en cada detente del dial)
+ob_folders:
     MOV AL,#0
     STA [view],AL
     IN  AL,(P_DIR_POS)
@@ -343,28 +351,26 @@ bd_apply:
 redraw_bright:
     IN  AL,(P_CFG_BRIGHTNESS)
     STA [bv_pv],AL
-    MOV DL,#0
-bv_h:
     LDA AL,[bv_pv]
-    CMP AL,#100
-    JMPC bv_hd
-    SUB AL,#100
-    STA [bv_pv],AL
-    ADD DL,#1
-    JMP bv_h
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#100
+    DIV DL                  ; DL = cociente, resto -> [bv_pv]
+    STA [bv_pv],AH
+    MOV DL,AL
+    POP AH
 bv_hd:
     MOV AL,DL
     ADD AL,#'0'
     STA [bv_buf+7],AL
-    MOV DL,#0
-bv_t:
     LDA AL,[bv_pv]
-    CMP AL,#10
-    JMPC bv_td
-    SUB AL,#10
-    STA [bv_pv],AL
-    ADD DL,#1
-    JMP bv_t
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#10
+    DIV DL                  ; DL = cociente, resto -> [bv_pv]
+    STA [bv_pv],AH
+    MOV DL,AL
+    POP AH
 bv_td:
     MOV AL,DL
     ADD AL,#'0'
@@ -372,11 +378,9 @@ bv_td:
     LDA AL,[bv_pv]
     ADD AL,#'0'
     STA [bv_buf+9],AL
-    MOV BL,#lo(bv_buf)
-    MOV BH,#hi(bv_buf)
-    MOV CL,#1
-    MOV CH,#4
-    CALL puts
+    MOV BX,#bv_buf
+    MOV CX,#0x0401
+    CALL txt_puts
     RET
 
 ; --- settings_press_dat: pulsa DATOS -> alterna PORT_CFG_SOUND_EN (activa/
@@ -407,22 +411,119 @@ spd_ret:
 ; --- get_selected_slot: sale AL = numero de slot del programa marcado
 ; (cur_folder/cur_prog). Solo tiene sentido en view=1.
 get_selected_slot:
-    MOV BL,#lo(FOLDER_SLOT_TABLES)
-    MOV BH,#hi(FOLDER_SLOT_TABLES)
-    LDA AL,[cur_folder]
-    SHL AL,#1
-    MOV CL,AL
-    CALL read_ptr16         ; BX = tabla de slots de esta carpeta
+    CALL cur_fid
+    MOV BL,#SLOTS_PER_FOLDER
+    MUL BL                   ; AX = carpeta * 60
+    MOV BX,#fslots
+    ADD BX,AL
+    ADD BH,AH
     LDA CL,[cur_prog]
-    CALL idx_ptr            ; BX += cur_prog (1 byte por slot)
+    ADD BX,CL
     LDA AL,[BX]
+    RET
+
+; --- cur_fid: AL = carpeta "real" (0..6) de la marcada en la lista ------
+cur_fid:
+    MOV BX,#vis
+    LDA CL,[cur_folder]
+    ADD BX,CL
+    LDA AL,[BX]
+    RET
+
+; ============================================================================
+;  MONTAJE DE LOS MENUS: consulta los slots 1..59 y reparte cada programa en
+;  la carpeta de su categoria (sisop, categoria SYSTEM, no sale en ninguna)
+; ============================================================================
+build_menus:
+    MOV AL,#0
+    MOV BX,#fcount
+    MOV CL,#6
+bm_clr:
+    STA [BX],AL
+    INC BX
+    SUB CL,#1
+    JMPNZ bm_clr
+    MOV AL,#1
+    STA [bm_slot],AL
+bm_l:
+    LDA AL,[bm_slot]
+    OUT (P_SLOT_QUERY),AL
+    IN  AL,(P_SLOT_QUERY)
+    CMP AL,#0
+    JMPZ bm_next             ; slot vacio
+    IN  AL,(P_SLOT_INFO)     ; categoria
+    CMP AL,#CAT_SYSTEM
+    JMPZ bm_next
+    CMP AL,#CAT_GAME
+    JMPC bm_other            ; 0 o desconocida
+    CMP AL,#(CAT_DOCS+1)
+    JMPNC bm_other           ; 0xFF (sin categoria) o desconocida
+    SUB AL,#CAT_GAME         ; 0..4
+    JMP bm_put
+bm_other:
+    MOV AL,#FOLDER_OTHER
+bm_put:
+    STA [bm_fid],AL
+    MOV BX,#fcount
+    ADD BX,AL
+    LDA AL,[BX]              ; posicion libre en esa carpeta
+    PUSH AL
+    ADD AL,#1
+    STA [BX],AL
+    LDA AL,[bm_fid]
+    MOV BL,#SLOTS_PER_FOLDER
+    MUL BL
+    MOV BX,#fslots
+    ADD BX,AL
+    ADD BH,AH
+    POP AL
+    ADD BX,AL
+    LDA AL,[bm_slot]
+    STA [BX],AL
+bm_next:
+    LDA AL,[bm_slot]
+    ADD AL,#1
+    STA [bm_slot],AL
+    CMP AL,#60
+    JMPNZ bm_l
+    ; carpetas visibles: las que tienen algo, en orden, y SETTINGS al final
+    MOV AL,#0
+    STA [num_vis],AL
+    STA [bm_fid],AL
+bm_v:
+    MOV BX,#fcount
+    LDA CL,[bm_fid]
+    ADD BX,CL
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPZ bm_vnext
+    LDA AL,[bm_fid]
+    CALL vis_add
+bm_vnext:
+    LDA AL,[bm_fid]
+    ADD AL,#1
+    STA [bm_fid],AL
+    CMP AL,#SETTINGS_FOLDER
+    JMPNZ bm_v
+    MOV AL,#SETTINGS_FOLDER
+    CALL vis_add
+    RET
+
+vis_add:
+    MOV BX,#vis
+    LDA CL,[num_vis]
+    ADD BX,CL
+    STA [BX],AL
+    LDA AL,[num_vis]
+    ADD AL,#1
+    STA [num_vis],AL
     RET
 
 ; ============================================================================
 ;  DIBUJO
 ; ============================================================================
 redraw:
-    CALL clst
+    CALL txt_clear
     LDA AL,[view]
     CMP AL,#0
     JMPNZ rd_1
@@ -438,227 +539,200 @@ rd_settings:
     RET
 
 redraw_folders:
-    MOV BL,#lo(s_title)
-    MOV BH,#hi(s_title)
-    MOV CL,#5
-    MOV CH,#0
-    CALL puts
+    MOV BX,#s_title
+    MOV CX,#0x0008
+    CALL txt_puts
 
     MOV AL,#0
     STA [i],AL
 rdf_l:
     LDA AL,[i]
+    ADD AL,#1
+    MOV CH,AL                ; fila i+1
+    MOV CL,#2
+    LDA AL,[i]
     LDA BL,[cur_folder]
     CMP AL,BL
     JMPNZ rdf_nomark
-    MOV BL,#lo(s_mark)
-    MOV BH,#hi(s_mark)
+    MOV BX,#s_mark
     JMP rdf_domark
 rdf_nomark:
-    MOV BL,#lo(s_nomark)
-    MOV BH,#hi(s_nomark)
+    MOV BX,#s_nomark
 rdf_domark:
-    MOV CL,#2
-    LDA AL,[i]
-    ADD AL,#2
-    MOV CH,AL
-    CALL puts
-
-    MOV BL,#lo(FOLDER_NAMES)
-    MOV BH,#hi(FOLDER_NAMES)
-    LDA AL,[i]
+    CALL txt_puts
+    PUSH CL
+    PUSH CH
+    MOV BX,#vis
+    LDA CL,[i]
+    ADD BX,CL
+    LDA AL,[BX]
     SHL AL,#1
     MOV CL,AL
+    MOV BX,#FOLDER_NAMES
     CALL read_ptr16
-    MOV CL,#4
-    LDA AL,[i]
-    ADD AL,#2
-    MOV CH,AL
-    CALL puts
+    POP CH
+    POP CL
+    CALL txt_puts
 
     LDA AL,[i]
     ADD AL,#1
     STA [i],AL
-    CMP AL,#NUM_FOLDERS
+    LDA BL,[num_vis]
+    CMP AL,BL
     JMPNZ rdf_l
     RET
 
+; --- redraw_programs: titulo de la carpeta y su lista, con desplazamiento
+; (LIST_ROWS filas visibles); el nombre de cada programa se lee de la
+; cabecera de su slot (PORT_SLOT_QUERY/PORT_SLOT_INFO) ----------------------
 redraw_programs:
-    MOV BL,#lo(FOLDER_NAMES)
-    MOV BH,#hi(FOLDER_NAMES)
-    LDA AL,[cur_folder]
+    CALL cur_fid
     SHL AL,#1
     MOV CL,AL
+    MOV BX,#FOLDER_NAMES
     CALL read_ptr16
-    MOV CL,#5
-    MOV CH,#0
-    CALL puts
+    MOV CX,#0x0004
+    CALL txt_puts
 
-    MOV BL,#lo(FOLDER_NAME_TABLES)
-    MOV BH,#hi(FOLDER_NAME_TABLES)
-    LDA AL,[cur_folder]
-    SHL AL,#1
-    MOV CL,AL
-    CALL read_ptr16
-    MOV AL,BL
-    STA [nb_lo],AL
-    MOV AL,BH
-    STA [nb_hi],AL
-
+    ; ventana: que cur_prog quede dentro de [list_top, list_top+ROWS)
+    LDA AL,[cur_prog]
+    LDA BL,[list_top]
+    CMP AL,BL
+    JMPNC rdp_t1
+    STA [list_top],AL
+    JMP rdp_t2
+rdp_t1:
+    SUB AL,BL
+    CMP AL,#LIST_ROWS
+    JMPC rdp_t2
+    LDA AL,[cur_prog]
+    SUB AL,#(LIST_ROWS-1)
+    STA [list_top],AL
+rdp_t2:
     MOV AL,#0
     STA [i],AL
 rdp_l:
-    LDA AL,[i]
+    LDA AL,[list_top]
+    LDA BL,[i]
+    ADD AL,BL
+    STA [rd_k],AL            ; elemento de la lista
     LDA BL,[cur_folder_count]
     CMP AL,BL
     JMPNC rdp_done
-
     LDA AL,[i]
+    ADD AL,#1
+    MOV CH,AL
+    MOV CL,#2
+    LDA AL,[rd_k]
     LDA BL,[cur_prog]
     CMP AL,BL
     JMPNZ rdp_nomark
-    MOV BL,#lo(s_mark)
-    MOV BH,#hi(s_mark)
+    MOV BX,#s_mark
     JMP rdp_domark
 rdp_nomark:
-    MOV BL,#lo(s_nomark)
-    MOV BH,#hi(s_nomark)
+    MOV BX,#s_nomark
 rdp_domark:
-    MOV CL,#2
-    LDA AL,[i]
-    ADD AL,#2
-    MOV CH,AL
-    CALL puts
-
-    LDA AL,[i]
-    SHL AL,#1
-    MOV CL,AL
-    LDA BL,[nb_lo]
-    LDA BH,[nb_hi]
-    CALL read_ptr16
-    MOV CL,#4
-    LDA AL,[i]
-    ADD AL,#2
-    MOV CH,AL
-    CALL puts
-
+    CALL txt_puts
+    PUSH CL
+    PUSH CH
+    LDA AL,[cur_prog]
+    PUSH AL
+    LDA AL,[rd_k]
+    STA [cur_prog],AL        ; get_selected_slot mira cur_prog
+    CALL get_selected_slot
+    STA [rd_slot],AL
+    POP AL
+    STA [cur_prog],AL
+    POP CH
+    POP CL
+    LDA AL,[rd_slot]
+    CALL put_slot_name
     LDA AL,[i]
     ADD AL,#1
     STA [i],AL
-    JMP rdp_l
+    CMP AL,#LIST_ROWS
+    JMPNZ rdp_l
 rdp_done:
+    RET
+
+; --- put_slot_name: AL = slot -> su nombre en CH/CL ("SLOT nn" si no
+; tiene) ----------------------------------------------------------------
+put_slot_name:
+    STA [rd_slot],AL
+    OUT (P_SLOT_QUERY),AL
+    MOV BX,#name_buf
+    MOV DX,#(P_SLOT_INFO+1)
+    PUSH CL
+    MOV CL,#14
+psn_l:
+    IN  AL,(DX)
+    STA [BX],AL
+    INC BX
+    INC DX
+    SUB CL,#1
+    JMPNZ psn_l
+    POP CL
+    LDA AL,[name_buf]
+    CMP AL,#0
+    JMPZ psn_noname
+    MOV BX,#name_buf
+    CALL txt_puts
+    RET
+psn_noname:
+    MOV BX,#s_slot
+    CALL txt_puts
+    LDA AL,[rd_slot]
+    CALL txt_put2
     RET
 
 ; --- redraw_settings: brillo (se ve/oye en la propia pantalla, sin numero
 ; ni barra) y el estado ON/OFF del sonido, con los controles a mano.
 redraw_settings:
-    MOV BL,#lo(s_settings_title)
-    MOV BH,#hi(s_settings_title)
-    MOV CL,#6
-    MOV CH,#0
-    CALL puts
+    MOV BX,#s_settings_title
+    MOV CX,#0x0006
+    CALL txt_puts
 
-    MOV BL,#lo(s_set_help1)
-    MOV BH,#hi(s_set_help1)
-    MOV CL,#1
-    MOV CH,#2
-    CALL puts
+    MOV BX,#s_set_help1
+    MOV CX,#0x0201
+    CALL txt_puts
 
-    MOV BL,#lo(s_set_help2)
-    MOV BH,#hi(s_set_help2)
-    MOV CL,#1
-    MOV CH,#3
-    CALL puts
+    MOV BX,#s_set_help2
+    MOV CX,#0x0301
+    CALL txt_puts
 
     IN  AL,(P_CFG_SOUND_EN)
     CMP AL,#0
     JMPZ rs_snd_off
-    MOV BL,#lo(s_sound_on)
-    MOV BH,#hi(s_sound_on)
+    MOV BX,#s_sound_on
     JMP rs_snd_puts
 rs_snd_off:
-    MOV BL,#lo(s_sound_off)
-    MOV BH,#hi(s_sound_off)
+    MOV BX,#s_sound_off
 rs_snd_puts:
-    MOV CL,#1
-    MOV CH,#5
-    CALL puts
+    MOV CX,#0x0501
+    CALL txt_puts
 
-    MOV BL,#lo(s_set_back)
-    MOV BH,#hi(s_set_back)
-    MOV CL,#1
-    MOV CH,#7
-    CALL puts
+    MOV BX,#s_set_back
+    MOV CX,#0x0701
+    CALL txt_puts
     CALL redraw_bright
-    RET
-
-; --- puts:  BL/BH = puntero asciiz,  CL = col,  CH = fila -------------------
-; solo altera AL/DL/DH (y BL/BH, que ya no hacen falta al terminar).
-puts:
-    MOV AL,CH
-    SHL AL,#5
-    ADD AL,CL
-    MOV DL,AL
-    MOV DH,#0x04
-ps_l:
-    LDA AL,[BX]
-    CMP AL,#0
-    JMPZ ps_d
-    OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
-    JMP ps_l
-ps_d:
-    RET
-
-; --- idx_ptr: BX += CL (con acarreo a BH) -----------------------------------
-idx_ptr:
-    ADD BX,CL               ; antes: ADD BL,CL / JMPNC / ADD BH,#1 --
-                              ; ahora 1 instruccion (dst16+=src8 sin
-                              ; signo, ver docs/isa.md SS4d)
     RET
 
 ; --- read_ptr16: BX = base de una tabla de punteros de 16 bits; CL = indice
 ; ya multiplicado x2 por quien llama; sale BX = el puntero de 16 bits leido
 ; de tabla[CL].
 read_ptr16:
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [rp_lo],AL
-    ADD BL,#1
-    JMPNC rp_c1
-    ADD BH,#1
-rp_c1:
+    INC BX
     LDA AL,[BX]
     STA [rp_hi],AL
     LDA BL,[rp_lo]
     LDA BH,[rp_hi]
     RET
 
-; --- frame_wait: espera N*8 ms con el temporizador 3 -------------------------
-frame_wait:
-    OUT (0x0623),AL
-fw_l:
-    IN  AL,(0x0623)
-    CMP AL,#0
-    JMPNZ fw_l
-    RET
-
-; --- clst: limpia la rejilla de texto entera (0x0400-0x04FF, DL envuelve) ---
-clst:
-    MOV DL,#0
-    MOV DH,#0x04
-    MOV AL,#0
-clst_l:
-    OUT (DX),AL
-    ADD DL,#1
-    JMPNZ clst_l
-    RET
+    .include "text.asm"
+    .include "time.asm"
 
 ; ============================================================================
 ;  DATOS: carpetas y programas
@@ -675,76 +749,16 @@ s_sound_on:       .asciiz "SOUND: ON "
 s_sound_off:      .asciiz "SOUND: OFF"
 s_set_back:       .asciiz "DIR: BACK"
 
-; --- carpeta 0: JUEGOS ------------------------------------------------------
+; --- carpetas (indice "real" 0..6, ver FOLDER_OTHER/SETTINGS_FOLDER) ------
 f0_name: .asciiz "GAMES"
-f0_n0:   .asciiz "PONG"
-f0_n1:   .asciiz "F-ZERO"
-f0_n2:   .asciiz "RAYCAST"
-f0_n3:   .asciiz "SHAMUS"
-f0_n4:   .asciiz "DODGE"
-f0_n5:   .asciiz "SKATE"
-F0_SLOTS: .db 2, 7, 9, 13, 4, 20
-F0_NAMES: .dw f0_n0, f0_n1, f0_n2, f0_n3, f0_n4, f0_n5
-
-; --- carpeta 1: PROGRAMAS ---------------------------------------------------
 f1_name: .asciiz "PROGRAMS"
-f1_n0:   .asciiz "CALCULATOR"
-f1_n1:   .asciiz "CLOCK"
-F1_SLOTS: .db 10, 1
-F1_NAMES: .dw f1_n0, f1_n1
-
-; --- carpeta 2: UTILIDADES --------------------------------------------------
-; TEXT ATTRIBUTES (atributos.asm, slot 6) se quito de aqui: sus atributos de
-; formato ahora se ven tambien en CHARACTER MAP (chars.asm, mas completo en
-; el propio atributos.asm si hiciera falta, pero ya no esta en este menu).
 f2_name: .asciiz "UTILITIES"
-f2_n0:   .asciiz "BENCHMARK"
-f2_n1:   .asciiz "ROTARY ENCODERS"
-f2_n2:   .asciiz "BLINK LED"
-f2_n3:   .asciiz "CHARACTER MAP"
-F2_SLOTS: .db 57, 14, 11, 15
-F2_NAMES: .dw f2_n0, f2_n1, f2_n2, f2_n3
-
-; --- carpeta 3: DEMOS --------------------------------------------------------
-; DEMO MENU (demo.asm, slot 4) se quito de aqui: se dividio en DODGE
-; (carpeta GAMES) y CHARACTER MAP (carpeta UTILITIES).
 f3_name: .asciiz "DEMOS"
-f3_n0:   .asciiz "CUBE 3D"
-f3_n1:   .asciiz "STARS"
-f3_n2:   .asciiz "MUSIC"
-f3_n3:   .asciiz "CHESSBOARD"
-f3_n4:   .asciiz "IMAGE"
-f3_n5:   .asciiz "BIRD FLOCK"
-F3_SLOTS: .db 3, 5, 8, 12, 18, 19
-F3_NAMES: .dw f3_n0, f3_n1, f3_n2, f3_n3, f3_n4, f3_n5
-
-; --- carpeta 4: DOCUMENTATION -------------------------------------------------
-; Un solo programa (docs.asm, slot 16 -- visor de la documentacion del
-; aparato con su propia navegacion interna por temas/paginas). Carpeta de
-; un unico elemento a proposito, para que "DOCUMENTATION" sea visible
-; directamente en el menu principal en vez de quedar escondida dentro de
-; UTILIDADES.
 f4_name: .asciiz "DOCUMENTATION"
-f4_n0:   .asciiz "OPEN"
-F4_SLOTS: .db 16
-F4_NAMES: .dw f4_n0
-
-; --- carpeta 5: SETTINGS -----------------------------------------------------
-; Especial: on_select la intercepta ANTES de llegar aqui (ver SETTINGS_FOLDER/
-; os_settings) y entra directo en la vista view=2 en vez de listar programas,
-; asi que estas 3 tablas nunca se leen de verdad -- se rellenan igual para
-; que FOLDER_NAMES (que si se usa, en redraw_folders) tenga sus NUM_FOLDERS
-; entradas parejas con el resto.
-f5_name: .asciiz "SETTINGS"
-f5_n0:   .asciiz "OPEN"
-F5_SLOTS: .db 0
-F5_NAMES: .dw f5_n0
-
-; --- tablas de nivel superior (indexadas por numero de carpeta 0..5) --------
-FOLDER_NAMES:       .dw f0_name, f1_name, f2_name, f3_name, f4_name, f5_name
-FOLDER_COUNTS:      .db 6, 2, 4, 6, 1, 1
-FOLDER_SLOT_TABLES: .dw F0_SLOTS, F1_SLOTS, F2_SLOTS, F3_SLOTS, F4_SLOTS, F5_SLOTS
-FOLDER_NAME_TABLES: .dw F0_NAMES, F1_NAMES, F2_NAMES, F3_NAMES, F4_NAMES, F5_NAMES
+f5_name: .asciiz "OTHER"
+f6_name: .asciiz "SETTINGS"
+FOLDER_NAMES: .dw f0_name, f1_name, f2_name, f3_name, f4_name, f5_name, f6_name
+s_slot:   .asciiz "SLOT "
 
 ; ============================================================================
 ;  VARIABLES
@@ -766,3 +780,13 @@ nb_lo:            .space 1
 nb_hi:            .space 1
 rp_lo:            .space 1
 rp_hi:            .space 1
+list_top:         .space 1     ; primera fila visible de la lista de programas
+num_vis:          .space 1     ; carpetas visibles (con algo, + SETTINGS)
+vis:              .space 7     ; carpeta "real" de cada fila del menu
+fcount:           .space 6     ; programas en cada carpeta
+bm_slot:          .space 1
+bm_fid:           .space 1
+rd_k:             .space 1
+rd_slot:          .space 1
+name_buf:         .space 15    ; nombre leido de PORT_SLOT_INFO (+ 0 final)
+fslots:           .space 360   ; slots de cada carpeta: 6 x SLOTS_PER_FOLDER

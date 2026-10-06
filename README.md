@@ -15,6 +15,16 @@ un **ESP32-C3**.
 Se teclea el programa byte a byte, se guarda en la flash y se ejecuta paso a
 paso o en continuo. Los registros solo se cargan ejecutando `MOV reg,#imm`.
 
+El slot 0 lleva [`programs/sisop.asm`](programs/sisop.asm), un menú que se
+carga al encender y monta solo sus carpetas (juegos, programas, utilidades,
+demos, documentación) con el nombre y la categoría que cada programa graba
+en su slot.
+
+**ISA versión 2 (2026-10):** la codificación de las instrucciones cambió
+entera (ver [`docs/isa.md`](docs/isa.md) §3). Tras flashear este firmware hay
+que reenviar todos los programas con `compi_send.py`: los `.bin` anteriores
+no son compatibles.
+
 ## Fuente de verdad: `specs.txt`
 
 **[`specs.txt`](specs.txt) es la especificación completa y autoritativa** del
@@ -52,7 +62,7 @@ Se puede escribir en ensamblador y grabar en un slot sin teclear byte a byte:
 ```sh
 python3 tools/casm.py programs/demo.asm -o programs/demo.bin        # ensambla
 python3 tools/sim.py  programs/demo.bin --steps 2000000             # prueba sin el aparato
-python3 tools/compi_send.py --port /dev/ttyACM0 --slot 4 programs/demo.bin
+python3 tools/compi_send.py --port /dev/ttyACM0 programs/demo.asm  # slot, nombre y categoría salen del .asm
 
 # y al revés: sacar un slot del aparato (p. ej. uno editado a mano en el
 # panel, que solo existe allí) de vuelta a un .bin, y verlo como texto
@@ -65,13 +75,21 @@ python3 tools/compi_disasm.py vuelta.bin -o vuelta.asm
 - [`tools/sim.py`](tools/sim.py) — emulador headless de la CPU y los puertos.
 - [`tools/compi_send.py`](tools/compi_send.py) — graba una imagen en un slot por
   USB-CDC (protocolo LOAD, el firmware la recibe en `provisionPoll()`, ver
-  `specs.txt` §7).
+  `specs.txt` §7). Manda también el nombre (`.name`) y la categoría
+  (`.category`) cuando se le da un `.asm`.
 - [`tools/compi_recv.py`](tools/compi_recv.py) — saca la imagen de un slot por
   USB-CDC (protocolo DUMP, simétrico de LOAD; admite `--len` para traer solo
   un trozo).
 - [`tools/compi_disasm.py`](tools/compi_disasm.py) — vuelca un `.bin` como
   texto ensamblador, reensamblable byte a byte con `casm.py` (ver su
   docstring para el porqué y sus límites con datos incrustados en el código).
-- [`programs/`](programs/) — programas de ejemplo. [`programs/demo.asm`](programs/demo.asm)
-  es una demo de todas las capacidades (menú + gráficos, texto, sonido,
-  animación, luces y un juego); va al **slot 4**.
+- [`programs/`](programs/) — programas de ejemplo, y en
+  [`programs/lib/`](programs/lib/) rutinas comunes para `.include`
+  (ver [`programs/README.md`](programs/README.md)).
+  [`programs/demo.asm`](programs/demo.asm) es una demo de todas las
+  capacidades (menú + gráficos, texto, sonido, animación, luces y un juego);
+  va al **slot 23**.
+
+Si el USB deja de responder a veces, suele ser ModemManager abriendo el
+puerto; la regla udev de [`docs/firmware.md`](docs/firmware.md) (sección de
+provisioning) lo evita y además da permiso de acceso a `/dev/ttyACM0`.

@@ -32,6 +32,10 @@
 ; ============================================================================
 
     .slot 6
+
+    .name "TEXT ATTRIBS"
+
+    .category UTILITY
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -80,114 +84,78 @@ wk_r:
 ;  DIBUJO (una sola vez)
 ; ============================================================================
 draw:
-    MOV BL,#lo(s_title)
-    MOV BH,#hi(s_title)
-    MOV CL,#1
-    MOV CH,#0
+    MOV BX,#s_title
+    MOV CX,#0x0001
     MOV AH,#0
     CALL puts_attr
 
-    MOV BL,#lo(s_inv)
-    MOV BH,#hi(s_inv)
-    MOV CL,#1
-    MOV CH,#1
+    MOV BX,#s_inv
+    MOV CX,#0x0101
     MOV AH,#ATTR_INVERSE
     CALL puts_attr
 
-    MOV BL,#lo(s_blk)
-    MOV BH,#hi(s_blk)
-    MOV CL,#1
-    MOV CH,#2
+    MOV BX,#s_blk
+    MOV CX,#0x0201
     MOV AH,#ATTR_BLINK
     CALL puts_attr
 
-    MOV BL,#lo(s_und)
-    MOV BH,#hi(s_und)
-    MOV CL,#1
-    MOV CH,#3
+    MOV BX,#s_und
+    MOV CX,#0x0301
     MOV AH,#ATTR_UNDERLINE
     CALL puts_attr
 
-    MOV BL,#lo(s_str)
-    MOV BH,#hi(s_str)
-    MOV CL,#1
-    MOV CH,#4
+    MOV BX,#s_str
+    MOV CX,#0x0401
     MOV AH,#ATTR_STRIKE
     CALL puts_attr
 
     ; --- fila 5: H(2)O   X(2) -- solo el "2" lleva sub/superindice ---------
-    MOV BL,#'H'
-    MOV BH,#0
-    MOV CL,#1
-    MOV CH,#5
+    MOV BX,#'H'
+    MOV CX,#0x0501
     CALL set_cell
-    MOV BL,#'2'
-    MOV BH,#ATTR_SUBSCRIPT
-    MOV CL,#2
-    MOV CH,#5
+    MOV BX,#ATTR_SUBSCRIPT*256+('2')
+    MOV CX,#0x0502
     CALL set_cell
-    MOV BL,#'O'
-    MOV BH,#0
-    MOV CL,#3
-    MOV CH,#5
+    MOV BX,#'O'
+    MOV CX,#0x0503
     CALL set_cell
-    MOV BL,#'X'
-    MOV BH,#0
-    MOV CL,#8
-    MOV CH,#5
+    MOV BX,#'X'
+    MOV CX,#0x0508
     CALL set_cell
-    MOV BL,#'2'
-    MOV BH,#ATTR_SUPERSCRIPT
-    MOV CL,#9
-    MOV CH,#5
+    MOV BX,#ATTR_SUPERSCRIPT*256+('2')
+    MOV CX,#0x0509
     CALL set_cell
 
     ; --- fila 6: una "R" en cada rotacion, con su angulo al lado -----------
-    MOV BL,#'R'
-    MOV BH,#0
-    MOV CL,#0
-    MOV CH,#6
+    MOV BX,#'R'
+    MOV CX,#0x0600
     CALL set_cell
-    MOV BL,#lo(s_r0)
-    MOV BH,#hi(s_r0)
-    MOV CL,#2
-    MOV CH,#6
+    MOV BX,#s_r0
+    MOV CX,#0x0602
     MOV AH,#0
     CALL puts_attr
 
-    MOV BL,#'R'
-    MOV BH,#ATTR_ROT90
-    MOV CL,#4
-    MOV CH,#6
+    MOV BX,#ATTR_ROT90*256+('R')
+    MOV CX,#0x0604
     CALL set_cell
-    MOV BL,#lo(s_r90)
-    MOV BH,#hi(s_r90)
-    MOV CL,#6
-    MOV CH,#6
+    MOV BX,#s_r90
+    MOV CX,#0x0606
     MOV AH,#0
     CALL puts_attr
 
-    MOV BL,#'R'
-    MOV BH,#ATTR_ROT180
-    MOV CL,#9
-    MOV CH,#6
+    MOV BX,#ATTR_ROT180*256+('R')
+    MOV CX,#0x0609
     CALL set_cell
-    MOV BL,#lo(s_r180)
-    MOV BH,#hi(s_r180)
-    MOV CL,#11
-    MOV CH,#6
+    MOV BX,#s_r180
+    MOV CX,#0x060B
     MOV AH,#0
     CALL puts_attr
 
-    MOV BL,#'R'
-    MOV BH,#ATTR_ROT270
-    MOV CL,#15
-    MOV CH,#6
+    MOV BX,#ATTR_ROT270*256+('R')
+    MOV CX,#0x060F
     CALL set_cell
-    MOV BL,#lo(s_r270)
-    MOV BH,#hi(s_r270)
-    MOV CL,#17
-    MOV CH,#6
+    MOV BX,#s_r270
+    MOV CX,#0x0611
     MOV AH,#0
     CALL puts_attr
 
@@ -215,13 +183,8 @@ pa_l:
     ADD DH,#1
     OUT (DX),AH                 ; celda de atributos (mismo puerto + 0x0100)
     SUB DH,#1
-    ADD BL,#1
-    JMPNC pa_nb
-    ADD BH,#1
-pa_nb:
-    ADD DL,#1
-    JMPNC pa_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP pa_l
 pa_d:
     RET

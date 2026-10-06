@@ -113,7 +113,11 @@ private:
     void push8(uint8_t v);
     uint8_t pop8();
     bool testCond(uint8_t cond) const;
-    uint8_t updateFlagsArith(uint8_t a, uint8_t b, bool isSub);
+    uint8_t updateFlagsArith(uint8_t a, uint8_t b, bool isSub, uint8_t cin);
+    void cmp16(uint16_t a, uint16_t b);
+    void doIncDec8(uint8_t reg, bool dec);
+    void doMovBack();
+    void pushPc();
     void updateFlagsLogic(uint8_t result);
     // SHR/SHL de N bits (1-8) de una vez: OP_SHR/OP_SHL llaman a estas con
     // n=1 (asi el caso de 1 bit es identico, bit a bit, al de siempre).

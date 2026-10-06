@@ -28,6 +28,12 @@
 ;  framebuffer real los bytes que cambiaron (clr_shadow/blit), para que
 ;  paletas y pelota se muevan sin parpadeo.
 ;
+;  La partida acaba cuando uno de los dos llega a WIN_SCORE=11 puntos. El
+;  record (EEPROM del slot) es el PELOTEO mas largo -- golpes de pala
+;  seguidos sin fallar --, que tiene sentido en un juego de dos jugadores:
+;  se ve en la pantalla de bienvenida y se graba al acabar la partida si se
+;  ha batido.
+;
 ;  Sin tecla de salida (los dos pulsadores estan ocupados sacando la
 ;  pelota) -- para parar, el interruptor SW_MODE del panel (vuelve a EDIT).
 ;
@@ -39,6 +45,10 @@
 ; ============================================================================
 
     .slot 2
+
+    .name "PONG"
+
+    .category GAME
     .org 0x0000
 
 ; --- geometria ---------------------------------------------------------------
@@ -78,10 +88,28 @@ P_T3      = 0x0623   ; ritmo del bucle principal
 P_SND_NOTE = 0x0632  ; nota MIDI (pitido corto) -- rebote en pala vs. punto
 P_SND_DUR  = 0x0633  ; duracion automatica (x10 ms)
 
+WIN_SCORE  = 11      ; la partida acaba al llegar uno de los dos a 11 puntos
+
+; --- record en la EEPROM del slot (iomap.h, 0x0700-0x0801) -----------------
+; byte 0 = REC_MAGIC si hay un record grabado (una flash sin estrenar se lee
+; 0xFF -> record 0), byte 1 = el record
+; (el peloteo mas largo: golpes de pala seguidos sin que nadie falle). Se graba SOLO al batirlo, al llegar
+; al GAME OVER, para no gastar la flash en cada partida.
+P_EEP_BASE = 0x0700
+P_EEP_LOAD = 0x0800
+P_EEP_SAVE = 0x0801
+REC_MAGIC  = 0xC5
+
 ; ============================================================================
 ;  ARRANQUE + BUCLE PRINCIPAL
 ; ============================================================================
 start:
+    CALL title_screen
+
+match_init:
+    MOV AL,#0
+    STA [rally],AL
+    STA [best_rally],AL
     MOV AL,#25
     STA [pad_l_y],AL        ; paletas centradas ((64-14)/2 = 25)
     STA [pad_r_y],AL
@@ -118,6 +146,13 @@ main_l:
     CALL serve_check
     CALL ball_phys
 
+    LDA AL,[score_l]        ; fin de partida: el primero a WIN_SCORE
+    CMP AL,#WIN_SCORE
+    JMPZ match_end
+    LDA AL,[score_r]
+    CMP AL,#WIN_SCORE
+    JMPZ match_end
+
     CALL clr_shadow
     CALL draw_paddles_ball
     CALL blit
@@ -125,6 +160,10 @@ main_l:
     MOV AL,#3               ; ritmo: 3*8 = 24 ms por fotograma
     CALL frame_wait
     JMP main_l
+
+match_end:
+    CALL show_match_over
+    JMP start
 
 ; ============================================================================
 ;  update_pad_l / update_pad_r:  mueve una paleta segun el delta de su
@@ -382,6 +421,7 @@ bp_yok:
     STA [bp_pad_spd],AL
     CALL calc_bounce_vy
     STA [ball_vy],AL
+    CALL rally_hit
     CALL snd_bounce
     JMP bp_done
 bp_l_miss:
@@ -396,6 +436,8 @@ bp_l_miss:
     MOV AL,#2
     STA [serve_turn],AL      ; punto de la derecha -> saca la derecha
     CALL draw_scores
+    MOV AL,#0
+    STA [rally],AL          ; punto: se acaba el peloteo
     CALL snd_point
     JMP bp_done
 
@@ -425,6 +467,7 @@ bp_right:
     STA [bp_pad_spd],AL
     CALL calc_bounce_vy
     STA [ball_vy],AL
+    CALL rally_hit
     CALL snd_bounce
     JMP bp_done
 bp_r_miss:
@@ -439,6 +482,8 @@ bp_r_miss:
     MOV AL,#1
     STA [serve_turn],AL      ; punto de la izquierda -> saca la izquierda
     CALL draw_scores
+    MOV AL,#0
+    STA [rally],AL          ; punto: se acaba el peloteo
     CALL snd_point
 bp_done:
     RET
@@ -696,27 +741,24 @@ frr_col:
 ; ============================================================================
 draw_scores:
     LDA AL,[score_l]
-    MOV CL,#SCORE_L_COL
-    MOV CH,#0
+    MOV CX,#SCORE_L_COL
     CALL put_num2
     LDA AL,[score_r]
-    MOV CL,#SCORE_R_COL
-    MOV CH,#0
+    MOV CX,#SCORE_R_COL
     CALL put_num2
     RET
 
 ; --- put_num2:  AL=valor (0..99), CL=col, CH=fila -- escribe 2 digitos ----
 put_num2:
     STA [pn_v],AL
-    MOV DL,#0
-pn2_t:
     LDA AL,[pn_v]
-    CMP AL,#10
-    JMPC pn2_td
-    SUB AL,#10
-    STA [pn_v],AL
-    ADD DL,#1
-    JMP pn2_t
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#10
+    DIV DL                  ; DL = cociente, resto -> [pn_v]
+    STA [pn_v],AH
+    MOV DL,AL
+    POP AH
 pn2_td:
     MOV AL,DL
     ADD AL,#0x30
@@ -725,6 +767,198 @@ pn2_td:
     LDA AL,[pn_v]
     ADD AL,#0x30
     CALL putc
+    RET
+
+
+; ============================================================================
+;  RECORD (EEPROM del slot) -- ver P_EEP_* arriba
+; ============================================================================
+; --- load_record: [record] = el grabado en la flash (0 si no hay ninguno) ---
+load_record:
+    OUT (P_EEP_LOAD),AL
+    IN  AL,(P_EEP_BASE)
+    CMP AL,#REC_MAGIC
+    MOV AL,#0
+    JMPNZ rec_lr_set
+    IN  AL,(P_EEP_BASE+1)
+rec_lr_set:
+    STA [record],AL
+    RET
+
+; --- show_record: carga el record y escribe "RECORD nnn" en CH=fila, CL=col --
+show_record:
+    CALL load_record
+    LDA AL,[record]
+    MOV AH,#0
+    MOV BL,#100
+    DIV BL
+    ADD AL,#'0'
+    STA [rec_d],AL
+    MOV AL,AH
+    MOV AH,#0
+    MOV BL,#10
+    DIV BL
+    ADD AL,#'0'
+    STA [rec_d+1],AL
+    MOV AL,AH
+    ADD AL,#'0'
+    STA [rec_d+2],AL
+    MOV BX,#s_record
+    CALL puts
+    RET
+
+; --- save_record: si [best_rally] supera el record, lo graba en la flash.
+; Sale AL = 1 si es record nuevo, 0 si no. ----------------------------------
+save_record:
+    LDA AL,[best_rally]
+    LDA BL,[record]
+    CMP BL,AL
+    MOV AL,#0
+    JMPNC rec_sv_done          ; record >= puntos: nada que grabar
+    LDA AL,[best_rally]
+    STA [record],AL
+    OUT (P_EEP_LOAD),AL     ; parte del contenido real de la EEPROM
+    OUT (P_EEP_BASE+1),AL
+    MOV AL,#REC_MAGIC
+    OUT (P_EEP_BASE),AL
+    OUT (P_EEP_SAVE),AL
+    MOV AL,#1
+rec_sv_done:
+    RET
+
+; ============================================================================
+;  PANTALLAS DE BIENVENIDA Y FIN DE PARTIDA
+; ============================================================================
+; --- rally_hit: un golpe de pala mas en el peloteo en curso ---------------
+rally_hit:
+    LDA AL,[rally]
+    CMP AL,#255
+    JMPZ rh_done            ; tope de 8 bits
+    ADD AL,#1
+    STA [rally],AL
+    LDA BL,[best_rally]
+    CMP BL,AL
+    JMPNC rh_done
+    STA [best_rally],AL
+rh_done:
+    RET
+
+; --- title_screen: nombre, regla, record y espera a pulsar ----------------
+title_screen:
+    CALL clr_shadow
+    CALL blit
+    CALL clst
+    MOV BX,#s_title
+    MOV CX,#0x0108
+    CALL puts
+    MOV BX,#s_rule
+    MOV CX,#0x0302
+    CALL puts
+    MOV CX,#0x0502
+    CALL show_record
+    MOV BX,#s_start
+    MOV CX,#0x0703
+    CALL puts
+    CALL wait_press_release
+    RET
+
+; --- show_match_over: ganador, peloteo mas largo, record -----------------
+show_match_over:
+    CALL clr_shadow
+    CALL blit
+    CALL clst
+    MOV BX,#s_left_wins
+    LDA AL,[score_l]
+    CMP AL,#WIN_SCORE
+    JMPZ smo_w
+    MOV BX,#s_right_wins
+smo_w:
+    MOV CX,#0x0105
+    CALL puts
+    MOV BX,#s_rally
+    MOV CX,#0x0302
+    CALL puts
+    LDA AL,[best_rally]
+    MOV CX,#0x0310
+    CALL put3
+    CALL save_record        ; graba el record si se ha batido
+    CMP AL,#0
+    JMPZ smo_norec
+    MOV BX,#s_newrec
+    MOV CX,#0x0405
+    CALL puts
+smo_norec:
+    MOV BX,#s_again
+    MOV CX,#0x0604
+    CALL puts
+    CALL wait_press_release
+    RET
+
+; --- wait_press_release: espera a que se suelten los dos pulsadores, a que
+; se pulse uno y a que se vuelva a soltar (para no sacar sin querer) -------
+wait_press_release:
+wpr_1:
+    CALL any_btn
+    CMP AL,#0
+    JMPZ wpr_2
+    MOV AL,#2
+    CALL frame_wait
+    JMP wpr_1
+wpr_2:
+    CALL any_btn
+    CMP AL,#0
+    JMPNZ wpr_3
+    MOV AL,#2
+    CALL frame_wait
+    JMP wpr_2
+wpr_3:
+    CALL any_btn
+    CMP AL,#0
+    JMPZ wpr_d
+    MOV AL,#2
+    CALL frame_wait
+    JMP wpr_3
+wpr_d:
+    RET
+
+any_btn:
+    IN  AL,(P_DIR_BTN)
+    MOV BL,AL
+    IN  AL,(P_DAT_BTN)
+    OR  AL,BL
+    RET
+
+; --- put3: AL = valor (0..255), CL = col, CH = fila -- 3 digitos ----------
+put3:
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#100
+    DIV DL
+    STA [pn_v],AH
+    POP AH
+    ADD AL,#0x30
+    CALL putc
+    ADD CL,#1
+    LDA AL,[pn_v]
+    CALL put_num2
+    RET
+
+; --- puts: BX = cadena asciiz, CL = col, CH = fila ------------------------
+puts:
+    MOV AL,CH
+    SHL AL,#5
+    ADD AL,CL
+    MOV DL,AL
+    MOV DH,#0x04
+ps_l:
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPZ ps_d
+    OUT (DX),AL
+    INC BX
+    INC DX
+    JMP ps_l
+ps_d:
     RET
 
 ; --- putc:  AL=caracter, CL=col, CH=fila -----------------------------------
@@ -786,13 +1020,9 @@ cpx_m:
 cpx_d:
     STA [pix_mask],DH
     ; BX = shadow + pix_lo + pix_hi*256
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    ADD BL,CL
-    JMPNC cpx_nc
-    ADD BH,#1
-cpx_nc:
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     RET
@@ -811,21 +1041,16 @@ cpx_nc:
 clr_shadow:
     MOV AL,#0
     STA [shadow],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV DL,#lo(shadow+1)
-    MOV DH,#hi(shadow+1)
-    MOV CL,#0xFF
-    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
     MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que haya cambiado -
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -834,10 +1059,7 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1
@@ -847,8 +1069,7 @@ bl_dnc:
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------
 clsg:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0
 cg_l:
     OUT (BX),AL
@@ -861,8 +1082,7 @@ cg_l:
 
 ; --- clst:  borra la capa de texto (0x0400..0x04FF) ------------------------
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL
@@ -878,6 +1098,17 @@ fw_l:
     CMP AL,#0
     JMPNZ fw_l
     RET
+
+s_title:      .asciiz "PONG"
+s_rule:       .asciiz "FIRST TO 11 WINS"
+s_start:      .asciiz "PRESS TO START"
+s_left_wins:  .asciiz "LEFT WINS!"
+s_right_wins: .asciiz "RIGHT WINS!"
+s_rally:      .asciiz "LONGEST RALLY"
+s_again:      .asciiz "PRESS TO PLAY"
+s_record:     .ascii "RALLY RECORD "
+rec_d:        .asciiz "000"
+s_newrec:     .asciiz "NEW RECORD!"
 
 ; ============================================================================
 ;  DATOS  (justo despues del codigo -- ver programs/README.md, "Tamano del
@@ -914,6 +1145,9 @@ ball_active:  .space 1
 score_l:      .space 1
 score_r:      .space 1
 serve_turn:   .space 1    ; 0=cualquiera (solo al empezar), 1=izquierda, 2=derecha
+rally:        .space 1    ; golpes de pala seguidos en el punto en curso
+best_rally:   .space 1    ; el peloteo mas largo de esta partida
+record:       .space 1    ; record (peloteo mas largo) cargado de la EEPROM
 
 tmp0:         .space 1
 tmp1:         .space 1
@@ -937,3 +1171,4 @@ pix_mask:     .space 1
 ; ir la ultima de todo el fichero: al ser un .space sin datos reales, casm.py
 ; no la cuenta al recortar el .bin (ver "Tamano del .bin" en el README).
 shadow: .space 1024
+

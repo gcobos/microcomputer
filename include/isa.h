@@ -3,6 +3,17 @@
 
 namespace compi {
 
+// ============================================================================
+//  Codificacion de la ISA de compi (version 2, ver docs/isa.md).
+//
+//  El byte de opcode es  familia<<3 | bajo3 :  5 bits de familia (32
+//  familias) y 3 bits bajos que, segun la familia, son un registro de 8
+//  bits, una condicion, un par de 16 bits o una sub-operacion. Las
+//  operaciones de la ALU van en un byte de operando aparte (AluOp), asi que
+//  las 9 operaciones caben en las 4 formas de direccionamiento sin gastar
+//  una familia por operacion. 0x00 = NOP (RAM a cero = programa vacio).
+// ============================================================================
+
 // 8 registros direccionables de 8 bits: mitades de AX, BX, CX, DX
 enum Reg8 : uint8_t {
     REG_AL = 0, REG_AH = 1,
@@ -11,81 +22,91 @@ enum Reg8 : uint8_t {
     REG_DL = 6, REG_DH = 7,
 };
 
-// Familias de opcode (5 bits altos). El byte de opcode es family<<3 | reg.
-enum OpFamily : uint8_t {
-    OP_NOP  = 0,
-    OP_HALT = 1,
-    OP_LDI  = 2,   // LDI  reg, #imm8   (forma corta de MOV reg,#imm)
-    OP_LDA  = 3,   // LDA  reg, [addr16]   (MOV reg <- memoria)
-    OP_STA  = 4,   // STA  reg, [addr16]   (MOV memoria <- reg)
-    OP_ADD  = 5,   // ADD  reg, [addr16]
-    OP_SUB  = 6,   // SUB  reg, [addr16]
-    OP_AND  = 7,   // AND  reg, [addr16]
-    OP_OR   = 8,   // OR   reg, [addr16]
-    OP_XOR  = 9,   // XOR  reg, [addr16]
-    OP_NOT  = 10,  // NOT  reg
-    OP_SHR  = 11,  // SHR  reg
-    OP_SHL  = 12,  // SHL  reg
-    OP_IN   = 13,  // IN   reg, (port16)
-    OP_OUT  = 14,  // OUT  reg, (port16)
-    OP_PUSH = 15,  // PUSH reg
-    OP_POP  = 16,  // POP  reg
-    OP_JMP  = 17,  // JMP  addr16   (reg = condición, ver JumpCond)
-    OP_CALL = 18,  // CALL addr16   (reg = condición)
-    OP_RET  = 19,  // RET
-    OP_ALUI = 20,  // <op> reg, #imm8   (reg de opcode = AluOp; operando: reg, imm8)
-    // Direccionamiento indirecto por registro de 16 bits (LEN 2: opcode +
-    // byte con el par AX/BX/CX/DX en los 2 bits bajos, ver Reg16 más abajo).
-    // Mismo dato que LDA/STA/IN/OUT pero sin gastar los 2 bytes de addr16.
-    OP_LDAR = 21,  // LDA  reg, [ptr16]    (MOV reg <- mem[ptr16])
-    OP_STAR = 22,  // STA  [ptr16], reg    (MOV mem[ptr16] <- reg)
-    OP_INR  = 23,  // IN   reg, (ptr16)
-    OP_OUTR = 24,  // OUT  (ptr16), reg
-    // SHR/SHL reg, #N (N=1..8, LEN 2: opcode + byte con (N-1) en los 3 bits
-    // bajos, resto reservado a 0). Mismo dato que OP_SHR/OP_SHL, pero
-    // desplaza N bits de una vez en vez de solo 1 -- para no tener que
-    // repetir la instruccion N veces cuando se conoce N en tiempo de
-    // ensamblado (multiplicar/dividir por potencias de 2, direcciones de
-    // pantalla, etc).
-    OP_SHRN = 25,  // SHR  reg, #N
-    OP_SHLN = 26,  // SHL  reg, #N
-    // Multiplicacion/division de 8x8->16 bits sin signo, acumulador
-    // implicito AX (igual convencion que 8080/Z80/x86: el multiplicando/
-    // dividendo vive en AX, el operando explicito es el multiplicador/
-    // divisor) -- LEN 1, reg de opcode = ese operando. Reemplazan a rutinas
-    // de software de ~60-70 instrucciones (ver smul64 en cubo.asm).
-    OP_MUL  = 27,  // MUL reg   : AX = AL * reg           (Z/N/C/V, ver cpu.cpp)
-    OP_DIV  = 28,  // DIV reg   : AL=AX/reg AH=AX%reg      (div/0 satura, ver cpu.cpp)
-    // INC/DEC de un par de 16 bits (AX/BX/CX/DX) -- LEN 1, reg de opcode =
-    // dir<<2|reg16 (dir 0=INC 1=DEC, reg16 en los 2 bits bajos). No toca
-    // flags (aritmetica de punteros, no de programa -- ver isa.md).
-    OP_INCDEC16 = 29,  // INC/DEC reg16
-    // Familia de "extension 2": subop en los 3 bits bajos del opcode.
-    // Mezcla longitudes a proposito (documentado en isa.md/specs.txt):
-    //   0 ADD dst16,src8  (LEN2, dst16 += src8 sin signo -- MISMO mnemonico
-    //                      ADD que reg,reg/reg,#imm/reg,[dir], el ensamblador
-    //                      lo detecta por que dst es un nombre de 16 bits)
-    //   1 SUB dst16,src8  (LEN2, igual pero resta)
-    //   2 MOVB             (LEN1: copia CX bytes [BX]->[DX], sin operando)
-    //   3 MOVW             (LEN1: igual, CX cuenta palabras de 16 bits)
-    //   4 JMPNV addr16     (LEN3: salta si V=0 -- ver JC_V mas abajo)
-    //   5 CALLNV addr16    (LEN3)
-    //   6 MOV reg16,#imm16 (LEN4: reg16 = imm16 -- MISMO mnemonico MOV,
-    //                       detectado por que el destino es de 16 bits;
-    //                       unica instruccion de mas de 3 bytes de toda
-    //                       la ISA. operando: [reg16(2)|--(6)][imm16 lo][imm16 hi])
-    //   7 reservado (se ejecuta como NOP)
-    OP_EXT2 = 30,
-    OP_EXT  = 31,  // <op> dst, src     (reg de opcode = AluOp; operando: [--|dst:3|src:3])
-};
-
-// Par de registro de 16 bits, para el byte de operando de OP_LDAR/OP_STAR/
-// OP_INR/OP_OUTR (2 bits bajos; el resto queda reservado a 0).
+// Par de 16 bits (en 2 bits de un operando o de los 3 bits bajos)
 enum Reg16 : uint8_t {
     REG_AX = 0, REG_BX = 1, REG_CX = 2, REG_DX = 3,
 };
 
-// Condiciones codificadas en los 3 bits bajos de JMP/CALL
+enum OpFamily : uint8_t {
+    // --- sin operandos: bajo3 = SysOp ------------------------------- LEN 1
+    OP_SYS    = 0,
+    // --- mover datos (bajo3 = reg8) -----------------------------------
+    OP_LDI    = 1,   // MOV reg,#imm8             [op][imm]           LEN 2
+    OP_LDA    = 2,   // LDA reg,[addr16]          [op][lo][hi]        LEN 3
+    OP_STA    = 3,   // STA [addr16],reg          [op][lo][hi]        LEN 3
+    OP_LDAR   = 4,   // LDA reg,[reg16]           [op][r16]           LEN 2
+    OP_STAR   = 5,   // STA [reg16],reg           [op][r16]           LEN 2
+    OP_IN     = 6,   // IN  reg,(port16)          [op][lo][hi]        LEN 3
+    OP_OUT    = 7,   // OUT (port16),reg          [op][lo][hi]        LEN 3
+    OP_INR    = 8,   // IN  reg,(reg16)           [op][r16]           LEN 2
+    OP_OUTR   = 9,   // OUT (reg16),reg           [op][r16]           LEN 2
+    // --- ALU de 8 bits: bajo3 = reg8 destino, operacion en un byte ----
+    OP_ALURR  = 10,  // <alu> dst,src             [op][alu<<3|src]    LEN 2
+    OP_ALUI   = 11,  // <alu> reg,#imm8           [op][alu][imm]      LEN 3
+    OP_ALUM   = 12,  // <alu> reg,[addr16]        [op][alu][lo][hi]   LEN 4
+    OP_ALUP   = 13,  // <alu> reg,[reg16]         [op][alu<<2|r16]    LEN 2
+    // --- unarias / desplazamientos / mul-div (bajo3 = reg8) -----------
+    OP_NOT    = 14,  // NOT reg                                       LEN 1
+    OP_SHR    = 15,  // SHR reg,#N  (N=1..8)      [op][N-1]           LEN 2
+    OP_SHL    = 16,  // SHL reg,#N                [op][N-1]           LEN 2
+    OP_MUL    = 17,  // MUL reg : AX = AL*reg                         LEN 1
+    OP_DIV    = 18,  // DIV reg : AL=AX/reg AH=AX%reg                 LEN 1
+    OP_INC    = 19,  // INC reg (8 bits; C no cambia)                 LEN 1
+    OP_DEC    = 20,  // DEC reg (8 bits; C no cambia)                 LEN 1
+    OP_PUSH   = 21,  // PUSH reg                                      LEN 1
+    OP_POP    = 22,  // POP reg                                       LEN 1
+    // --- saltos (bajo3 = condicion JumpCond) --------------------------
+    OP_JMP    = 23,  // JMP<cc> addr16            [op][lo][hi]        LEN 3
+    OP_CALL   = 24,  // CALL<cc> addr16           [op][lo][hi]        LEN 3
+    OP_JX     = 25,  // bajo3 = JxOp: JMPNV/CALLNV addr16 (LEN 3),
+                     //   JMP reg16 / CALL reg16 ([op][r16], LEN 2)
+    // --- 16 bits (pares AX/BX/CX/DX) -----------------------------------
+    OP_R16    = 26,  // bajo3 = R16Op; [op][dst16<<3|src]             LEN 2
+    OP_R16I   = 27,  // bajo3 = R16IOp; [op][r16][imm8] (LEN 3) o
+                     //   [op][r16][lo][hi] (LEN 4)
+    OP_INCDEC16 = 28, // bajo3 = dec<<2|r16 : INC/DEC reg16           LEN 1
+    OP_PUSHPOP16 = 29, // bajo3 = pop<<2|r16 : PUSH/POP reg16         LEN 1
+    // 30, 31: libres (se ejecutan como NOP de 1 byte)
+};
+
+// Familia OP_SYS: sub-operacion en los 3 bits bajos
+enum SysOp : uint8_t {
+    SYS_NOP   = 0,
+    SYS_HALT  = 1,
+    SYS_RET   = 2,
+    SYS_MOVB  = 3,   // copia CX bytes [BX]->[DX] hacia adelante
+    SYS_MOVW  = 4,   // igual, CX palabras de 16 bits
+    SYS_MOVBR = 5,   // copia CX bytes hacia ATRAS: BX/DX apuntan al ULTIMO
+                     //   byte de cada bloque (memmove seguro con dst > src)
+};
+
+// Familia OP_JX
+enum JxOp : uint8_t {
+    JX_JMPNV  = 0,   // JMPNV addr16  (salta si V=0)
+    JX_CALLNV = 1,   // CALLNV addr16
+    JX_JMPR   = 2,   // JMP reg16     (salta a la direccion que hay en el par)
+    JX_CALLR  = 3,   // CALL reg16
+};
+
+// Familia OP_R16 (operando: dst16<<3 | src)
+enum R16Op : uint8_t {
+    R16_MOV   = 0,   // MOV dst16,src16       (sin flags)
+    R16_ADD   = 1,   // ADD dst16,src16       (sin flags)
+    R16_SUB   = 2,   // SUB dst16,src16       (sin flags)
+    R16_CMP   = 3,   // CMP dst16,src16       (flags de dst-src en 16 bits)
+    R16_ADD8  = 4,   // ADD dst16,src8        (sin flags, src8 sin signo)
+    R16_SUB8  = 5,   // SUB dst16,src8        (sin flags)
+};
+
+// Familia OP_R16I (byte 1: r16 en los 2 bits bajos)
+enum R16IOp : uint8_t {
+    R16I_MOV  = 0,   // MOV r16,#imm16   LEN 4 (sin flags)
+    R16I_ADD  = 1,   // ADD r16,#imm8    LEN 3 (sin flags)
+    R16I_SUB  = 2,   // SUB r16,#imm8    LEN 3 (sin flags)
+    R16I_CMP  = 3,   // CMP r16,#imm16   LEN 4 (flags de r16-imm16)
+};
+
+// Condiciones (3 bits bajos de JMP/CALL); NV va aparte, en OP_JX
 enum JumpCond : uint8_t {
     JC_ALWAYS = 0,
     JC_Z      = 1,
@@ -94,24 +115,21 @@ enum JumpCond : uint8_t {
     JC_NC     = 4,
     JC_N      = 5,
     JC_NN     = 6,
-    JC_V      = 7,  // salta si V=1 (overflow con signo) -- JMPV/CALLV
-    // NV (salta si V=0) NO tiene hueco en este campo de 3 bits (0-7 ya
-    // llenos): JMPNV/CALLNV se codifican aparte, en OP_EXT2 subop 4/5 --
-    // ver isa.h arriba y editor.cpp (se ofrecen igualmente como el verbo
-    // JMP/CALL de siempre, con un 9o valor de condicion en el editor).
+    JC_V      = 7,
 };
 
-// Operación de la ALU (bits bajos del opcode en OP_EXT y OP_ALUI).
-//   OP_EXT  0xF8+op : <op> dst,src      (registro-registro, LEN 2)
-//   OP_ALUI 0xA0+op : <op> reg,#imm8    (LEN 3; op 0 = MOV no se usa, ver LDI)
+// Operaciones de la ALU de 8 bits (byte de operando de OP_ALU*)
 enum AluOp : uint8_t {
-    ALU_MOV = 0,  // dst = src              (no toca flags)
+    ALU_MOV = 0,  // dst = src                     (sin flags)
     ALU_ADD = 1,  // dst = dst + src
-    ALU_SUB = 2,  // dst = dst - src
-    ALU_CMP = 3,  // solo flags de (dst - src); dst no cambia
-    ALU_AND = 4,  // dst = dst & src
-    ALU_OR  = 5,  // dst = dst | src
-    ALU_XOR = 6,  // dst = dst ^ src
+    ALU_ADC = 2,  // dst = dst + src + C           (sumas de varios bytes)
+    ALU_SUB = 3,  // dst = dst - src
+    ALU_SBC = 4,  // dst = dst - src - C (C = prestamo)
+    ALU_CMP = 5,  // flags de dst - src; dst no cambia
+    ALU_AND = 6,
+    ALU_OR  = 7,
+    ALU_XOR = 8,
+    ALU_COUNT = 9,
 };
 
 enum FlagBit : uint8_t {
@@ -121,8 +139,8 @@ enum FlagBit : uint8_t {
     FLAG_V = 1 << 3,
 };
 
-inline uint8_t makeOpcode(uint8_t family, uint8_t regOrCond) {
-    return (uint8_t)((family << 3) | (regOrCond & 0x07));
+inline uint8_t makeOpcode(uint8_t family, uint8_t low3) {
+    return (uint8_t)((family << 3) | (low3 & 0x07));
 }
 inline uint8_t opFamily(uint8_t opcode) { return opcode >> 3; }
 inline uint8_t opReg(uint8_t opcode)    { return opcode & 0x07; }

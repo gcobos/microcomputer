@@ -12,10 +12,12 @@ namespace compi {
 //   0x0500 .. 0x05FF   PANTALLA - atributos de texto (1 puerto = 1 celda)
 //   0x0600 .. 0x0603   encoders y pulsadores (solo IN)
 //   0x0610             LED de a bordo
+//   0x0611             número aleatorio (generador por hardware del ESP32)
 //   0x0620 .. 0x0629   temporizadores
 //   0x0630 .. 0x0633   sonido (piezo)
-//   0x0640 .. 0x0641   carga/grabado de programas (slots de la flash)
-//   0x0650 .. 0x0651   configuración (brillo de pantalla, activar/desactivar sonido)
+//   0x0640 .. 0x0643   carga/grabado de programas, consulta de slots, slot en curso
+//   0x0650 .. 0x0652   configuración (brillo de pantalla, activar/desactivar sonido, grabar)
+//   0x0660 .. 0x066E   metadatos (categoría + nombre) del slot consultado
 //   0x0700 .. 0x07FF   EEPROM del slot en curso (256 bytes persistentes)
 //   0x0800 .. 0x0801   EEPROM: cargar/grabar de verdad en la flash
 //   resto              IN -> 0 ; OUT -> nada
@@ -116,6 +118,13 @@ constexpr uint16_t PORT_DAT_BTN = 0x0603; // encoder DATOS: bit0 = pulsado
 // IN: devuelve el último valor escrito. Se apaga al (re)iniciar una ejecución.
 constexpr uint16_t PORT_LED = 0x0610;
 
+// --- Número aleatorio -------------------------------------------------
+// IN: un byte aleatorio nuevo en cada lectura, del generador por hardware
+// del ESP32 (esp_random(): ruido de RF/reloj, no una secuencia que se
+// repita). OUT: no hace nada. Sustituye a los LFSR que cada juego sembraba
+// a mano con la posición de un encoder.
+constexpr uint16_t PORT_RANDOM = 0x0611;
+
 // --- Temporizadores (10 puertos, 0x0620 .. 0x0629) -------------------
 // OUT carga el temporizador con un valor (0-255). A partir de ahí decrece
 // solo, 1 cada cierto tiempo, hasta llegar a 0 y quedarse ahí. IN lee el
@@ -199,10 +208,32 @@ constexpr uint8_t  SND_PORT_COUNT   = 4;
 constexpr uint16_t PORT_PROG_LOAD = 0x0640;
 constexpr uint16_t PORT_PROG_SAVE = 0x0641;
 
-// --- Configuración del propio aparato (0x0650 .. 0x0651) --------------
-// Ajustes que hasta ahora solo se tocaban desde fuera del programa (el botón
-// BOOT para el sonido, el ahorro de energía automático para el brillo):
-// aquí se exponen para que el PROPIO programa en ejecución los pueda pedir.
+// --- Consulta de slots: nombre y categoría (para menús como sisop.asm) ---
+// Cada slot guarda en su cabecera de la flash una categoría y un nombre
+// (storage.h SLOT_META_SIZE, SLOT_CAT_*), puestos por el ensamblador con
+// las directivas .name/.category y enviados por compi_send.py. Al grabar
+// la RAM en un slot (Guardar del panel, PORT_PROG_SAVE) se graban los del
+// programa que está cargado ahora.
+//
+//   0x0642 PORT_SLOT_QUERY  OUT: número de slot -> lee sus metadatos de la
+//                           flash a PORT_SLOT_INFO. IN: 1 si ese slot (el
+//                           último consultado) tiene programa, 0 si no.
+//   0x0643 PORT_CUR_SLOT    IN: el slot en curso (el del programa cargado;
+//                           ver g_currentSlot en main.cpp) -- para que un
+//                           programa pueda grabarse a sí mismo
+//                           (PORT_PROG_SAVE) sin llevar el número fijo.
+//   0x0660 .. 0x066E PORT_SLOT_INFO  IN: los 15 bytes de metadatos del
+//                           último slot consultado: 0x0660 = categoría
+//                           (0xFF = ninguna, también en slots grabados antes
+//                           de existir los metadatos), 0x0661..0x066E =
+//                           nombre ASCII relleno con 0.
+constexpr uint16_t PORT_SLOT_QUERY = 0x0642;
+constexpr uint16_t PORT_CUR_SLOT   = 0x0643;
+constexpr uint16_t PORT_SLOT_INFO_BASE = 0x0660;
+
+// --- Configuración del propio aparato (0x0650 .. 0x0652) --------------
+// Ajustes globales del aparato (brillo y sonido). Cualquier programa puede
+// leerlos, pero solo el slot 0 (SETTINGS de sisop) puede cambiarlos.
 //
 //   0x0650 PORT_CFG_BRIGHTNESS  OUT: brillo de la pantalla, 0 (más tenue) a
 //                                255 (máximo) -- se aplica al instante,
@@ -227,6 +258,11 @@ constexpr uint16_t PORT_PROG_SAVE = 0x0641;
 //                                clearRuntimeOutputs() en main.cpp).
 //                                IN: eco del último valor escrito (de
 //                                fábrica, el de OLED_CONTRAST_FULL).
+//                                SOLO lo cambia el slot 0 (SETTINGS de
+//                                sisop): un OUT desde cualquier otro
+//                                programa se ignora. Se guarda en la flash
+//                                (storage.h SETTINGS_SIZE) con un OUT a
+//                                PORT_CFG_SAVE, y se recupera al arrancar.
 //   0x0651 PORT_CFG_SOUND_EN    OUT: 0 = silencia el sonido, distinto de 0 =
 //                                lo reactiva -- MISMO interruptor general
 //                                que el botón BOOT del propio aparato (ver
@@ -240,10 +276,21 @@ constexpr uint16_t PORT_PROG_SAVE = 0x0641;
 //                                reactivación (pensado para que lo note un
 //                                humano, no para que lo dispare código).
 //                                IN: 1 si el sonido está activado ahora
-//                                mismo, 0 si está silenciado.
+//                                mismo, 0 si está silenciado. Igual que el
+//                                brillo: SOLO el slot 0 puede cambiarlo
+//                                (además del botón BOOT), y se guarda en
+//                                la flash para sobrevivir a un reset (con
+//                                PORT_CFG_SAVE; el botón BOOT graba solo).
+//   0x0652 PORT_CFG_SAVE        OUT (cualquier valor, solo desde el slot
+//                                0): graba brillo y mute en la flash si han
+//                                cambiado desde la última vez. sisop lo hace
+//                                al salir de SETTINGS (botón DIRECCIÓN), no
+//                                en cada detente del dial, para no gastar la
+//                                flash. IN: 0.
 constexpr uint16_t PORT_CFG_BASE       = 0x0650;
 constexpr uint16_t PORT_CFG_BRIGHTNESS = 0x0650;
 constexpr uint16_t PORT_CFG_SOUND_EN   = 0x0651;
+constexpr uint16_t PORT_CFG_SAVE       = 0x0652;
 constexpr uint8_t  CFG_PORT_COUNT      = 2;
 
 // --- EEPROM persistente por slot (0x0700 .. 0x07FF, 0x0800 .. 0x0801) -----

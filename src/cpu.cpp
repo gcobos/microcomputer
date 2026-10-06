@@ -74,11 +74,12 @@ bool Cpu::testCond(uint8_t cond) const {
 // Version sin ramas: cada flag (0/1) se desplaza directamente a su bit y se
 // combina con OR, en vez de una cadena de "if (cond) flags_ |= BIT". Un
 // salto condicional cuesta ciclos de pipeline en el RV32IMC del ESP32-C3;
-// esto se ejecuta en CADA instruccion ADD/SUB/CMP.
-uint8_t Cpu::updateFlagsArith(uint8_t a, uint8_t b, bool isSub) {
-    int full = isSub ? (int)a - (int)b : (int)a + (int)b;
+// esto se ejecuta en CADA instruccion ADD/SUB/CMP. `cin` es el acarreo (o
+// prestamo) de entrada: 0 para ADD/SUB/CMP, el bit C para ADC/SBC.
+uint8_t Cpu::updateFlagsArith(uint8_t a, uint8_t b, bool isSub, uint8_t cin) {
+    int full = isSub ? (int)a - (int)b - (int)cin : (int)a + (int)b + (int)cin;
     uint8_t result = (uint8_t)(full & 0xFF);
-    uint8_t carry = isSub ? (a < b) : (full > 0xFF);
+    uint8_t carry = isSub ? (full < 0) : (full > 0xFF);
     uint8_t zero  = (result == 0);
     uint8_t neg   = (result & 0x80) != 0;
     uint8_t overflow = isSub
@@ -94,6 +95,29 @@ void Cpu::updateFlagsLogic(uint8_t result) {
     uint8_t zero = (result == 0);
     uint8_t neg  = (result & 0x80) != 0;
     flags_ = (uint8_t)((zero << 1) | (neg << 2));
+}
+
+// CMP de 16 bits: flags de a - b como numeros de 16 bits (C = prestamo,
+// N = bit 15, V = desbordamiento con signo). No guarda el resultado.
+void Cpu::cmp16(uint16_t a, uint16_t b) {
+    uint16_t result = (uint16_t)(a - b);
+    uint8_t carry = (a < b);
+    uint8_t zero  = (result == 0);
+    uint8_t neg   = (result & 0x8000) != 0;
+    uint8_t overflow = (((a ^ b) & (a ^ result) & 0x8000) != 0);
+    flags_ = (uint8_t)(carry | (zero << 1) | (neg << 2) | (overflow << 3));
+}
+
+// INC/DEC de 8 bits: Z/N/V del resultado; C NO cambia (asi se puede contar
+// vueltas de un bucle sin perder un acarreo pendiente, como en el Z80).
+void Cpu::doIncDec8(uint8_t reg, bool dec) {
+    uint8_t a = regs_.get8(reg);
+    uint8_t result = (uint8_t)(dec ? a - 1 : a + 1);
+    regs_.set8(reg, result);
+    uint8_t zero = (result == 0);
+    uint8_t neg  = (result & 0x80) != 0;
+    uint8_t overflow = dec ? (a == 0x80) : (a == 0x7F);
+    flags_ = (uint8_t)((flags_ & FLAG_C) | (zero << 1) | (neg << 2) | (overflow << 3));
 }
 
 void Cpu::doShr(uint8_t reg, uint8_t n) {
@@ -162,14 +186,12 @@ void Cpu::doDiv(uint8_t reg) {
     flags_ = (uint8_t)(FLAG_C | FLAG_V | FLAG_N);   // AL=0xFF -> Z=0, N=1
 }
 
-// MOVB/MOVW (OP_EXT2 subop 2/3): copia de [BX] a [DX], CX bytes (MOVB) o
-// CX palabras de 16 bits (MOVW, o sea 2*CX bytes) -- registros implicitos,
-// sin operando en el opcode. Copia siempre hacia adelante (como REP MOVSB
-// de x86 o LDIR del Z80): si los rangos [BX..) y [DX..) se solapan con
-// dst<src, el resultado puede no ser el de un memmove seguro -- limitacion
-// deliberada, no es el caso de uso pensado (blits/descompresion/tablas).
-// Al terminar: BX/DX avanzan el numero de bytes copiados, CX queda a 0. No
-// toca flags (es movimiento de datos, no aritmetica -- ver isa.md).
+// MOVB/MOVW (OP_SYS): copia de [BX] a [DX], CX bytes (MOVB) o CX palabras
+// de 16 bits (MOVW, o sea 2*CX bytes) -- registros implicitos, sin operando.
+// Copia hacia adelante (como REP MOVSB de x86 o LDIR del Z80): con rangos
+// solapados y dst > src, el resultado no es el de un memmove -- para eso
+// esta MOVBR. Al terminar: BX/DX avanzan los bytes copiados, CX queda a 0.
+// No toca flags.
 void Cpu::doMovBlock(bool asWords) {
     uint16_t src = regs_.get16(REG_BX);
     uint16_t dst = regs_.get16(REG_DX);
@@ -183,16 +205,39 @@ void Cpu::doMovBlock(bool asWords) {
     regs_.set16(REG_CX, 0);
 }
 
+// MOVBR (OP_SYS): copia CX bytes HACIA ATRAS -- BX y DX apuntan al ULTIMO
+// byte de origen y de destino, y bajan a la vez (LDDR del Z80). Es el
+// memmove seguro para abrir hueco (dst > src solapados). Al terminar: BX/DX
+// bajan los bytes copiados, CX = 0. No toca flags.
+void Cpu::doMovBack() {
+    uint16_t src = regs_.get16(REG_BX);
+    uint16_t dst = regs_.get16(REG_DX);
+    uint16_t count = regs_.get16(REG_CX);
+    for (uint16_t i = 0; i < count; ++i) {
+        memory_[maskAddr((uint16_t)(dst - i))] = memory_[maskAddr((uint16_t)(src - i))];
+    }
+    regs_.set16(REG_BX, (uint16_t)(src - count));
+    regs_.set16(REG_DX, (uint16_t)(dst - count));
+    regs_.set16(REG_CX, 0);
+}
+
+void Cpu::pushPc() {
+    push8((pc_ >> 8) & 0xFF);
+    push8(pc_ & 0xFF);
+}
+
 uint8_t Cpu::aluOp(uint8_t op, uint8_t a, uint8_t b) {
     switch (op) {
         case ALU_MOV: return b;                             // no toca flags
-        case ALU_ADD: return updateFlagsArith(a, b, false);
-        case ALU_SUB: return updateFlagsArith(a, b, true);
-        case ALU_CMP: updateFlagsArith(a, b, true); return a; // dst no cambia
+        case ALU_ADD: return updateFlagsArith(a, b, false, 0);
+        case ALU_ADC: return updateFlagsArith(a, b, false, flags_ & FLAG_C);
+        case ALU_SUB: return updateFlagsArith(a, b, true, 0);
+        case ALU_SBC: return updateFlagsArith(a, b, true, flags_ & FLAG_C);
+        case ALU_CMP: updateFlagsArith(a, b, true, 0); return a; // dst no cambia
         case ALU_AND: { uint8_t r = (uint8_t)(a & b); updateFlagsLogic(r); return r; }
         case ALU_OR:  { uint8_t r = (uint8_t)(a | b); updateFlagsLogic(r); return r; }
         case ALU_XOR: { uint8_t r = (uint8_t)(a ^ b); updateFlagsLogic(r); return r; }
-        default:      return a;
+        default:      return a;                             // op sin uso: no hace nada
     }
 }
 
@@ -204,34 +249,78 @@ bool Cpu::step() {
     uint8_t r = opReg(opcode);
 
     switch (family) {
-        case OP_NOP:
+        case OP_SYS:
+            switch (r) {
+                case SYS_HALT:  halted_ = true; break;
+                case SYS_RET: {
+                    uint8_t lo = pop8();
+                    uint8_t hi = pop8();
+                    pc_ = (uint16_t)(lo | (hi << 8));
+                    break;
+                }
+                case SYS_MOVB:  doMovBlock(false); break;
+                case SYS_MOVW:  doMovBlock(true);  break;
+                case SYS_MOVBR: doMovBack();       break;
+                default: break;                    // NOP y reservados
+            }
             break;
-        case OP_HALT:
-            halted_ = true;
+        case OP_LDI:
+            regs_.set8(r, fetch8());
             break;
-        case OP_LDI: {
+        case OP_LDA:
+            regs_.set8(r, memory_[maskAddr(fetch16())]);
+            break;
+        case OP_STA:
+            memory_[maskAddr(fetch16())] = regs_.get8(r);
+            break;
+        case OP_LDAR:
+            regs_.set8(r, memory_[maskAddr(regs_.get16(fetch8()))]);
+            break;
+        case OP_STAR:
+            memory_[maskAddr(regs_.get16(fetch8()))] = regs_.get8(r);
+            break;
+        case OP_IN: {
+            uint16_t port = fetch16();
+            regs_.set8(r, portRead_ ? portRead_(port) : 0);
+            break;
+        }
+        case OP_OUT: {
+            uint16_t port = fetch16();
+            if (portWrite_) portWrite_(port, regs_.get8(r));
+            break;
+        }
+        case OP_INR: {
+            uint16_t port = regs_.get16(fetch8());
+            regs_.set8(r, portRead_ ? portRead_(port) : 0);
+            break;
+        }
+        case OP_OUTR: {
+            uint16_t port = regs_.get16(fetch8());
+            if (portWrite_) portWrite_(port, regs_.get8(r));
+            break;
+        }
+        case OP_ALURR: {
+            uint8_t operand = fetch8();
+            uint8_t src = (uint8_t)(operand & 0x07);
+            regs_.set8(r, aluOp((uint8_t)(operand >> 3), regs_.get8(r), regs_.get8(src)));
+            break;
+        }
+        case OP_ALUI: {
+            uint8_t op = fetch8();
             uint8_t imm = fetch8();
-            regs_.set8(r, imm);
+            regs_.set8(r, aluOp(op, regs_.get8(r), imm));
             break;
         }
-        case OP_LDA: {
+        case OP_ALUM: {
+            uint8_t op = fetch8();
             uint16_t addr = fetch16();
-            regs_.set8(r, memory_[maskAddr(addr)]);
+            regs_.set8(r, aluOp(op, regs_.get8(r), memory_[maskAddr(addr)]));
             break;
         }
-        case OP_STA: {
-            uint16_t addr = fetch16();
-            memory_[maskAddr(addr)] = regs_.get8(r);
-            break;
-        }
-        case OP_ADD: case OP_SUB: case OP_AND: case OP_OR: case OP_XOR: {
-            // <op> reg, [addr16]  ->  reg = reg <op> mem[addr]
-            uint8_t alu = (family == OP_ADD) ? ALU_ADD
-                        : (family == OP_SUB) ? ALU_SUB
-                        : (family == OP_AND) ? ALU_AND
-                        : (family == OP_OR)  ? ALU_OR : ALU_XOR;
-            uint16_t addr = fetch16();
-            regs_.set8(r, aluOp(alu, regs_.get8(r), memory_[maskAddr(addr)]));
+        case OP_ALUP: {
+            uint8_t operand = fetch8();
+            uint16_t addr = regs_.get16(operand & 0x03);
+            regs_.set8(r, aluOp((uint8_t)(operand >> 2), regs_.get8(r), memory_[maskAddr(addr)]));
             break;
         }
         case OP_NOT: {
@@ -241,53 +330,23 @@ bool Cpu::step() {
             break;
         }
         case OP_SHR:
-            doShr(r, 1);
+            doShr(r, (uint8_t)((fetch8() & 0x07) + 1));
             break;
         case OP_SHL:
-            doShl(r, 1);
+            doShl(r, (uint8_t)((fetch8() & 0x07) + 1));
             break;
-        case OP_SHRN: {
-            uint8_t n = (uint8_t)((fetch8() & 0x07) + 1);
-            doShr(r, n);
+        case OP_MUL:
+            doMul(r);
             break;
-        }
-        case OP_SHLN: {
-            uint8_t n = (uint8_t)((fetch8() & 0x07) + 1);
-            doShl(r, n);
+        case OP_DIV:
+            doDiv(r);
             break;
-        }
-        case OP_IN: {
-            uint16_t port = fetch16();
-            uint8_t value = portRead_ ? portRead_(port) : 0;
-            regs_.set8(r, value);
+        case OP_INC:
+            doIncDec8(r, false);
             break;
-        }
-        case OP_OUT: {
-            uint16_t port = fetch16();
-            if (portWrite_) portWrite_(port, regs_.get8(r));
+        case OP_DEC:
+            doIncDec8(r, true);
             break;
-        }
-        case OP_LDAR: {
-            uint16_t addr = regs_.get16(fetch8());
-            regs_.set8(r, memory_[maskAddr(addr)]);
-            break;
-        }
-        case OP_STAR: {
-            uint16_t addr = regs_.get16(fetch8());
-            memory_[maskAddr(addr)] = regs_.get8(r);
-            break;
-        }
-        case OP_INR: {
-            uint16_t port = regs_.get16(fetch8());
-            uint8_t value = portRead_ ? portRead_(port) : 0;
-            regs_.set8(r, value);
-            break;
-        }
-        case OP_OUTR: {
-            uint16_t port = regs_.get16(fetch8());
-            if (portWrite_) portWrite_(port, regs_.get8(r));
-            break;
-        }
         case OP_PUSH:
             push8(regs_.get8(r));
             break;
@@ -301,100 +360,82 @@ bool Cpu::step() {
         }
         case OP_CALL: {
             uint16_t addr = fetch16();
-            if (testCond(r)) {
-                push8((pc_ >> 8) & 0xFF);
-                push8(pc_ & 0xFF);
-                pc_ = addr;
-            }
+            if (testCond(r)) { pushPc(); pc_ = addr; }
             break;
         }
-        case OP_RET: {
-            uint8_t lo = pop8();
-            uint8_t hi = pop8();
-            pc_ = (uint16_t)(lo | (hi << 8));
-            break;
-        }
-        case OP_EXT: {
-            // <op> dst, src   (op = r ; operando: [--|dst:3|src:3])
-            uint8_t operand = fetch8();
-            uint8_t dst = (uint8_t)((operand >> 3) & 0x07);
-            uint8_t src = (uint8_t)(operand & 0x07);
-            regs_.set8(dst, aluOp(r, regs_.get8(dst), regs_.get8(src)));
-            break;
-        }
-        case OP_ALUI: {
-            // <op> reg, #imm8   (op = r ; operando: reg, imm8)
-            uint8_t dst = (uint8_t)(fetch8() & 0x07);
-            uint8_t imm = fetch8();
-            regs_.set8(dst, aluOp(r, regs_.get8(dst), imm));
-            break;
-        }
-        case OP_MUL:
-            doMul(r);
-            break;
-        case OP_DIV:
-            doDiv(r);
-            break;
-        case OP_INCDEC16: {
-            // opcode = dir<<2 | reg16 (dir 0=INC 1=DEC) -- ver isa.h
-            uint8_t reg16 = (uint8_t)(r & 0x03);
-            bool dec = (r & 0x04) != 0;
-            uint16_t v = regs_.get16(reg16);
-            regs_.set16(reg16, (uint16_t)(dec ? v - 1 : v + 1));
-            break;
-        }
-        case OP_EXT2: {
-            // subop en los 3 bits bajos del opcode (r) -- ver isa.h
+        case OP_JX:
             switch (r) {
-                case 0: case 1: {
-                    // ADD/SUB dst16,src8 : operando = (dst16<<3)|src8
-                    uint8_t operand = fetch8();
-                    uint8_t dst16 = (uint8_t)((operand >> 3) & 0x03);
-                    uint8_t src8  = (uint8_t)(operand & 0x07);
-                    uint16_t v = regs_.get16(dst16);
-                    uint16_t ext = regs_.get8(src8);
-                    regs_.set16(dst16, (uint16_t)(r == 0 ? v + ext : v - ext));
-                    break;
-                }
-                case 2:
-                    doMovBlock(false);   // MOVB
-                    break;
-                case 3:
-                    doMovBlock(true);    // MOVW
-                    break;
-                case 4: {
-                    // JMPNV addr16 : salta si V=0
+                case JX_JMPNV: {
                     uint16_t addr = fetch16();
                     if (!(flags_ & FLAG_V)) pc_ = addr;
                     break;
                 }
-                case 5: {
-                    // CALLNV addr16 : llama si V=0
+                case JX_CALLNV: {
                     uint16_t addr = fetch16();
-                    if (!(flags_ & FLAG_V)) {
-                        push8((pc_ >> 8) & 0xFF);
-                        push8(pc_ & 0xFF);
-                        pc_ = addr;
-                    }
+                    if (!(flags_ & FLAG_V)) { pushPc(); pc_ = addr; }
                     break;
                 }
-                case 6: {
-                    // MOV reg16,#imm16 : unica instruccion de LEN 4 de toda
-                    // la ISA. No toca flags (mismo criterio que LDI/MOV).
-                    uint8_t pair = (uint8_t)(fetch8() & 0x03);
-                    uint16_t imm = fetch16();
-                    regs_.set16(pair, imm);
+                case JX_JMPR:
+                    pc_ = regs_.get16(fetch8());
+                    break;
+                case JX_CALLR: {
+                    uint16_t addr = regs_.get16(fetch8());
+                    pushPc();
+                    pc_ = addr;
                     break;
                 }
-                default:
-                    // subop 7: reservado, se comporta como NOP.
-                    break;
+                default: break;                    // reservados: NOP de 1 byte
+            }
+            break;
+        case OP_R16: {
+            uint8_t operand = fetch8();
+            uint8_t dst = (uint8_t)((operand >> 3) & 0x03);
+            uint8_t src = (uint8_t)(operand & 0x07);
+            uint16_t d = regs_.get16(dst);
+            switch (r) {
+                case R16_MOV:  regs_.set16(dst, regs_.get16(src)); break;
+                case R16_ADD:  regs_.set16(dst, (uint16_t)(d + regs_.get16(src))); break;
+                case R16_SUB:  regs_.set16(dst, (uint16_t)(d - regs_.get16(src))); break;
+                case R16_CMP:  cmp16(d, regs_.get16(src)); break;
+                case R16_ADD8: regs_.set16(dst, (uint16_t)(d + regs_.get8(src))); break;
+                case R16_SUB8: regs_.set16(dst, (uint16_t)(d - regs_.get8(src))); break;
+                default: break;
+            }
+            break;
+        }
+        case OP_R16I: {
+            uint8_t pair = (uint8_t)(fetch8() & 0x03);
+            uint16_t d = regs_.get16(pair);
+            switch (r) {
+                case R16I_MOV: regs_.set16(pair, fetch16()); break;
+                case R16I_ADD: regs_.set16(pair, (uint16_t)(d + fetch8())); break;
+                case R16I_SUB: regs_.set16(pair, (uint16_t)(d - fetch8())); break;
+                case R16I_CMP: cmp16(d, fetch16()); break;
+                default: break;
+            }
+            break;
+        }
+        case OP_INCDEC16: {
+            uint8_t pair = (uint8_t)(r & 0x03);
+            uint16_t v = regs_.get16(pair);
+            regs_.set16(pair, (uint16_t)((r & 0x04) ? v - 1 : v + 1));
+            break;
+        }
+        case OP_PUSHPOP16: {
+            uint8_t pair = (uint8_t)(r & 0x03);
+            if (r & 0x04) {                        // POP: bajo y luego alto
+                uint8_t lo = pop8();
+                uint8_t hi = pop8();
+                regs_.set16(pair, (uint16_t)(lo | (hi << 8)));
+            } else {                               // PUSH: alto y luego bajo
+                uint16_t v = regs_.get16(pair);
+                push8((uint8_t)(v >> 8));
+                push8((uint8_t)(v & 0xFF));
             }
             break;
         }
         default:
-            // Sin familias reservadas por ahora: 27-30 ya se usan arriba.
-            break;
+            break;                                 // 30, 31: libres (NOP)
     }
     return !halted_;
 }

@@ -25,8 +25,8 @@ void flagsStr(uint8_t f, char out[5]) {
 // Nombre corto del campo que está editando ahora mismo el selector de
 // mnemónico (editor.h), para el encabezado de EditMem.
 const char* editFieldLabel(const UiState& ui) {
-    static const char* const kLabel[12] = {
-        "OP", "MODE", "COND", "REG", "DST", "SRC", "IMM", "LO", "HI", "PTR", "N", ""
+    static const char* const kLabel[13] = {
+        "OP", "MODE", "COND", "REG", "DST", "SRC", "IMM", "LO", "HI", "PTR", "N", "SRC16", ""
     };
     EField f = fieldAt(ui.compose.verb, ui.compose.mode, ui.compose.step);
     return kLabel[(uint8_t)f];

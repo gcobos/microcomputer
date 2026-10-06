@@ -133,6 +133,10 @@
 ; ============================================================================
 
     .slot 3
+
+    .name "CUBE 3D"
+
+    .category DEMO
     .org 0x0000
 
 NVERT = 8
@@ -513,44 +517,38 @@ draw_all_edges:
     STA [ei],AL
 dae_l:
     LDA CL,[ei]
-    MOV BL,#lo(edge_a)
-    MOV BH,#hi(edge_a)
-    CALL idx_ptr
+    MOV BX,#edge_a
+    ADD BX,CL
     LDA AL,[BX]
     STA [v0],AL
 
     LDA CL,[ei]
-    MOV BL,#lo(edge_b)
-    MOV BH,#hi(edge_b)
-    CALL idx_ptr
+    MOV BX,#edge_b
+    ADD BX,CL
     LDA AL,[BX]
     STA [v1],AL
 
     LDA CL,[v0]
-    MOV BL,#lo(sx_cur)
-    MOV BH,#hi(sx_cur)
-    CALL idx_ptr
+    MOV BX,#sx_cur
+    ADD BX,CL
     LDA AL,[BX]
     STA [ln_x0],AL
 
     LDA CL,[v0]
-    MOV BL,#lo(sy_cur)
-    MOV BH,#hi(sy_cur)
-    CALL idx_ptr
+    MOV BX,#sy_cur
+    ADD BX,CL
     LDA AL,[BX]
     STA [ln_y0],AL
 
     LDA CL,[v1]
-    MOV BL,#lo(sx_cur)
-    MOV BH,#hi(sx_cur)
-    CALL idx_ptr
+    MOV BX,#sx_cur
+    ADD BX,CL
     LDA AL,[BX]
     STA [ln_x1],AL
 
     LDA CL,[v1]
-    MOV BL,#lo(sy_cur)
-    MOV BH,#hi(sy_cur)
-    CALL idx_ptr
+    MOV BX,#sy_cur
+    ADD BX,CL
     LDA AL,[BX]
     STA [ln_y1],AL
 
@@ -577,9 +575,8 @@ rot_x:
                                   ; estaticas de antes (ver nota de cabecera)
 
     LDA CL,[vi]
-    MOV BL,#lo(Lx)
-    MOV BH,#hi(Lx)
-    CALL idx_ptr
+    MOV BX,#Lx
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
@@ -588,9 +585,8 @@ rot_x:
     AND AL,#0x3F
     STA [tmp_idx],AL
     LDA CL,[tmp_idx]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
 
@@ -601,9 +597,8 @@ rot_x:
     STA [sm_a],AL
 
     LDA CL,[angle]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
 
@@ -621,9 +616,8 @@ rot_x:
     ADD AL,BL
 
     LDA CL,[vi]
-    MOV BL,#lo(sx_cur)
-    MOV BH,#hi(sx_cur)
-    CALL idx_ptr
+    MOV BX,#sx_cur
+    ADD BX,CL
     STA [BX],AL
 
     ; sy_cur[vi] = tyx*escala + cen_y (tyx = Y0[vi] ya inclinado, ver arriba)
@@ -636,9 +630,8 @@ rot_x:
     ADD AL,BL
 
     LDA CL,[vi]
-    MOV BL,#lo(sy_cur)
-    MOV BH,#hi(sy_cur)
-    CALL idx_ptr
+    MOV BX,#sy_cur
+    ADD BX,CL
     STA [BX],AL
     RET
 
@@ -653,9 +646,8 @@ rot_x:
 ; ============================================================================
 compute_x_tilt:
     LDA CL,[vi]
-    MOV BL,#lo(Y0)
-    MOV BH,#hi(Y0)
-    CALL idx_ptr
+    MOV BX,#Y0
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
@@ -664,25 +656,22 @@ compute_x_tilt:
     AND AL,#0x3F
     STA [tmp_idx],AL
     LDA CL,[tmp_idx]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
     STA [xt_t1],AL                ; Y0*cos(xangle)
 
     LDA CL,[vi]
-    MOV BL,#lo(Z0)
-    MOV BH,#hi(Z0)
-    CALL idx_ptr
+    MOV BX,#Z0
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
     LDA CL,[xangle]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -694,25 +683,22 @@ compute_x_tilt:
     STA [tyx],AL                  ; tyx = Y0*cos - Z0*sin
 
     LDA CL,[vi]
-    MOV BL,#lo(Y0)
-    MOV BH,#hi(Y0)
-    CALL idx_ptr
+    MOV BX,#Y0
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
     LDA CL,[xangle]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
     STA [xt_t1],AL                ; Y0*sin(xangle)
 
     LDA CL,[vi]
-    MOV BL,#lo(Z0)
-    MOV BH,#hi(Z0)
-    CALL idx_ptr
+    MOV BX,#Z0
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
@@ -721,9 +707,8 @@ compute_x_tilt:
     AND AL,#0x3F
     STA [tmp_idx],AL
     LDA CL,[tmp_idx]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -773,34 +758,13 @@ sm_bpos:
     LDA AL,[sm_a]
     LDA BL,[sm_b]
     MUL BL
+    ; /64 de AX sin bucle: (AX >> 6) & 0xFF = (AL >> 6) | (AH << 2). Antes
+    ; eran 6 vueltas desplazando sm_hi/sm_lo bit a bit con acarreo a mano
+    ; (~80 instrucciones por llamada); ahora 3 con SHR/SHL reg,#N.
+    SHR AL,#6
+    SHL AH,#2
+    OR  AL,AH
     STA [sm_lo],AL
-    MOV AL,AH
-    STA [sm_hi],AL
-
-    MOV AL,#6
-    STA [sm_cnt],AL
-sm_shr_loop:
-    LDA AL,[sm_hi]
-    SHR AL
-    STA [sm_hi],AL
-    JMPNC sm_shr_nocarry
-    MOV AL,#0x80
-    STA [sm_carry],AL
-    JMP sm_shr_carrydone
-sm_shr_nocarry:
-    MOV AL,#0
-    STA [sm_carry],AL
-sm_shr_carrydone:
-    LDA AL,[sm_lo]
-    SHR AL
-    LDA BL,[sm_carry]
-    OR AL,BL
-    STA [sm_lo],AL
-
-    LDA AL,[sm_cnt]
-    SUB AL,#1
-    STA [sm_cnt],AL
-    JMPNZ sm_shr_loop
 
     LDA AL,[sm_neg]
     CMP AL,#0
@@ -949,10 +913,9 @@ idx_ptr:
 ; el framebuffer real -- eso lo hace `blit` al terminar el fotograma.
 shadow_set_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr            ; BX = shadow + pix_lo, con acarreo a BH
+    ADD BX,CL   ; BX = shadow + pix_lo, con acarreo a BH
     LDA AL,[pix_hi]
     ADD BH,AL                ; BX += pix_hi * 256 (la pagina dentro de shadow)
     LDA AL,[BX]
@@ -969,10 +932,9 @@ shadow_set_px:
 ; lejano, no solo sumarse encima.
 shadow_put_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -1008,21 +970,16 @@ spp_store:
 clr_shadow:
     MOV AL,#0
     STA [shadow],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV DL,#lo(shadow+1)
-    MOV DH,#hi(shadow+1)
-    MOV CL,#0xFF
-    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
     MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que haya cambiado -
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -1031,10 +988,7 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1
@@ -1071,8 +1025,7 @@ cpx_d:
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------
 clsg:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0
 cg_l:
     OUT (BX),AL
@@ -1217,9 +1170,8 @@ edr_max_ok:
     ; fijo sino HW2D[hw_base+dyv]).
     SUB AL,#1
     MOV CL,AL
-    MOV BL,#lo(HW_ROW_OFF)
-    MOV BH,#hi(HW_ROW_OFF)
-    CALL idx_ptr
+    MOV BX,#HW_ROW_OFF
+    ADD BX,CL
     LDA AL,[BX]
     STA [hw_base],AL
 
@@ -1230,32 +1182,28 @@ edr_max_ok:
     STA [i],AL
 dt_l:
     LDA CL,[i]
-    MOV BL,#lo(order)
-    MOV BH,#hi(order)
-    CALL idx_ptr
+    MOV BX,#order
+    ADD BX,CL
     LDA AL,[BX]
     STA [key],AL                 ; key = indice de costilla en este puesto
 
     LDA CL,[key]
-    MOV BL,#lo(rzu_arr)
-    MOV BH,#hi(rzu_arr)
-    CALL idx_ptr
+    MOV BX,#rzu_arr
+    ADD BX,CL
     LDA AL,[BX]
     STA [rzu],AL
     CALL level_from_rz
     STA [level],AL
 
     LDA CL,[key]
-    MOV BL,#lo(scr_x)
-    MOV BH,#hi(scr_x)
-    CALL idx_ptr
+    MOV BX,#scr_x
+    ADD BX,CL
     LDA AL,[BX]
     STA [disk_cx],AL
 
     LDA CL,[key]
-    MOV BL,#lo(scr_y)
-    MOV BH,#hi(scr_y)
-    CALL idx_ptr
+    MOV BX,#scr_y
+    ADD BX,CL
     LDA AL,[BX]
     STA [disk_cy],AL
 
@@ -1287,9 +1235,8 @@ tc_l:
 
     ; --- scr_x[su] = LxU[su]*cos(a) - tzux*sin(a) + TORO_CX -----------------
     LDA CL,[su]
-    MOV BL,#lo(LxU)
-    MOV BH,#hi(LxU)
-    CALL idx_ptr
+    MOV BX,#LxU
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
@@ -1298,9 +1245,8 @@ tc_l:
     AND AL,#0x3F
     STA [tmp_idx],AL             ; (angle+16)&0x3F -- se reutiliza mas abajo
     LDA CL,[tmp_idx]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -1310,9 +1256,8 @@ tc_l:
     STA [sm_a],AL
 
     LDA CL,[angle]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -1329,24 +1274,21 @@ tc_l:
     ADD AL,BL
     STA [tmpv],AL                ; guardado antes de pisar BX con scr_x
     LDA CL,[su]
-    MOV BL,#lo(scr_x)
-    MOV BH,#hi(scr_x)
-    CALL idx_ptr
+    MOV BX,#scr_x
+    ADD BX,CL
     LDA AL,[tmpv]
     STA [BX],AL
 
     ; --- rzu_arr[su] = LxU[su]*sin(a) + tzux*cos(a) -------------------------
     LDA CL,[su]
-    MOV BL,#lo(LxU)
-    MOV BH,#hi(LxU)
-    CALL idx_ptr
+    MOV BX,#LxU
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
     LDA CL,[angle]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -1356,9 +1298,8 @@ tc_l:
     STA [sm_a],AL
 
     LDA CL,[tmp_idx]             ; (angle+16)&0x3F, ya calculado arriba
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -1369,9 +1310,8 @@ tc_l:
     ADD AL,BL
     STA [tmpv],AL
     LDA CL,[su]
-    MOV BL,#lo(rzu_arr)
-    MOV BH,#hi(rzu_arr)
-    CALL idx_ptr
+    MOV BX,#rzu_arr
+    ADD BX,CL
     LDA AL,[tmpv]
     STA [BX],AL
 
@@ -1385,9 +1325,8 @@ tc_l:
     ADD AL,BL
     STA [tmpv],AL
     LDA CL,[su]
-    MOV BL,#lo(scr_y)
-    MOV BH,#hi(scr_y)
-    CALL idx_ptr
+    MOV BX,#scr_y
+    ADD BX,CL
     LDA AL,[tmpv]
     STA [BX],AL
 
@@ -1405,9 +1344,8 @@ tc_l:
 ; ============================================================================
 compute_x_tilt_torus:
     LDA CL,[su]
-    MOV BL,#lo(Y0U)
-    MOV BH,#hi(Y0U)
-    CALL idx_ptr
+    MOV BX,#Y0U
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
@@ -1416,25 +1354,22 @@ compute_x_tilt_torus:
     AND AL,#0x3F
     STA [tmp_idx],AL
     LDA CL,[tmp_idx]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
     STA [xt_t1],AL                ; Y0U*cos(xangle)
 
     LDA CL,[su]
-    MOV BL,#lo(Z0U)
-    MOV BH,#hi(Z0U)
-    CALL idx_ptr
+    MOV BX,#Z0U
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
     LDA CL,[xangle]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -1446,25 +1381,22 @@ compute_x_tilt_torus:
     STA [tyux],AL                 ; tyux = Y0U*cos - Z0U*sin
 
     LDA CL,[su]
-    MOV BL,#lo(Y0U)
-    MOV BH,#hi(Y0U)
-    CALL idx_ptr
+    MOV BX,#Y0U
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
     LDA CL,[xangle]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
     STA [xt_t1],AL                ; Y0U*sin(xangle)
 
     LDA CL,[su]
-    MOV BL,#lo(Z0U)
-    MOV BH,#hi(Z0U)
-    CALL idx_ptr
+    MOV BX,#Z0U
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_a],AL
 
@@ -1473,9 +1405,8 @@ compute_x_tilt_torus:
     AND AL,#0x3F
     STA [tmp_idx],AL
     LDA CL,[tmp_idx]
-    MOV BL,#lo(sine)
-    MOV BH,#hi(sine)
-    CALL idx_ptr
+    MOV BX,#sine
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -1498,9 +1429,8 @@ sort_spokes:
     STA [i],AL
 ss_init_l:
     LDA CL,[i]
-    MOV BL,#lo(order)
-    MOV BH,#hi(order)
-    CALL idx_ptr
+    MOV BX,#order
+    ADD BX,CL
     LDA AL,[i]
     STA [BX],AL
     LDA AL,[i]
@@ -1513,16 +1443,14 @@ ss_init_l:
     STA [i],AL
 ss_outer_l:
     LDA CL,[i]
-    MOV BL,#lo(order)
-    MOV BH,#hi(order)
-    CALL idx_ptr
+    MOV BX,#order
+    ADD BX,CL
     LDA AL,[BX]
     STA [key],AL
 
     LDA CL,[key]
-    MOV BL,#lo(rzu_arr)
-    MOV BH,#hi(rzu_arr)
-    CALL idx_ptr
+    MOV BX,#rzu_arr
+    ADD BX,CL
     LDA AL,[BX]
     STA [keyval],AL
 
@@ -1536,16 +1464,14 @@ ss_inner_l:
     JMPZ ss_place
 
     LDA CL,[j]
-    MOV BL,#lo(order)
-    MOV BH,#hi(order)
-    CALL idx_ptr
+    MOV BX,#order
+    ADD BX,CL
     LDA AL,[BX]
     STA [oj],AL
 
     LDA CL,[oj]
-    MOV BL,#lo(rzu_arr)
-    MOV BH,#hi(rzu_arr)
-    CALL idx_ptr
+    MOV BX,#rzu_arr
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[keyval]
     SUB AL,BL                    ; rzu_arr[order[j]] - keyval
@@ -1556,9 +1482,8 @@ ss_inner_l:
     ADD AL,#1
     STA [jp1],AL
     LDA CL,[jp1]
-    MOV BL,#lo(order)
-    MOV BH,#hi(order)
-    CALL idx_ptr
+    MOV BX,#order
+    ADD BX,CL
     LDA AL,[oj]
     STA [BX],AL
 
@@ -1572,9 +1497,8 @@ ss_place:
     ADD AL,#1
     STA [jp1],AL
     LDA CL,[jp1]
-    MOV BL,#lo(order)
-    MOV BH,#hi(order)
-    CALL idx_ptr
+    MOV BX,#order
+    ADD BX,CL
     LDA AL,[key]
     STA [BX],AL
 
@@ -1635,9 +1559,8 @@ dd_row_l:
     LDA CL,[dyv]
     ADD AL,CL
     MOV CL,AL
-    MOV BL,#lo(HW2D)
-    MOV BH,#hi(HW2D)
-    CALL idx_ptr
+    MOV BX,#HW2D
+    ADD BX,CL
     LDA AL,[BX]
     STA [hwv],AL
 
@@ -1717,9 +1640,8 @@ dither_on:
     STA [tmp_idx],AL
 
     LDA CL,[tmp_idx]
-    MOV BL,#lo(BAYER2)
-    MOV BH,#hi(BAYER2)
-    CALL idx_ptr
+    MOV BX,#BAYER2
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmpv],AL
 
@@ -1828,8 +1750,6 @@ sm_b:      .space 1
 sm_neg:    .space 1
 sm_hi:     .space 1
 sm_lo:     .space 1
-sm_carry:  .space 1
-sm_cnt:    .space 1
 
 ln_x0:    .space 1
 ln_y0:    .space 1

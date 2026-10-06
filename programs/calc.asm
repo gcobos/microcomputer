@@ -27,9 +27,12 @@
 ;  da 18, 54, 162 -- igual que en una calculadora de bolsillo real). Con "C"
 ;  se borra todo.
 ;
-;  Sin multiplicacion ni division de la CPU: la multiplicacion es suma-y-
-;  desplaza sobre un intermedio de 48 bits (para detectar el desbordamiento
-;  antes de truncar), y la division es division binaria larga con resto (24
+;  MUL/DIV de la CPU son de 8 bits; los operandos aqui son de 24. La
+;  multiplicacion es suma-y-desplaza sobre un intermedio de 48 bits (para
+;  detectar el desbordamiento antes de truncar) -- solo corre al pulsar una
+;  tecla, asi que no compensa reescribirla con MUL. La division usa DIV
+;  byte a byte si el divisor cabe en 8 bits (udiv_acc_fast); si no, es
+;  division binaria larga con resto (24
 ;  iteraciones de "desplaza y compara" -- con numeros de hasta 6 cifras,
 ;  restar de uno en uno como antes tardaria demasiado: dividir por 1 podria
 ;  necesitar casi un millon de restas). El acumulador es de 24 bits (hasta
@@ -47,6 +50,10 @@
 ; ============================================================================
 
     .slot 10
+
+    .name "CALCULATOR"
+
+    .category PROGRAM
     .org 0x0000
 
 ; --- puertos ------------------------------------------------------------
@@ -184,10 +191,8 @@ aplica_digito:
     STA [entry2],AL
     JMP ad_show
 ad_normal:
-    MOV BL,#lo(entry2)
-    MOV BH,#hi(entry2)
-    MOV DL,#lo(CAP5+2)
-    MOV DH,#hi(CAP5+2)
+    MOV BX,#entry2
+    MOV DX,#CAP5+2
     MOV AL,#3
     STA [cnt_n],AL
     CALL cmp_n
@@ -219,23 +224,17 @@ mul10add_entry:
 
     MOV AL,#3
     STA [cnt_n],AL
-    MOV BL,#lo(entry0)
-    MOV BH,#hi(entry0)
+    MOV BX,#entry0
     CALL shl_n
-    MOV BL,#lo(entry0)
-    MOV BH,#hi(entry0)
+    MOV BX,#entry0
     CALL shl_n
-    MOV BL,#lo(entry0)
-    MOV BH,#hi(entry0)
+    MOV BX,#entry0
     CALL shl_n
-    MOV BL,#lo(mx0)
-    MOV BH,#hi(mx0)
+    MOV BX,#mx0
     CALL shl_n
 
-    MOV BL,#lo(entry0)
-    MOV BH,#hi(entry0)
-    MOV DL,#lo(mx0)
-    MOV DH,#hi(mx0)
+    MOV BX,#entry0
+    MOV DX,#mx0
     CALL add_n
 
     MOV AL,#0
@@ -243,10 +242,8 @@ mul10add_entry:
     STA [dig3_2],AL
     LDA AL,[dsel]
     STA [dig3_0],AL
-    MOV BL,#lo(entry0)
-    MOV BH,#hi(entry0)
-    MOV DL,#lo(dig3_0)
-    MOV DH,#hi(dig3_0)
+    MOV BX,#entry0
+    MOV DX,#dig3_0
     CALL add_n
     RET
 
@@ -368,10 +365,8 @@ ao_clear:
 ; --- check_overflow: si acc > 999999, err_flag=1 (para no imprimir
 ; digitos sin sentido -- put_dec6 solo esta pensado para 0..999999) --------
 check_overflow:
-    MOV BL,#lo(LIMIT24+2)
-    MOV BH,#hi(LIMIT24+2)
-    MOV DL,#lo(acc2)
-    MOV DH,#hi(acc2)
+    MOV BX,#LIMIT24+2
+    MOV DX,#acc2
     MOV AL,#3
     STA [cnt_n],AL
     CALL cmp_n
@@ -413,10 +408,8 @@ cp_mul:
 
 ; --- uadd_acc: acc(24 bits) += entry(24 bits) ----------------------------
 uadd_acc:
-    MOV BL,#lo(acc0)
-    MOV BH,#hi(acc0)
-    MOV DL,#lo(entry0)
-    MOV DH,#hi(entry0)
+    MOV BX,#acc0
+    MOV DX,#entry0
     MOV AL,#3
     STA [cnt_n],AL
     CALL add_n
@@ -426,19 +419,15 @@ uadd_acc:
 ; negativo -- se comprueba antes de restar (cmp_n), no hace falta deshacer
 ; nada ----------------------------------------------------------------------
 usub_acc:
-    MOV BL,#lo(acc2)
-    MOV BH,#hi(acc2)
-    MOV DL,#lo(entry2)
-    MOV DH,#hi(entry2)
+    MOV BX,#acc2
+    MOV DX,#entry2
     MOV AL,#3
     STA [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPZ us_neg
-    MOV BL,#lo(acc0)
-    MOV BH,#hi(acc0)
-    MOV DL,#lo(entry0)
-    MOV DH,#hi(entry0)
+    MOV BX,#acc0
+    MOV DX,#entry0
     MOV AL,#3
     STA [cnt_n],AL
     CALL sub_n
@@ -492,26 +481,21 @@ uma_l:
     AND AL,#1
     CMP AL,#0
     JMPZ uma_noadd
-    MOV BL,#lo(p0)
-    MOV BH,#hi(p0)
-    MOV DL,#lo(mm0)
-    MOV DH,#hi(mm0)
+    MOV BX,#p0
+    MOV DX,#mm0
     MOV AL,#6
     STA [cnt_n],AL
     CALL add_n
 uma_noadd:
-    MOV BL,#lo(mm0)
-    MOV BH,#hi(mm0)
+    MOV BX,#mm0
     MOV AL,#6
     STA [cnt_n],AL
     CALL shl_n
     CALL shr_qb
     JMP uma_l
 uma_d:
-    MOV BL,#lo(LIMIT48+5)
-    MOV BH,#hi(LIMIT48+5)
-    MOV DL,#lo(p5)
-    MOV DH,#hi(p5)
+    MOV BX,#LIMIT48+5
+    MOV DX,#p5
     MOV AL,#6
     STA [cnt_n],AL
     CALL cmp_n
@@ -613,25 +597,20 @@ ud_slow:
     MOV AL,#24
     STA [ud_i],AL
 ud_l:
-    MOV BL,#lo(rd0)
-    MOV BH,#hi(rd0)
+    MOV BX,#rd0
     MOV AL,#6
     STA [cnt_n],AL
     CALL shl_n
 
-    MOV BL,#lo(rd5)
-    MOV BH,#hi(rd5)
-    MOV DL,#lo(entry2)
-    MOV DH,#hi(entry2)
+    MOV BX,#rd5
+    MOV DX,#entry2
     MOV AL,#3
     STA [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPZ ud_nosub
-    MOV BL,#lo(rd3)
-    MOV BH,#hi(rd3)
-    MOV DL,#lo(entry0)
-    MOV DH,#hi(entry0)
+    MOV BX,#rd3
+    MOV DX,#entry0
     MOV AL,#3
     STA [cnt_n],AL
     CALL sub_n
@@ -692,8 +671,7 @@ udiv_acc_fast:
 ; --- add_n: [BX..BX+N) += [DX..DX+N), N en [cnt_n], LSB primero (BX/DX
 ; deben apuntar al byte MENOS significativo de cada uno al entrar) --------
 add_n:
-    MOV CL,#0
-    MOV CH,#0
+    MOV CX,#0x0000
 an_l:
     LDA AL,[BX]
     LDA AH,[DX]
@@ -710,14 +688,8 @@ an_c1:
 an_c2:
     STA [BX],AL
     MOV CL,AH
-    ADD BL,#1
-    JMPNC an_bxok
-    ADD BH,#1
-an_bxok:
-    ADD DL,#1
-    JMPNC an_dxok
-    ADD DH,#1
-an_dxok:
+    INC BX
+    INC DX
     ADD CH,#1
     LDA AH,[cnt_n]
     CMP CH,AH
@@ -727,8 +699,7 @@ an_dxok:
 ; --- sub_n: [BX..BX+N) -= [DX..DX+N), N en [cnt_n], LSB primero (igual
 ; que add_n, para restas con acarreo/prestamo encadenado) -----------------
 sub_n:
-    MOV CL,#0
-    MOV CH,#0
+    MOV CX,#0x0000
 sn_l:
     LDA AL,[BX]
     LDA AH,[DX]
@@ -745,14 +716,8 @@ sn_c1:
 sn_c2:
     STA [BX],AL
     MOV CL,AH
-    ADD BL,#1
-    JMPNC sn_bxok
-    ADD BH,#1
-sn_bxok:
-    ADD DL,#1
-    JMPNC sn_dxok
-    ADD DH,#1
-sn_dxok:
+    INC BX
+    INC DX
     ADD CH,#1
     LDA AH,[cnt_n]
     CMP CH,AH
@@ -762,8 +727,7 @@ sn_dxok:
 ; --- shl_n: [BX..BX+N) <<= 1 (desplazamiento conjunto, N en [cnt_n], LSB
 ; primero -- el bit que sale de cada byte entra en el siguiente) ----------
 shl_n:
-    MOV CL,#0
-    MOV CH,#0
+    MOV CX,#0x0000
 shn_l:
     LDA AL,[BX]
     SHL AL
@@ -777,10 +741,7 @@ shn_c1:
 shn_c2:
     STA [BX],AL
     MOV CL,AH
-    ADD BL,#1
-    JMPNC shn_bxok
-    ADD BH,#1
-shn_bxok:
+    INC BX
     ADD CH,#1
     LDA AH,[cnt_n]
     CMP CH,AH
@@ -804,14 +765,8 @@ cn_l:
     SUB AL,#1
     STA [cn_i],AL
     JMPZ cn_ge
-    SUB BL,#1
-    JMPNC cn_bxok
-    SUB BH,#1
-cn_bxok:
-    SUB DL,#1
-    JMPNC cn_dxok
-    SUB DH,#1
-cn_dxok:
+    DEC BX
+    DEC DX
     JMP cn_l
 cn_ge:
     MOV AL,#1
@@ -862,15 +817,11 @@ dtc_num_l:
 dibuja_boton_num:
     LDA CL,[bi]
     SHL CL
-    MOV BL,#lo(btn_pos)
-    MOV BH,#hi(btn_pos)
-    CALL idx_ptr
+    MOV BX,#btn_pos
+    ADD BX,CL
     LDA AL,[BX]
     STA [bx_x0],AL
-    ADD BL,#1
-    JMPNC dbn_ok1
-    ADD BH,#1
-dbn_ok1:
+    INC BX
     LDA AL,[BX]
     STA [bx_y0],AL
     LDA AL,[bx_x0]
@@ -883,15 +834,11 @@ dbn_ok1:
 
     LDA CL,[bi]
     SHL CL
-    MOV BL,#lo(btn_txtpos)
-    MOV BH,#hi(btn_txtpos)
-    CALL idx_ptr
+    MOV BX,#btn_txtpos
+    ADD BX,CL
     LDA AL,[BX]
     STA [tcol],AL
-    ADD BL,#1
-    JMPNC dbn_ok2
-    ADD BH,#1
-dbn_ok2:
+    INC BX
     LDA AL,[BX]
     STA [trow],AL
 
@@ -906,15 +853,11 @@ dbn_ok2:
 dibuja_boton_op:
     LDA CL,[bi]
     SHL CL
-    MOV BL,#lo(op_pos)
-    MOV BH,#hi(op_pos)
-    CALL idx_ptr
+    MOV BX,#op_pos
+    ADD BX,CL
     LDA AL,[BX]
     STA [bx_x0],AL
-    ADD BL,#1
-    JMPNC dbo_ok1
-    ADD BH,#1
-dbo_ok1:
+    INC BX
     LDA AL,[BX]
     STA [bx_y0],AL
     LDA AL,[bx_x0]
@@ -927,22 +870,17 @@ dbo_ok1:
 
     LDA CL,[bi]
     SHL CL
-    MOV BL,#lo(op_txtpos)
-    MOV BH,#hi(op_txtpos)
-    CALL idx_ptr
+    MOV BX,#op_txtpos
+    ADD BX,CL
     LDA AL,[BX]
     STA [tcol],AL
-    ADD BL,#1
-    JMPNC dbo_ok2
-    ADD BH,#1
-dbo_ok2:
+    INC BX
     LDA AL,[BX]
     STA [trow],AL
 
     LDA CL,[bi]
-    MOV BL,#lo(op_syms)
-    MOV BH,#hi(op_syms)
-    CALL idx_ptr
+    MOV BX,#op_syms
+    ADD BX,CL
     LDA AL,[BX]
     LDA CL,[tcol]
     LDA CH,[trow]
@@ -991,15 +929,11 @@ selecciona_op:
 resalta_num:
     LDA CL,[bi]
     SHL CL
-    MOV BL,#lo(btn_pos)
-    MOV BH,#hi(btn_pos)
-    CALL idx_ptr
+    MOV BX,#btn_pos
+    ADD BX,CL
     LDA AL,[BX]
     STA [bx_x0],AL
-    ADD BL,#1
-    JMPNC rn_ok
-    ADD BH,#1
-rn_ok:
+    INC BX
     LDA AL,[BX]
     STA [bx_y0],AL
 
@@ -1022,15 +956,11 @@ rn_ok:
 resalta_op:
     LDA CL,[bi]
     SHL CL
-    MOV BL,#lo(op_pos)
-    MOV BH,#hi(op_pos)
-    CALL idx_ptr
+    MOV BX,#op_pos
+    ADD BX,CL
     LDA AL,[BX]
     STA [bx_x0],AL
-    ADD BL,#1
-    JMPNC ro_ok
-    ADD BH,#1
-ro_ok:
+    INC BX
     LDA AL,[BX]
     STA [bx_y0],AL
 
@@ -1057,8 +987,7 @@ ro_ok:
 ; [pd4_0..pd4_2] alineado a la derecha (columna DISP_COL..DISP_END), o
 ; "Err" (tambien pegado al borde derecho) si [err_flag] esta puesto -------
 actualiza_display:
-    MOV DL,#0
-    MOV DH,#0x04
+    MOV DX,#0x0400
     MOV CL,#0
 adp_clr:
     MOV AL,#0
@@ -1072,21 +1001,17 @@ adp_clr:
     CMP AL,#0
     JMPZ adp_num
     MOV AL,#0x45
-    MOV CL,#ERR_COL
-    MOV CH,#0
+    MOV CX,#ERR_COL
     CALL putc_at
     MOV AL,#0x72
-    MOV CL,#ERR_COL+1
-    MOV CH,#0
+    MOV CX,#ERR_COL+1
     CALL putc_at
     MOV AL,#0x72
-    MOV CL,#ERR_COL+2
-    MOV CH,#0
+    MOV CX,#ERR_COL+2
     CALL putc_at
     RET
 adp_num:
-    MOV CL,#DISP_COL
-    MOV CH,#0
+    MOV CX,#DISP_COL
     CALL put_dec6
     RET
 
@@ -1200,13 +1125,13 @@ pd6_p2_d:
     ; lo que queda en [pd4_0] es < 100 (pd4_1=pd4_2=0 seguro) -- decenas y
     ; unidades igual que en la version de 4 digitos anterior
     LDA AL,[pd4_0]
-    MOV BL,#0
-pd6_t_l:
-    CMP AL,#10
-    JMPC pd6_t_d
-    SUB AL,#10
-    ADD BL,#1
-    JMP pd6_t_l
+    PUSH AH
+    MOV AH,#0
+    MOV BL,#10
+    DIV BL                  ; BL = decenas, AL = unidades
+    MOV BL,AL
+    MOV AL,AH
+    POP AH
 pd6_t_d:
     STA [pd4_ones],AL
     MOV AL,BL
@@ -1260,19 +1185,15 @@ ped_dhok:
 ; AL=0 y no toca nada (usa cmp_n/sub_n genericos, sin necesitar deshacer
 ; nada porque primero comprueba) --------------------------------------------
 try_digit_place:
-    MOV BL,#lo(pd4_2)
-    MOV BH,#hi(pd4_2)
-    MOV DL,#lo(k2)
-    MOV DH,#hi(k2)
+    MOV BX,#pd4_2
+    MOV DX,#k2
     MOV AL,#3
     STA [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPZ tdp_no
-    MOV BL,#lo(pd4_0)
-    MOV BH,#hi(pd4_0)
-    MOV DL,#lo(k0)
-    MOV DH,#hi(k0)
+    MOV BX,#pd4_0
+    MOV DX,#k0
     MOV AL,#3
     STA [cnt_n],AL
     CALL sub_n
@@ -1404,10 +1325,9 @@ cpx_d:
 
 shadow_set_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -1418,10 +1338,9 @@ shadow_set_px:
 
 shadow_clr_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -1441,20 +1360,15 @@ shadow_clr_px:
 clr_shadow:
     MOV AL,#0
     STA [shadow],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV DL,#lo(shadow+1)
-    MOV DH,#hi(shadow+1)
-    MOV CL,#0xFF
-    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
     MOVB
     RET
 
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -1463,10 +1377,7 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1
@@ -1478,8 +1389,7 @@ bl_dnc:
 ;  RUTINAS COMPARTIDAS
 ; ============================================================================
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL

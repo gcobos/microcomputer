@@ -34,17 +34,17 @@ COMPI_CHUNK = 1024  # debe coincidir con COMPI_CHUNK en src/main.cpp
 
 
 def build_if_needed(path):
-    """Devuelve (bytes, slot, fichero_bin). slot es None si no se puede
+    """Devuelve (bytes, slot, fichero_bin, meta). slot es None si no se puede
     deducir (.bin). fichero_bin es el .bin real que se manda (el propio
     fichero si ya lo era, o el generado al ensamblar un .asm)."""
     if not path.endswith(".asm"):
         with open(path, "rb") as f:
-            return f.read(), None, path
+            return f.read(), None, path, None
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     asm = casm.Assembler()
     try:
-        image = asm.assemble(text)
+        image = asm.assemble(text, path)
     except casm.AsmError as e:
         print(f"compi_send: error ensamblando: {e}", file=sys.stderr)
         sys.exit(1)
@@ -52,7 +52,8 @@ def build_if_needed(path):
     out = path[:-4] + ".bin"
     with open(out, "wb") as f:
         f.write(image[:used])
-    return image[:used], asm.slot, out
+    meta = (asm.category, asm.name) if asm.category is not None else None
+    return image[:used], asm.slot, out, meta
 
 
 def main(argv=None):
@@ -72,7 +73,7 @@ def main(argv=None):
         print("compi_send: falta pyserial  ->  pip install pyserial", file=sys.stderr)
         return 2
 
-    data, deduced_slot, bin_path = build_if_needed(args.image)
+    data, deduced_slot, bin_path, meta = build_if_needed(args.image)
 
     if args.slot is not None:
         slot = args.slot
@@ -102,7 +103,10 @@ def main(argv=None):
     with serial.Serial(args.port, args.baud, timeout=8) as ser:
         time.sleep(0.3)
         ser.reset_input_buffer()
-        header = f"COMPI LOAD {slot} {len(data)}\n".encode()
+        # metadatos del slot (categoria + nombre, ver .name/.category en
+        # casm.py): solo si el origen es un .asm que los declara
+        extra = f" {meta[0]} {meta[1] or ''}" if meta else ""
+        header = f"COMPI LOAD {slot} {len(data)}{extra}\n".encode()
         ser.write(header)
         ser.flush()
 

@@ -22,7 +22,11 @@
 ;  La ISA y los puertos: ../specs.txt  y  ../docs/isa.md
 ; ============================================================================
 
-    .slot 4
+    .slot 23
+
+    .name "DEMO MENU"
+
+    .category DEMO
     .org 0x0000
 
 ; --- variables (RAM alta, lejos del codigo) ----------------------------------
@@ -207,10 +211,8 @@ do_gfx:
     MOV AL,#62
     STA [tmp0],AL
     CALL hline_full           ; marco: borde inferior (y=62)
-    MOV BL,#lo(h_gfx)
-    MOV BH,#hi(h_gfx)
-    MOV CL,#7
-    MOV CH,#0
+    MOV BX,#h_gfx
+    MOV CX,#0x0007
     CALL puts
     MOV AL,#0
     STA [gb_x],AL
@@ -420,10 +422,8 @@ do_snd:
     STA [g_exit],AL
     CALL clsg
     CALL clst
-    MOV BL,#lo(h_snd)
-    MOV BH,#hi(h_snd)
-    MOV CL,#7
-    MOV CH,#0
+    MOV BX,#h_snd
+    MOV CX,#0x0007
     CALL puts
 ds_rs:
     MOV AL,#0
@@ -558,10 +558,8 @@ da_x:
     RET
 
 da_label:
-    MOV BL,#lo(h_anim)
-    MOV BH,#hi(h_anim)
-    MOV CL,#6
-    MOV CH,#0
+    MOV BX,#h_anim
+    MOV CX,#0x0006
     CALL puts
     RET
 
@@ -608,10 +606,8 @@ dl_bars:
     CALL shadow_hspan
     CALL shadow_blit
     CALL clst
-    MOV BL,#lo(h_light)
-    MOV BH,#hi(h_light)
-    MOV CL,#8
-    MOV CH,#3
+    MOV BX,#h_light
+    MOV CX,#0x0308
     CALL puts
     LDA AL,[li_ph]
     AND AL,#1
@@ -795,14 +791,11 @@ game_draw:
     CALL draw_ob
     CALL shadow_blit
     CALL clst
-    MOV BL,#lo(h_game)
-    MOV BH,#hi(h_game)
-    MOV CL,#0
-    MOV CH,#0
+    MOV BX,#h_game
+    MOV CX,#0x0000
     CALL puts
     LDA AL,[g_score]
-    MOV CL,#12
-    MOV CH,#0
+    MOV CX,#0x000C
     CALL put_num
     RET
 
@@ -869,19 +862,14 @@ go_l:
     CALL shadow_fill
     CALL shadow_blit
     CALL clst
-    MOV BL,#lo(str_over)
-    MOV BH,#hi(str_over)
-    MOV CL,#6
-    MOV CH,#3
+    MOV BX,#str_over
+    MOV CX,#0x0306
     CALL puts
-    MOV BL,#lo(str_score)
-    MOV BH,#hi(str_score)
-    MOV CL,#5
-    MOV CH,#5
+    MOV BX,#str_score
+    MOV CX,#0x0505
     CALL puts
     LDA AL,[g_score]
-    MOV CL,#13
-    MOV CH,#5
+    MOV CX,#0x050D
     CALL put_num
     MOV AL,#120
     CALL hold
@@ -894,46 +882,31 @@ go_l:
 ; --- menu ------------------------------------------------------------------
 draw_menu:
     CALL clst
-    MOV BL,#lo(h_title)
-    MOV BH,#hi(h_title)
-    MOV CL,#5
-    MOV CH,#0
+    MOV BX,#h_title
+    MOV CX,#0x0005
     CALL puts
-    MOV BL,#lo(m_i1)
-    MOV BH,#hi(m_i1)
-    MOV CL,#4
-    MOV CH,#2
+    MOV BX,#m_i1
+    MOV CX,#0x0204
     CALL puts
-    MOV BL,#lo(m_i2)
-    MOV BH,#hi(m_i2)
-    MOV CL,#4
-    MOV CH,#3
+    MOV BX,#m_i2
+    MOV CX,#0x0304
     CALL puts
-    MOV BL,#lo(m_i3)
-    MOV BH,#hi(m_i3)
-    MOV CL,#4
-    MOV CH,#4
+    MOV BX,#m_i3
+    MOV CX,#0x0404
     CALL puts
-    MOV BL,#lo(m_i4)
-    MOV BH,#hi(m_i4)
-    MOV CL,#4
-    MOV CH,#5
+    MOV BX,#m_i4
+    MOV CX,#0x0504
     CALL puts
-    MOV BL,#lo(m_i5)
-    MOV BH,#hi(m_i5)
-    MOV CL,#4
-    MOV CH,#6
+    MOV BX,#m_i5
+    MOV CX,#0x0604
     CALL puts
-    MOV BL,#lo(m_i6)
-    MOV BH,#hi(m_i6)
-    MOV CL,#4
-    MOV CH,#7
+    MOV BX,#m_i6
+    MOV CX,#0x0704
     CALL puts
     LDA AL,[sel]
     ADD AL,#2
     STA [tmp0],AL
-    MOV BL,#lo(m_mark)
-    MOV BH,#hi(m_mark)
+    MOV BX,#m_mark
     MOV CL,#2
     LDA CH,[tmp0]
     CALL puts
@@ -977,29 +950,27 @@ ps_d:
 ; --- put_num:  AL = valor (0..255),  CL = col,  CH = fila ------------------
 put_num:
     STA [pn_v],AL
-    MOV DL,#0
-pn_h:
     LDA AL,[pn_v]
-    CMP AL,#100
-    JMPC pn_hd
-    SUB AL,#100
-    STA [pn_v],AL
-    ADD DL,#1
-    JMP pn_h
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#100
+    DIV DL                  ; DL = cociente, resto -> [pn_v]
+    STA [pn_v],AH
+    MOV DL,AL
+    POP AH
 pn_hd:
     MOV AL,DL
     ADD AL,#0x30
     CALL putc
     ADD CL,#1
-    MOV DL,#0
-pn_t:
     LDA AL,[pn_v]
-    CMP AL,#10
-    JMPC pn_td
-    SUB AL,#10
-    STA [pn_v],AL
-    ADD DL,#1
-    JMP pn_t
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#10
+    DIV DL                  ; DL = cociente, resto -> [pn_v]
+    STA [pn_v],AH
+    MOV DL,AL
+    POP AH
 pn_td:
     MOV AL,DL
     ADD AL,#0x30
@@ -1168,25 +1139,15 @@ idx_ptr:
 ; `shadow` no cae en un límite de página, así que no vale el truco de contar
 ; 4 "vueltas" de BH que usa clsg (ver el aviso de cubo.asm).
 shadow_fill:
+    ; escribe AL en el primer byte y MOVB lo propaga por los 1023 restantes
+    ; (origen/destino solapados a 1 byte, copia hacia adelante -- docs/isa.md
+    ; SS4d): antes un bucle de 1024 vueltas
     STA [sf_val],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV CL,#0
-    MOV CH,#4
-shf_l:
-    LDA AL,[sf_val]
-    STA [BX],AL
-    ADD BL,#1
-    JMPNC shf_addr_ok
-    ADD BH,#1
-shf_addr_ok:
-    SUB CL,#1
-    JMPNC shf_cnt_ok
-    SUB CH,#1
-shf_cnt_ok:
-    MOV DL,CH
-    OR  DL,CL
-    JMPNZ shf_l
+    STA [shadow],AL
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF
+    MOVB
     RET
 
 ; --- shadow_fillbox:  como fillbox_solid, pero escribe en `shadow` -- misma
@@ -1209,10 +1170,9 @@ sfb_l:
     SHR AL,#4
     STA [sfb_pag],AL
 
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[sfb_off]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[sfb_pag]
     ADD BH,AL
 
@@ -1220,10 +1180,7 @@ sfb_l:
     MOV AL,#0xFF
 sfb_cl:
     STA [BX],AL
-    ADD BL,#1
-    JMPNC sfb_nc
-    ADD BH,#1
-sfb_nc:
+    INC BX
     SUB CL,#1
     JMPNZ sfb_cl
 
@@ -1257,10 +1214,9 @@ shadow_hspan:
     SHR AL,#4
     STA [sfb_pag],AL
 
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[sfb_off]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[sfb_pag]
     ADD BH,AL
 
@@ -1268,20 +1224,15 @@ shadow_hspan:
     LDA AL,[hs_val]
 shsp_l:
     STA [BX],AL
-    ADD BL,#1
-    JMPNC shsp_nc
-    ADD BH,#1
-shsp_nc:
+    INC BX
     SUB CL,#1
     JMPNZ shsp_l
     RET
 
 ; --- shadow_blit:  copia `shadow` al framebuffer real, solo lo que cambie --
 shadow_blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 sbl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -1290,10 +1241,7 @@ sbl_l:
     MOV AL,CL
     OUT (BX),AL
 sbl_same:
-    ADD DL,#1
-    JMPNC sbl_dnc
-    ADD DH,#1
-sbl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC sbl_l
     ADD BH,#1

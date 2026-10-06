@@ -1,12 +1,13 @@
 .org 0x0000
 .slot 12
+.name "CHESSBOARD"
+.category DEMO
 
 L0000:
-    MOV AL,#0xFF        ; Blanco
-    MOV AH,#0x00        ; Negro
+    MOV AX,#0x00FF ; Blanco
+                            ; Negro
     MOV DL,#64          ; Lineas en blanco -> negro
-    MOV CL,#0           ; CX Puntero a la pantalla 
-    MOV CH,#0
+    MOV CX,#0x0000 ; CX Puntero a la pantalla
 L0006:
     OUT (CX),AL         ; Dibuja una linea de la casilla
     ADD CL,#0x01        ; Incrementa el puntero

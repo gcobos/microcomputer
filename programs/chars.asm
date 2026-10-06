@@ -24,6 +24,10 @@
 ; ============================================================================
 
     .slot 15
+
+    .name "CHARACTER MAP"
+
+    .category UTILITY
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -43,10 +47,8 @@ ATTR_STRIKE    = 0x08
 ; ============================================================================
 start:
     CALL clst
-    MOV BL,#lo(s_title)
-    MOV BH,#hi(s_title)
-    MOV CL,#1
-    MOV CH,#0
+    MOV BX,#s_title
+    MOV CX,#0x0001
     CALL puts
     CALL show_charset
     CALL show_attrs
@@ -55,48 +57,32 @@ start:
 ; --- show_attrs: fila 7, una "A" con cada atributo de formato aplicado,
 ; con su etiqueta de 1 letra delante ("I:A B:A U:A S:A").
 show_attrs:
-    MOV BL,#lo(s_i)
-    MOV BH,#hi(s_i)
-    MOV CL,#0
-    MOV CH,#7
+    MOV BX,#s_i
+    MOV CX,#0x0700
     CALL puts
-    MOV BL,#'A'
-    MOV BH,#ATTR_INVERSE
-    MOV CL,#2
-    MOV CH,#7
+    MOV BX,#ATTR_INVERSE*256+('A')
+    MOV CX,#0x0702
     CALL set_cell
 
-    MOV BL,#lo(s_b)
-    MOV BH,#hi(s_b)
-    MOV CL,#4
-    MOV CH,#7
+    MOV BX,#s_b
+    MOV CX,#0x0704
     CALL puts
-    MOV BL,#'A'
-    MOV BH,#ATTR_BLINK
-    MOV CL,#6
-    MOV CH,#7
+    MOV BX,#ATTR_BLINK*256+('A')
+    MOV CX,#0x0706
     CALL set_cell
 
-    MOV BL,#lo(s_u)
-    MOV BH,#hi(s_u)
-    MOV CL,#8
-    MOV CH,#7
+    MOV BX,#s_u
+    MOV CX,#0x0708
     CALL puts
-    MOV BL,#'A'
-    MOV BH,#ATTR_UNDERLINE
-    MOV CL,#10
-    MOV CH,#7
+    MOV BX,#ATTR_UNDERLINE*256+('A')
+    MOV CX,#0x070A
     CALL set_cell
 
-    MOV BL,#lo(s_s)
-    MOV BH,#hi(s_s)
-    MOV CL,#12
-    MOV CH,#7
+    MOV BX,#s_s
+    MOV CX,#0x070C
     CALL puts
-    MOV BL,#'A'
-    MOV BH,#ATTR_STRIKE
-    MOV CL,#14
-    MOV CH,#7
+    MOV BX,#ATTR_STRIKE*256+('A')
+    MOV CX,#0x070E
     CALL set_cell
     RET
 
@@ -164,21 +150,15 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
 
 ; --- clst: limpia la rejilla de texto entera (0x0400-0x04FF) ---------------
 clst:
-    MOV DL,#0
-    MOV DH,#0x04
+    MOV DX,#0x0400
     MOV AL,#0
 clst_l:
     OUT (DX),AL

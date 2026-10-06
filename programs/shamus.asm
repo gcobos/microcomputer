@@ -218,6 +218,10 @@
 ; ============================================================================
 
     .slot 13
+
+    .name "SHAMUS"
+
+    .category GAME
     .org 0x0000
 
 ; 6x3 celdas de 21x21 (126x63, con 2/1 px de margen sin usar a la derecha y
@@ -350,6 +354,15 @@ P_T3      = 0x0623
 P_SND_NOTE = 0x0632
 P_SND_DUR  = 0x0633
 
+; --- record en la EEPROM del slot (iomap.h, 0x0700-0x0801) -----------------
+; byte 0 = REC_MAGIC si hay un record grabado (una flash sin estrenar se lee
+; 0xFF -> record 0), bytes 1/2 = el record (16 bits, bajo/alto). Se graba SOLO al batirlo, al llegar
+; al GAME OVER, para no gastar la flash en cada partida.
+P_EEP_BASE = 0x0700
+P_EEP_LOAD = 0x0800
+P_EEP_SAVE = 0x0801
+REC_MAGIC  = 0xC5
+
 SHOT_SPEED   = 2       ; px por eje y fotograma (mas rapido que el jugador)
 MAX_SHOTS    = 2
 
@@ -435,9 +448,8 @@ new_game:
     STA [i],AL
 ng_clr_l:
     LDA CL,[i]
-    MOV BL,#lo(room_visited)
-    MOV BH,#hi(room_visited)
-    CALL idx_ptr
+    MOV BX,#room_visited
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     LDA AL,[i]
@@ -445,8 +457,7 @@ ng_clr_l:
     STA [i],AL
     CMP AL,#MAX_ROOMS
     JMPNZ ng_clr_l
-    MOV BL,#lo(room_visited)
-    MOV BH,#hi(room_visited)
+    MOV BX,#room_visited
     MOV AL,#1
     STA [BX],AL              ; room_visited[0] = 1 (indice 0 = la base misma)
 
@@ -457,8 +468,7 @@ ng_clr_l:
     ; lleva candado (la zona de candados empieza en LOCK_ZONE_START=4).
     CALL rnd
     AND AL,#3
-    MOV BL,#lo(room_entry_side)
-    MOV BH,#hi(room_entry_side)
+    MOV BX,#room_entry_side
     STA [BX],AL
 
     ; genera las 50 salas de un tiron, en orden -- gen_and_save_current_room
@@ -511,9 +521,8 @@ plan_dungeon:
     STA [i],AL
 pd_clear_l:
     LDA CL,[i]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     MOV AL,#254
     STA [BX],AL
     LDA AL,[i]
@@ -540,9 +549,8 @@ pd_pick_side:
     CMP AL,#0
     JMPZ pd_side_ok
     LDA CL,[pd_i]
-    MOV BL,#lo(room_entry_side)
-    MOV BH,#hi(room_entry_side)
-    CALL idx_ptr
+    MOV BX,#room_entry_side
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[pd_side]
     CMP AL,BL
@@ -568,25 +576,22 @@ pd_have_next:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[pd_nxt]
     STA [BX],AL
 
     ; el vecino entra por el lado opuesto -- fija su room_entry_side y el
     ; enlace de vuelta pd_nxt --tmp3--> pd_i
     LDA CL,[pd_side]
-    MOV BL,#lo(OPP_OF_DIR)
-    MOV BH,#hi(OPP_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#OPP_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp3],AL
 
     LDA CL,[pd_nxt]
-    MOV BL,#lo(room_entry_side)
-    MOV BH,#hi(room_entry_side)
-    CALL idx_ptr
+    MOV BX,#room_entry_side
+    ADD BX,CL
     LDA AL,[tmp3]
     STA [BX],AL
 
@@ -596,9 +601,8 @@ pd_have_next:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[pd_i]
     STA [BX],AL
 
@@ -627,10 +631,9 @@ pd_extra_l:
     LDA AL,[pd_i]
     SUB AL,#KEYBRANCH_START
     STA [pd_k],AL
-    MOV BL,#lo(MAX_KEY_OFFSET)
-    MOV BH,#hi(MAX_KEY_OFFSET)
+    MOV BX,#MAX_KEY_OFFSET
     LDA CL,[pd_k]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ pd_d_zero
@@ -662,9 +665,8 @@ pd_forced_scan_s:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#254
     JMPZ pd_extra_have_slot
@@ -701,9 +703,8 @@ pd_extra_pick:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#254
     JMPZ pd_extra_have_slot    ; libre -- se usa
@@ -731,9 +732,8 @@ pd_extra_scan_s_l:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#254
     JMPZ pd_extra_have_slot
@@ -751,23 +751,20 @@ pd_extra_scan_s_l:
 
 pd_extra_have_slot:
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[pd_i]
     STA [BX],AL
 
     LDA CL,[pd_side]
-    MOV BL,#lo(OPP_OF_DIR)
-    MOV BH,#hi(OPP_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#OPP_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp3],AL              ; tmp3 = lado de entrada de la sala extra
 
     LDA CL,[pd_i]
-    MOV BL,#lo(room_entry_side)
-    MOV BH,#hi(room_entry_side)
-    CALL idx_ptr
+    MOV BX,#room_entry_side
+    ADD BX,CL
     LDA AL,[tmp3]
     STA [BX],AL
 
@@ -777,9 +774,8 @@ pd_extra_have_slot:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[pd_room]
     STA [BX],AL
 
@@ -810,16 +806,14 @@ cross_room_gap:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp0],AL             ; tmp0 = sala destino (siempre real)
 
     LDA CL,[exit_dir_taken]
-    MOV BL,#lo(OPP_OF_DIR)
-    MOV BH,#hi(OPP_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#OPP_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [entry_side],AL       ; lado de entrada en la sala destino: SIEMPRE el
                                ; opuesto del lado por el que se acaba de salir,
@@ -841,9 +835,8 @@ crg_not_leaving_room0:
 
     ; puntua solo la primera vez que se entra a la sala destino
     LDA CL,[tmp0]
-    MOV BL,#lo(room_visited)
-    MOV BH,#hi(room_visited)
-    CALL idx_ptr
+    MOV BX,#room_visited
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPNZ crg_no_score
@@ -852,8 +845,7 @@ crg_not_leaving_room0:
     MOV AL,#10
     CALL score_add
     CALL update_score_hud
-    MOV BL,#lo(JINGLE_TUNE)
-    MOV BH,#hi(JINGLE_TUNE)
+    MOV BX,#JINGLE_TUNE
     CALL play_tune
 crg_no_score:
 
@@ -1109,9 +1101,8 @@ ug_ret:
 ; ============================================================================
 gen_and_save_current_room:
     LDA CL,[room_num]
-    MOV BL,#lo(room_entry_side)
-    MOV BH,#hi(room_entry_side)
-    CALL idx_ptr
+    MOV BX,#room_entry_side
+    ADD BX,CL
     LDA AL,[BX]
     STA [entry_side],AL
 
@@ -1141,9 +1132,8 @@ gsc_side_l:
     ADD AL,BL
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(room_link)
-    MOV BH,#hi(room_link)
-    CALL idx_ptr
+    MOV BX,#room_link
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#254
     JMPZ gsc_side_next          ; nada por este lado -- pared, no hace falta nada
@@ -1172,25 +1162,22 @@ gsc_side_l:
     STA [door_dir],AL
     CALL side_to_rc              ; AL=[d] -> rc_row/rc_col
     LDA CL,[rc_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[rc_col]
     ADD AL,BL
     STA [door_cell],AL
 
     LDA CL,[d]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp3],AL
 
     LDA CL,[door_cell]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
+    MOV BX,#door_bits
+    ADD BX,CL
     LDA AL,[tmp3]
     STA [BX],AL                 ; marca la puerta (linea sencilla)
     ; cell_walls se deja CERRADO aqui (nunca se llama a open_dir para este
@@ -1201,9 +1188,8 @@ gsc_side_open:
     LDA AL,[d]
     CALL side_to_rc
     LDA CL,[rc_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[rc_col]
     ADD AL,BL
@@ -1236,9 +1222,8 @@ gsc_key_roll:
     JMPNC gsc_key_roll
     STA [tmp5],AL
     LDA CL,[tmp5]
-    MOV BL,#lo(CELL_TO_ROW)
-    MOV BH,#hi(CELL_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[entry_row]
     SUB AL,BL
@@ -1250,9 +1235,8 @@ gkd_row_neg:
 gkd_row_abs:
     STA [tmp6],AL
     LDA CL,[tmp5]
-    MOV BL,#lo(CELL_TO_COL)
-    MOV BH,#hi(CELL_TO_COL)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[entry_col]
     SUB AL,BL
@@ -1394,9 +1378,8 @@ place_player_spawn:
     STA [i],AL
 pps_clr_shots:
     LDA CL,[i]
-    MOV BL,#lo(shot_active)
-    MOV BH,#hi(shot_active)
-    CALL idx_ptr
+    MOV BX,#shot_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     LDA AL,[i]
@@ -1486,16 +1469,14 @@ pps_w:
 ; entrada/salida en el borde de la pantalla.
 open_dir:
     LDA CL,[od_dir]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
 
     LDA CL,[od_cell]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[tmp1]
     OR  AL,DL
@@ -1520,25 +1501,20 @@ room_off:
     STA [ro_hi],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(ROOM_OFF_LO)
-    MOV BH,#hi(ROOM_OFF_LO)
-    CALL idx_ptr
+    MOV BX,#ROOM_OFF_LO
+    ADD BX,CL
     LDA AL,[BX]
     STA [ro_off],AL
     LDA CL,[room_num]
-    MOV BL,#lo(ROOM_OFF_HI)
-    MOV BH,#hi(ROOM_OFF_HI)
-    CALL idx_ptr
+    MOV BX,#ROOM_OFF_HI
+    ADD BX,CL
     LDA AL,[BX]
     STA [ro_offhi],AL
 
     LDA BL,[ro_lo]
     LDA BH,[ro_hi]
     LDA AL,[ro_off]
-    ADD BL,AL
-    JMPNC ro_c1
-    ADD BH,#1
-ro_c1:
+    ADD BX,AL
     LDA AL,[ro_offhi]
     ADD BH,AL
     RET
@@ -1553,30 +1529,26 @@ save_room_state:
     STA [i],AL
 srs_l:
     LDA CL,[i]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
-    MOV BL,#lo(persist_walls)
-    MOV BH,#hi(persist_walls)
+    MOV BX,#persist_walls
     CALL room_off
     LDA CL,[i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
 
     LDA CL,[i]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
+    MOV BX,#door_bits
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
-    MOV BL,#lo(persist_doors)
-    MOV BH,#hi(persist_doors)
+    MOV BX,#persist_doors
     CALL room_off
     LDA CL,[i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
 
@@ -1587,44 +1559,38 @@ srs_l:
     JMPNZ srs_l
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_key_taken)
-    MOV BH,#hi(persist_key_taken)
-    CALL idx_ptr
+    MOV BX,#persist_key_taken
+    ADD BX,CL
     LDA AL,[key_taken]
     STA [BX],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_key_cell)
-    MOV BH,#hi(persist_key_cell)
-    CALL idx_ptr
+    MOV BX,#persist_key_cell
+    ADD BX,CL
     LDA AL,[key_cell]
     STA [BX],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_door_cell)
-    MOV BH,#hi(persist_door_cell)
-    CALL idx_ptr
+    MOV BX,#persist_door_cell
+    ADD BX,CL
     LDA AL,[door_cell]
     STA [BX],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_door_dir)
-    MOV BH,#hi(persist_door_dir)
-    CALL idx_ptr
+    MOV BX,#persist_door_dir
+    ADD BX,CL
     LDA AL,[door_dir]
     STA [BX],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_heart_taken)
-    MOV BH,#hi(persist_heart_taken)
-    CALL idx_ptr
+    MOV BX,#persist_heart_taken
+    ADD BX,CL
     LDA AL,[heart_taken]
     STA [BX],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_heart_cell)
-    MOV BH,#hi(persist_heart_cell)
-    CALL idx_ptr
+    MOV BX,#persist_heart_cell
+    ADD BX,CL
     LDA AL,[heart_cell]
     STA [BX],AL
     RET
@@ -1633,31 +1599,27 @@ restore_room_state:
     MOV AL,#0
     STA [i],AL
 rrs_l:
-    MOV BL,#lo(persist_walls)
-    MOV BH,#hi(persist_walls)
+    MOV BX,#persist_walls
     CALL room_off
     LDA CL,[i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
     LDA CL,[i]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
 
-    MOV BL,#lo(persist_doors)
-    MOV BH,#hi(persist_doors)
+    MOV BX,#persist_doors
     CALL room_off
     LDA CL,[i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
     LDA CL,[i]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
+    MOV BX,#door_bits
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
 
@@ -1668,44 +1630,38 @@ rrs_l:
     JMPNZ rrs_l
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_key_taken)
-    MOV BH,#hi(persist_key_taken)
-    CALL idx_ptr
+    MOV BX,#persist_key_taken
+    ADD BX,CL
     LDA AL,[BX]
     STA [key_taken],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_key_cell)
-    MOV BH,#hi(persist_key_cell)
-    CALL idx_ptr
+    MOV BX,#persist_key_cell
+    ADD BX,CL
     LDA AL,[BX]
     STA [key_cell],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_door_cell)
-    MOV BH,#hi(persist_door_cell)
-    CALL idx_ptr
+    MOV BX,#persist_door_cell
+    ADD BX,CL
     LDA AL,[BX]
     STA [door_cell],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_door_dir)
-    MOV BH,#hi(persist_door_dir)
-    CALL idx_ptr
+    MOV BX,#persist_door_dir
+    ADD BX,CL
     LDA AL,[BX]
     STA [door_dir],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_heart_taken)
-    MOV BH,#hi(persist_heart_taken)
-    CALL idx_ptr
+    MOV BX,#persist_heart_taken
+    ADD BX,CL
     LDA AL,[BX]
     STA [heart_taken],AL
 
     LDA CL,[room_num]
-    MOV BL,#lo(persist_heart_cell)
-    MOV BH,#hi(persist_heart_cell)
-    CALL idx_ptr
+    MOV BX,#persist_heart_cell
+    ADD BX,CL
     LDA AL,[BX]
     STA [heart_cell],AL
     RET
@@ -1727,21 +1683,18 @@ gen_maze:
     STA [i],AL
 gm_clr_l:
     LDA CL,[i]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     LDA CL,[i]
-    MOV BL,#lo(visited)
-    MOV BH,#hi(visited)
-    CALL idx_ptr
+    MOV BX,#visited
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     LDA CL,[i]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
+    MOV BX,#door_bits
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     LDA AL,[i]
@@ -1751,17 +1704,15 @@ gm_clr_l:
     JMPNZ gm_clr_l
 
     LDA CL,[entry_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[entry_col]
     ADD AL,BL
     STA [cur_cell],AL
     LDA CL,[cur_cell]
-    MOV BL,#lo(visited)
-    MOV BH,#hi(visited)
-    CALL idx_ptr
+    MOV BX,#visited
+    ADD BX,CL
     MOV AL,#1
     STA [BX],AL
     MOV AL,#0
@@ -1769,15 +1720,13 @@ gm_clr_l:
 
 gm_loop:
     LDA CL,[cur_cell]
-    MOV BL,#lo(CELL_TO_ROW)
-    MOV BH,#hi(CELL_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_row],AL
     LDA CL,[cur_cell]
-    MOV BL,#lo(CELL_TO_COL)
-    MOV BH,#hi(CELL_TO_COL)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_col],AL
 
@@ -1797,18 +1746,16 @@ gm_scan_l:
     STA [d],AL
 
     LDA CL,[d]
-    MOV BL,#lo(DR_OF_DIR)
-    MOV BH,#hi(DR_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#DR_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cur_row]
     ADD AL,BL
     STA [mz_row],AL
 
     LDA CL,[d]
-    MOV BL,#lo(DC_OF_DIR)
-    MOV BH,#hi(DC_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#DC_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cur_col]
     ADD AL,BL
@@ -1822,61 +1769,53 @@ gm_scan_l:
     JMPNC gm_scan_next
 
     LDA CL,[mz_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[mz_col]
     ADD AL,BL
     STA [try_cell],AL
 
     LDA CL,[try_cell]
-    MOV BL,#lo(visited)
-    MOV BH,#hi(visited)
-    CALL idx_ptr
+    MOV BX,#visited
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPNZ gm_scan_next
 
     ; abre cur->d y try->opuesta(d)
     LDA CL,[d]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
     LDA CL,[cur_cell]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[tmp1]
     OR  AL,DL
     STA [BX],AL
 
     LDA CL,[d]
-    MOV BL,#lo(OPP_OF_DIR)
-    MOV BH,#hi(OPP_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#OPP_OF_DIR
+    ADD BX,CL
     LDA CL,[BX]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
     LDA CL,[try_cell]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[tmp1]
     OR  AL,DL
     STA [BX],AL
 
     LDA CL,[try_cell]
-    MOV BL,#lo(visited)
-    MOV BH,#hi(visited)
-    CALL idx_ptr
+    MOV BX,#visited
+    ADD BX,CL
     MOV AL,#1
     STA [BX],AL
 
@@ -1935,28 +1874,24 @@ draw_maze:
     STA [i],AL
 dm_l:
     LDA CL,[i]
-    MOV BL,#lo(CELL_TO_ROW)
-    MOV BH,#hi(CELL_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_row],AL
     LDA CL,[i]
-    MOV BL,#lo(CELL_TO_COL)
-    MOV BH,#hi(CELL_TO_COL)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_col],AL
 
     LDA CL,[i]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     STA [cwv],AL
     LDA CL,[i]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
+    MOV BX,#door_bits
+    ADD BX,CL
     LDA AL,[BX]
     STA [dbv],AL
 
@@ -1995,24 +1930,21 @@ dm_s_l:
     MOV AL,#(MAZE_ROWS-1)
     STA [cur_row],AL
     LDA CL,[cur_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cur_col]
     ADD AL,BL
     STA [i],AL
     LDA CL,[i]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     AND AL,#4               ; bit2 = S
     JMPNZ dm_s_skip
     LDA CL,[i]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
+    MOV BX,#door_bits
+    ADD BX,CL
     LDA AL,[BX]
     AND AL,#4
     JMPZ dm_s_wall
@@ -2033,24 +1965,21 @@ dm_e_l:
     MOV AL,#(MAZE_COLS-1)
     STA [cur_col],AL
     LDA CL,[cur_row]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cur_col]
     ADD AL,BL
     STA [i],AL
     LDA CL,[i]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     AND AL,#2               ; bit1 = E
     JMPNZ dm_e_skip
     LDA CL,[i]
-    MOV BL,#lo(door_bits)
-    MOV BH,#hi(door_bits)
-    CALL idx_ptr
+    MOV BX,#door_bits
+    ADD BX,CL
     LDA AL,[BX]
     AND AL,#2
     JMPZ dm_e_wall
@@ -2643,9 +2572,8 @@ uf_check_go:
     STA [e],AL
 uf_find_l:
     LDA CL,[e]
-    MOV BL,#lo(shot_active)
-    MOV BH,#hi(shot_active)
-    CALL idx_ptr
+    MOV BX,#shot_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ uf_fire
@@ -2658,24 +2586,21 @@ uf_find_l:
 
 uf_fire:
     LDA CL,[e]
-    MOV BL,#lo(shot_active)
-    MOV BH,#hi(shot_active)
-    CALL idx_ptr
+    MOV BX,#shot_active
+    ADD BX,CL
     MOV AL,#1
     STA [BX],AL
 
     LDA CL,[e]
-    MOV BL,#lo(shot_x)
-    MOV BH,#hi(shot_x)
-    CALL idx_ptr
+    MOV BX,#shot_x
+    ADD BX,CL
     LDA AL,[player_x]
     ADD AL,#(PLAYER_W/2)
     STA [BX],AL
 
     LDA CL,[e]
-    MOV BL,#lo(shot_y)
-    MOV BH,#hi(shot_y)
-    CALL idx_ptr
+    MOV BX,#shot_y
+    ADD BX,CL
     LDA AL,[player_y]
     ADD AL,#(PLAYER_H/2)
     STA [BX],AL
@@ -2714,16 +2639,14 @@ uf_dir_w:
 uf_dir_done:
 
     LDA CL,[e]
-    MOV BL,#lo(shot_vx)
-    MOV BH,#hi(shot_vx)
-    CALL idx_ptr
+    MOV BX,#shot_vx
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
 
     LDA CL,[e]
-    MOV BL,#lo(shot_vy)
-    MOV BH,#hi(shot_vy)
-    CALL idx_ptr
+    MOV BX,#shot_vy
+    ADD BX,CL
     LDA AL,[tmp2]
     STA [BX],AL
 
@@ -2745,23 +2668,20 @@ update_shots:
     STA [e],AL
 us_l:
     LDA CL,[e]
-    MOV BL,#lo(shot_active)
-    MOV BH,#hi(shot_active)
-    CALL idx_ptr
+    MOV BX,#shot_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ us_next
 
     LDA CL,[e]
-    MOV BL,#lo(shot_x)
-    MOV BH,#hi(shot_x)
-    CALL idx_ptr
+    MOV BX,#shot_x
+    ADD BX,CL
     LDA AL,[BX]
     STA [ex],AL
     LDA CL,[e]
-    MOV BL,#lo(shot_y)
-    MOV BH,#hi(shot_y)
-    CALL idx_ptr
+    MOV BX,#shot_y
+    ADD BX,CL
     LDA AL,[BX]
     STA [ey],AL
 
@@ -2771,17 +2691,15 @@ us_l:
     ; 1-2px sin llegar a tocarla nunca (mismo fallo que tenia player_fits).
     ; [ex]/[ey] ya valen shot_x/shot_y (la posicion ANTES de moverse).
     LDA CL,[e]
-    MOV BL,#lo(shot_vx)
-    MOV BH,#hi(shot_vx)
-    CALL idx_ptr
+    MOV BX,#shot_vx
+    ADD BX,CL
     LDA AL,[BX]
     CALL sign_of
     STA [stepx],AL
 
     LDA CL,[e]
-    MOV BL,#lo(shot_vy)
-    MOV BH,#hi(shot_vy)
-    CALL idx_ptr
+    MOV BX,#shot_vy
+    ADD BX,CL
     LDA AL,[BX]
     CALL sign_of
     STA [stepy],AL
@@ -2820,15 +2738,13 @@ us_sweep_l:
     JMPNZ us_sweep_l
 
     LDA CL,[e]
-    MOV BL,#lo(shot_x)
-    MOV BH,#hi(shot_x)
-    CALL idx_ptr
+    MOV BX,#shot_x
+    ADD BX,CL
     LDA AL,[ex]
     STA [BX],AL
     LDA CL,[e]
-    MOV BL,#lo(shot_y)
-    MOV BH,#hi(shot_y)
-    CALL idx_ptr
+    MOV BX,#shot_y
+    ADD BX,CL
     LDA AL,[ey]
     STA [BX],AL
 
@@ -2836,24 +2752,21 @@ us_sweep_l:
     STA [j],AL
 us_enemy_l:
     LDA CL,[j]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ us_enemy_next
 
     LDA CL,[j]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[BX]
     SUB AL,#ENEMY_HALF
     STA [tmp1],AL
     LDA CL,[j]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[BX]
     SUB AL,#ENEMY_HALF
     STA [tmp2],AL
@@ -2882,9 +2795,8 @@ us_enemy_l:
     ; de impacto, sigue persiguiendo y disparando); al ultimo, pantalla de
     ; victoria en vez del jingle normal de siempre.
     LDA CL,[j]
-    MOV BL,#lo(enemy_type)
-    MOV BH,#hi(enemy_type)
-    CALL idx_ptr
+    MOV BX,#enemy_type
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#ENEMY_TYPE_BOSS
     JMPNZ us_normal_kill
@@ -2902,9 +2814,8 @@ us_enemy_l:
 
 us_boss_dead:
     LDA CL,[j]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     MOV AL,#100
@@ -2916,17 +2827,15 @@ us_boss_dead:
 
 us_normal_kill:
     LDA CL,[j]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
 
     MOV AL,#25
     CALL score_add
     CALL update_score_hud
-    MOV BL,#lo(JINGLE_TUNE)
-    MOV BH,#hi(JINGLE_TUNE)
+    MOV BX,#JINGLE_TUNE
     CALL play_tune
 
     JMP us_kill
@@ -2940,9 +2849,8 @@ us_enemy_next:
 
 us_kill:
     LDA CL,[e]
-    MOV BL,#lo(shot_active)
-    MOV BH,#hi(shot_active)
-    CALL idx_ptr
+    MOV BX,#shot_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
 
@@ -2984,30 +2892,26 @@ uef_ready:
     STA [e],AL
 uef_l:
     LDA CL,[e]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ uef_next
     LDA CL,[e]
-    MOV BL,#lo(enemy_type)
-    MOV BH,#hi(enemy_type)
-    CALL idx_ptr
+    MOV BX,#enemy_type
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ uef_next
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[BX]
     STA [ex],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[BX]
     STA [ey],AL
 
@@ -3257,9 +3161,8 @@ check_key_pickup:
     CALL px_to_row
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[tmp1]
     ADD AL,BL
@@ -3313,9 +3216,8 @@ check_heart_pickup:
     CALL px_to_row
     STA [tmp2],AL
     LDA CL,[tmp2]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[tmp1]
     ADD AL,BL
@@ -3375,15 +3277,13 @@ door_check:
     JMPZ dc_ret
 
     LDA CL,[door_dir]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
     LDA CL,[door_cell]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[tmp1]
     AND AL,BL
@@ -3391,15 +3291,13 @@ door_check:
     JMPNZ dc_ret            ; bit ya puesto -> ya estaba abierta
 
     LDA CL,[door_cell]
-    MOV BL,#lo(CELL_TO_ROW)
-    MOV BH,#hi(CELL_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     STA [drow],AL
     LDA CL,[door_cell]
-    MOV BL,#lo(CELL_TO_COL)
-    MOV BH,#hi(CELL_TO_COL)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     STA [dcol],AL
     LDA AL,[drow]
@@ -3474,15 +3372,13 @@ dc_ydone:
     JMPNC dc_ret            ; demasiado lejos todavia
 
     LDA CL,[door_dir]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
     LDA CL,[door_cell]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[tmp1]
     OR  AL,DL
@@ -3516,15 +3412,13 @@ near_door:
     JMPZ nd_no
 
     LDA CL,[door_cell]
-    MOV BL,#lo(CELL_TO_ROW)
-    MOV BH,#hi(CELL_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     STA [drow],AL
     LDA CL,[door_cell]
-    MOV BL,#lo(CELL_TO_COL)
-    MOV BH,#hi(CELL_TO_COL)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     STA [dcol],AL
     LDA AL,[drow]
@@ -3710,15 +3604,13 @@ se_l:
     ; jugador casi al instante, y otra vez igual al respawnear en la misma
     ; entrada (ver on_player_hit).
     LDA CL,[e]
-    MOV BL,#lo(ENEMY_SPAWN_ROW)
-    MOV BH,#hi(ENEMY_SPAWN_ROW)
-    CALL idx_ptr
+    MOV BX,#ENEMY_SPAWN_ROW
+    ADD BX,CL
     LDA AL,[BX]
     STA [erow],AL
     LDA CL,[e]
-    MOV BL,#lo(ENEMY_SPAWN_COL)
-    MOV BH,#hi(ENEMY_SPAWN_COL)
-    CALL idx_ptr
+    MOV BX,#ENEMY_SPAWN_COL
+    ADD BX,CL
     LDA AL,[BX]
     STA [ecol],AL
 
@@ -3769,29 +3661,25 @@ se_ydone:
     STA [tmp2],AL
 se_pos_ok:
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[tmp2]
     STA [BX],AL
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_dir)
-    MOV BH,#hi(enemy_dir)
-    CALL idx_ptr
+    MOV BX,#enemy_dir
+    ADD BX,CL
     MOV AL,#DIR_N
     STA [BX],AL
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     MOV AL,#1
     STA [BX],AL
 
@@ -3799,9 +3687,8 @@ se_pos_ok:
     ; tirador; en la primera son todos persegidores, para una entrada mas
     ; suave (ver update_enemy_fire para el comportamiento del tirador)
     LDA CL,[e]
-    MOV BL,#lo(enemy_type)
-    MOV BH,#hi(enemy_type)
-    CALL idx_ptr
+    MOV BX,#enemy_type
+    ADD BX,CL
     LDA AL,[room_num]
     CMP AL,#BOSS_ROOM_NUM
     JMPNZ se_type_normal
@@ -3823,9 +3710,8 @@ se_type_store:
     JMP se_next
 se_inactive:
     LDA CL,[e]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
 se_next:
@@ -3853,9 +3739,8 @@ update_enemies:
     STA [e],AL
 ue_l:
     LDA CL,[e]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ ue_next
@@ -3873,15 +3758,13 @@ ue_done:
 ; nueva (choose_enemy_dir); luego avanza 1 px en enemy_dir[e].
 step_enemy:
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[BX]
     STA [ex],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[BX]
     STA [ey],AL
 
@@ -3907,9 +3790,8 @@ step_enemy:
 
 se_step_move:
     LDA CL,[e]
-    MOV BL,#lo(enemy_dir)
-    MOV BH,#hi(enemy_dir)
-    CALL idx_ptr
+    MOV BX,#enemy_dir
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#DIR_N
     JMPNZ sm_e
@@ -3937,15 +3819,13 @@ sm_w:
     STA [ex],AL
 sm_store:
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[ex]
     STA [BX],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[ey]
     STA [BX],AL
     RET
@@ -3962,9 +3842,8 @@ choose_enemy_dir:
     CALL px_to_row
     STA [erow],AL
     LDA CL,[erow]
-    MOV BL,#lo(ROW_MUL)
-    MOV BH,#hi(ROW_MUL)
-    CALL idx_ptr
+    MOV BX,#ROW_MUL
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ecol]
     ADD AL,BL
@@ -3980,20 +3859,17 @@ choose_enemy_dir:
     STA [prow],AL
 
     LDA CL,[ecell]
-    MOV BL,#lo(cell_walls)
-    MOV BH,#hi(cell_walls)
-    CALL idx_ptr
+    MOV BX,#cell_walls
+    ADD BX,CL
     LDA AL,[BX]
     STA [cwv],AL
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_dir)
-    MOV BH,#hi(enemy_dir)
-    CALL idx_ptr
+    MOV BX,#enemy_dir
+    ADD BX,CL
     LDA CL,[BX]
-    MOV BL,#lo(OPP_OF_DIR)
-    MOV BH,#hi(OPP_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#OPP_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     STA [banned_dir],AL
 
@@ -4004,9 +3880,8 @@ choose_enemy_dir:
     STA [d],AL
 ced_l1:
     LDA CL,[d]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cwv]
     AND BL,AL
@@ -4032,9 +3907,8 @@ ced_next1:
     STA [d],AL
 ced_l2:
     LDA CL,[d]
-    MOV BL,#lo(BIT_OF_DIR)
-    MOV BH,#hi(BIT_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#BIT_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cwv]
     AND BL,AL
@@ -4050,9 +3924,8 @@ ced_next2:
 
 ced_store:
     LDA CL,[e]
-    MOV BL,#lo(enemy_dir)
-    MOV BH,#hi(enemy_dir)
-    CALL idx_ptr
+    MOV BX,#enemy_dir
+    ADD BX,CL
     LDA AL,[best_dir]
     STA [BX],AL
     RET
@@ -4062,18 +3935,16 @@ ced_store:
 ; mejora [best_dist], actualiza [best_dist]/[best_dir].
 ced_consider:
     LDA CL,[d]
-    MOV BL,#lo(DR_OF_DIR)
-    MOV BH,#hi(DR_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#DR_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[erow]
     ADD AL,BL
     STA [trow],AL
 
     LDA CL,[d]
-    MOV BL,#lo(DC_OF_DIR)
-    MOV BH,#hi(DC_OF_DIR)
-    CALL idx_ptr
+    MOV BX,#DC_OF_DIR
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ecol]
     ADD AL,BL
@@ -4141,24 +4012,21 @@ check_collisions:
     STA [e],AL
 cc_l:
     LDA CL,[e]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ cc_next
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[BX]
     SUB AL,#ENEMY_HALF
     STA [ex],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[BX]
     SUB AL,#ENEMY_HALF
     STA [ey],AL
@@ -4233,23 +4101,20 @@ enforce_enemy_safe_dist:
     STA [e],AL
 eesd_l:
     LDA CL,[e]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ eesd_next
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp2],AL
 
@@ -4303,15 +4168,13 @@ eesd_ydone:
     STA [tmp2],AL
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[tmp2]
     STA [BX],AL
 
@@ -4332,18 +4195,16 @@ draw_frame:
     STA [i],AL
 df_pl_l:
     LDA CL,[i]
-    MOV BL,#lo(PLAYER_SPRITE_DX)
-    MOV BH,#hi(PLAYER_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#PLAYER_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[player_x]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[i]
-    MOV BL,#lo(PLAYER_SPRITE_DY)
-    MOV BH,#hi(PLAYER_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#PLAYER_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
 
     ; pie izquierdo (indice 10) o derecho (11) de PLAYER_SPRITE_DX/DY: sube
@@ -4382,23 +4243,20 @@ dfp_dy_done:
     STA [e],AL
 df_shot_l:
     LDA CL,[e]
-    MOV BL,#lo(shot_active)
-    MOV BH,#hi(shot_active)
-    CALL idx_ptr
+    MOV BX,#shot_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ df_shot_next
 
     LDA CL,[e]
-    MOV BL,#lo(shot_x)
-    MOV BH,#hi(shot_x)
-    CALL idx_ptr
+    MOV BX,#shot_x
+    ADD BX,CL
     LDA AL,[BX]
     STA [px_x],AL
     LDA CL,[e]
-    MOV BL,#lo(shot_y)
-    MOV BH,#hi(shot_y)
-    CALL idx_ptr
+    MOV BX,#shot_y
+    ADD BX,CL
     LDA AL,[BX]
     STA [px_y],AL
     CALL shadow_set_px
@@ -4424,49 +4282,43 @@ df_no_eshot:
     STA [e],AL
 df_en_l:
     LDA CL,[e]
-    MOV BL,#lo(enemy_active)
-    MOV BH,#hi(enemy_active)
-    CALL idx_ptr
+    MOV BX,#enemy_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ df_en_next
 
     LDA CL,[e]
-    MOV BL,#lo(enemy_x)
-    MOV BH,#hi(enemy_x)
-    CALL idx_ptr
+    MOV BX,#enemy_x
+    ADD BX,CL
     LDA AL,[BX]
     STA [ex],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_y)
-    MOV BH,#hi(enemy_y)
-    CALL idx_ptr
+    MOV BX,#enemy_y
+    ADD BX,CL
     LDA AL,[BX]
     STA [ey],AL
 
     MOV AL,#0
     STA [j],AL
     LDA CL,[e]
-    MOV BL,#lo(enemy_type)
-    MOV BH,#hi(enemy_type)
-    CALL idx_ptr
+    MOV BX,#enemy_type
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#ENEMY_TYPE_BOSS
     JMPZ df_boss_es_l
 df_es_l:
     LDA CL,[j]
-    MOV BL,#lo(ENEMY_SPRITE_DX)
-    MOV BH,#hi(ENEMY_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#ENEMY_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ex]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[j]
-    MOV BL,#lo(ENEMY_SPRITE_DY)
-    MOV BH,#hi(ENEMY_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#ENEMY_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ey]
     ADD AL,BL
@@ -4483,18 +4335,16 @@ df_es_l:
 ; --- jefe: mismo bucle, pero con BOSS_SPRITE_* (ver su comentario) --------
 df_boss_es_l:
     LDA CL,[j]
-    MOV BL,#lo(BOSS_SPRITE_DX)
-    MOV BH,#hi(BOSS_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#BOSS_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ex]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[j]
-    MOV BL,#lo(BOSS_SPRITE_DY)
-    MOV BH,#hi(BOSS_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#BOSS_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ey]
     ADD AL,BL
@@ -4522,18 +4372,16 @@ df_en_next:
     STA [j],AL
 df_ghost_l:
     LDA CL,[j]
-    MOV BL,#lo(GHOST_SPRITE_DX)
-    MOV BH,#hi(GHOST_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#GHOST_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ghost_x]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[j]
-    MOV BL,#lo(GHOST_SPRITE_DY)
-    MOV BH,#hi(GHOST_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#GHOST_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ghost_y]
     ADD AL,BL
@@ -4559,17 +4407,15 @@ df_no_ghost:
     JMPNZ df_no_key
 
     LDA CL,[key_cell]
-    MOV BL,#lo(CELL_TO_ROW)
-    MOV BH,#hi(CELL_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     CALL row_to_px
     ADD AL,#(CELL_H/2)
     STA [ey],AL              ; centro Y de la celda de la llave
     LDA CL,[key_cell]
-    MOV BL,#lo(CELL_TO_COL)
-    MOV BH,#hi(CELL_TO_COL)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     CALL col_to_px
     ADD AL,#(CELL_W/2)
@@ -4579,18 +4425,16 @@ df_no_ghost:
     STA [j],AL
 df_key_l:
     LDA CL,[j]
-    MOV BL,#lo(KEY_SPRITE_DX)
-    MOV BH,#hi(KEY_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#KEY_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ex]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[j]
-    MOV BL,#lo(KEY_SPRITE_DY)
-    MOV BH,#hi(KEY_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#KEY_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ey]
     ADD AL,BL
@@ -4616,18 +4460,16 @@ df_no_key:
     JMPNZ df_no_heart
 
     LDA CL,[heart_cell]
-    MOV BL,#lo(CELL_TO_ROW)
-    MOV BH,#hi(CELL_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     CALL row_to_px
     ADD AL,#(CELL_H/2)
     SUB AL,#2
     STA [ey],AL              ; esquina superior izq. del corazon (5x5)
     LDA CL,[heart_cell]
-    MOV BL,#lo(CELL_TO_COL)
-    MOV BH,#hi(CELL_TO_COL)
-    CALL idx_ptr
+    MOV BX,#CELL_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     CALL col_to_px
     ADD AL,#(CELL_W/2)
@@ -4638,18 +4480,16 @@ df_no_key:
     STA [j],AL
 df_heart_floor_l:
     LDA CL,[j]
-    MOV BL,#lo(HEART_SPRITE_DX)
-    MOV BH,#hi(HEART_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#HEART_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ex]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[j]
-    MOV BL,#lo(HEART_SPRITE_DY)
-    MOV BH,#hi(HEART_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#HEART_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ey]
     ADD AL,BL
@@ -4708,18 +4548,16 @@ df_hud_clr_col:
     STA [j],AL
 df_heart_pt:
     LDA CL,[j]
-    MOV BL,#lo(HEART_SPRITE_DX)
-    MOV BH,#hi(HEART_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#HEART_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ex]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[j]
-    MOV BL,#lo(HEART_SPRITE_DY)
-    MOV BH,#hi(HEART_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#HEART_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ey]
     ADD AL,BL
@@ -4742,18 +4580,16 @@ df_heart_pt:
     STA [j],AL
 df_hudkey_pt:
     LDA CL,[j]
-    MOV BL,#lo(KEY_SPRITE_DX)
-    MOV BH,#hi(KEY_SPRITE_DX)
-    CALL idx_ptr
+    MOV BX,#KEY_SPRITE_DX
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ex]
     ADD AL,BL
     STA [px_x],AL
 
     LDA CL,[j]
-    MOV BL,#lo(KEY_SPRITE_DY)
-    MOV BH,#hi(KEY_SPRITE_DY)
-    CALL idx_ptr
+    MOV BX,#KEY_SPRITE_DY
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[ey]
     ADD AL,BL
@@ -4797,37 +4633,7 @@ update_score_hud:
     STA [nd_val_lo],AL
     LDA AL,[score_hi]
     STA [nd_val_hi],AL
-
-    MOV AL,#lo(10000)
-    STA [nd_place_lo],AL
-    MOV AL,#hi(10000)
-    STA [nd_place_hi],AL
-    CALL nd16_digit
-    STA [dig10000],AL
-
-    MOV AL,#lo(1000)
-    STA [nd_place_lo],AL
-    MOV AL,#hi(1000)
-    STA [nd_place_hi],AL
-    CALL nd16_digit
-    STA [dig1000],AL
-
-    MOV AL,#100
-    STA [nd_place_lo],AL
-    MOV AL,#0
-    STA [nd_place_hi],AL
-    CALL nd16_digit
-    STA [dig100],AL
-
-    MOV AL,#10
-    STA [nd_place_lo],AL
-    MOV AL,#0
-    STA [nd_place_hi],AL
-    CALL nd16_digit
-    STA [dig10],AL
-
-    LDA AL,[nd_val_lo]      ; lo que queda ya es 0..9 (nd_val_hi ya es 0)
-    STA [dig1],AL
+    CALL u16_digits
 
     MOV DH,#0x04
     LDA AL,[dig10000]
@@ -4857,8 +4663,7 @@ update_score_hud:
 update_lives_hud:
     LDA AL,[lives]
     ADD AL,#0x30
-    MOV DL,#LIVES_DIGIT_COL
-    MOV DH,#0x04
+    MOV DX,#0x04*256+LIVES_DIGIT_COL
     OUT (DX),AL
     RET
 
@@ -4868,67 +4673,148 @@ update_lives_hud:
 update_keys_hud:
     LDA AL,[keys_held]
     ADD AL,#0x30
-    MOV DL,#KEYS_DIGIT_COL
-    MOV DH,#0x04
+    MOV DX,#0x04*256+KEYS_DIGIT_COL
     OUT (DX),AL
     RET
 
-; --- nd16_digit: extrae UN digito (0-9, o hasta 6 para el de decenas de
-; millar) de [nd_val_lo]/[nd_val_hi] (16 bits) segun el lugar en
-; [nd_place_lo]/[nd_place_hi] (una potencia de 10), restando repetidamente
-; -- no hay DIV. Deja [nd_val_lo]/[nd_val_hi] con el resto, listos para la
-; siguiente llamada con el lugar mas pequeño. Comparacion de 16 bits: primero
-; los bytes altos: distintos deciden solos; iguales, deciden los bajos.
-nd16_digit:
-    MOV AL,#0
-    STA [nd_digit],AL
-nd16_loop:
+; --- u16_digits: las 5 cifras decimales de [nd_val_lo]/[nd_val_hi] (16
+; bits) en dig10000..dig1, con DIV (docs/isa.md SS4d): 5 divisiones de 16
+; bits entre 10, cada una hecha con 2 DIV de 8 bits (byte alto y luego
+; resto*256 + byte bajo, que siempre cabe: resto < 10). Antes eran restas
+; repetidas de 10000, 1000, 100 y 10 (hasta 9 vueltas por cifra). Deja
+; [nd_val_*] a 0. Respeta AH.
+u16_digits:
+    PUSH AH
+    CALL div10_16
+    STA [dig1],AL
+    CALL div10_16
+    STA [dig10],AL
+    CALL div10_16
+    STA [dig100],AL
+    CALL div10_16
+    STA [dig1000],AL
+    CALL div10_16
+    STA [dig10000],AL
+    POP AH
+    RET
+
+; --- div10_16: [nd_val_lo/hi] /= 10; sale AL = el resto (la cifra) --------
+div10_16:
+    MOV BL,#10
+    MOV AH,#0
     LDA AL,[nd_val_hi]
-    LDA BL,[nd_place_hi]
-    CMP AL,BL
-    JMPC nd16_done          ; val_hi < place_hi -> resto ya mas pequeno
-    JMPNZ nd16_sub          ; val_hi > place_hi -> claramente mayor, resta
-    LDA AL,[nd_val_lo]
-    LDA BL,[nd_place_lo]
-    CMP AL,BL
-    JMPC nd16_done          ; hi iguales, val_lo < place_lo -> mas pequeno
-nd16_sub:
-    LDA AL,[nd_val_lo]
-    LDA BL,[nd_place_lo]
-    SUB AL,BL
+    DIV BL
+    STA [nd_val_hi],AL
+    LDA AL,[nd_val_lo]      ; AH = resto del byte alto
+    DIV BL
     STA [nd_val_lo],AL
-    JMPNC nd16_sub_nb       ; sin prestamo del byte bajo
-    LDA AL,[nd_val_hi]
-    LDA BL,[nd_place_hi]
-    SUB AL,BL
-    SUB AL,#1               ; el prestamo del byte bajo se paga aqui
+    MOV AL,AH
+    RET
+
+; ============================================================================
+;  RECORD (EEPROM del slot) -- ver P_EEP_* arriba
+; ============================================================================
+; --- load_record: [record_lo/hi] = el grabado (0 si no hay ninguno) -------
+load_record:
+    OUT (P_EEP_LOAD),AL
+    MOV AL,#0
+    STA [record_lo],AL
+    STA [record_hi],AL
+    IN  AL,(P_EEP_BASE)
+    CMP AL,#REC_MAGIC
+    JMPNZ lr_done
+    IN  AL,(P_EEP_BASE+1)
+    STA [record_lo],AL
+    IN  AL,(P_EEP_BASE+2)
+    STA [record_hi],AL
+lr_done:
+    RET
+
+; --- show_record: carga el record y escribe "RECORD nnnnn" en CH=fila, CL=col
+show_record:
+    PUSH CL
+    PUSH CH
+    CALL load_record
+    LDA AL,[record_lo]
+    STA [nd_val_lo],AL
+    LDA AL,[record_hi]
     STA [nd_val_hi],AL
-    JMP nd16_sub_done
-nd16_sub_nb:
-    LDA AL,[nd_val_hi]
-    LDA BL,[nd_place_hi]
-    SUB AL,BL
-    STA [nd_val_hi],AL
-nd16_sub_done:
-    LDA AL,[nd_digit]
-    ADD AL,#1
-    STA [nd_digit],AL
-    JMP nd16_loop
-nd16_done:
-    LDA AL,[nd_digit]
+    CALL u16_digits
+    LDA AL,[dig10000]
+    ADD AL,#'0'
+    STA [rec_d],AL
+    LDA AL,[dig1000]
+    ADD AL,#'0'
+    STA [rec_d+1],AL
+    LDA AL,[dig100]
+    ADD AL,#'0'
+    STA [rec_d+2],AL
+    LDA AL,[dig10]
+    ADD AL,#'0'
+    STA [rec_d+3],AL
+    LDA AL,[dig1]
+    ADD AL,#'0'
+    STA [rec_d+4],AL
+    POP CH
+    POP CL
+    MOV BX,#s_record
+    CALL puts
+    RET
+
+; --- save_record: si la puntuacion (16 bits) supera el record, lo graba en
+; la flash. Sale AL = 1 si es record nuevo, 0 si no. -----------------------
+save_record:
+    LDA AL,[score_hi]
+    LDA BL,[record_hi]
+    CMP BL,AL
+    JMPC svr_new            ; record_hi < score_hi
+    JMPNZ svr_no            ; record_hi > score_hi
+    LDA AL,[score_lo]
+    LDA BL,[record_lo]
+    CMP BL,AL
+    JMPC svr_new            ; mismos altos, record_lo < score_lo
+svr_no:
+    MOV AL,#0
+    RET
+svr_new:
+    OUT (P_EEP_LOAD),AL     ; parte del contenido real de la EEPROM
+    LDA AL,[score_lo]
+    STA [record_lo],AL
+    OUT (P_EEP_BASE+1),AL
+    LDA AL,[score_hi]
+    STA [record_hi],AL
+    OUT (P_EEP_BASE+2),AL
+    MOV AL,#REC_MAGIC
+    OUT (P_EEP_BASE),AL
+    OUT (P_EEP_SAVE),AL
+    MOV AL,#1
+    RET
+
+; --- show_new_record: graba el record si se ha batido y, si es asi, lo
+; anuncia en CH=fila, CL=col ------------------------------------------------
+show_new_record:
+    PUSH CL
+    PUSH CH
+    CALL save_record
+    POP CH
+    POP CL
+    CMP AL,#0
+    JMPZ snr_done
+    MOV BX,#s_newrec
+    CALL puts
+snr_done:
     RET
 
 ; --- show_game_over: mensaje simple en texto, espera a soltar y a pulsar
 ; DIRECCION antes de seguir (para no reiniciar de un solo toque sin querer)
 show_game_over:
     CALL clst
-    MOV BL,#lo(msg_over)
-    MOV BH,#hi(msg_over)
-    MOV CL,#6
-    MOV CH,#3
+    MOV BX,#msg_over
+    MOV CX,#0x0306
     CALL puts
-    MOV BL,#lo(GAMEOVER_TUNE)
-    MOV BH,#hi(GAMEOVER_TUNE)
+    MOV CX,#0x0505
+    CALL show_new_record
+    MOV BX,#GAMEOVER_TUNE
     CALL play_tune
     CALL wait_dir_release
 sgo_wait:
@@ -4945,18 +4831,15 @@ sgo_wait:
 ; calculados por score_digits/put_num en otras pantallas de este fichero).
 show_victory:
     CALL clst
-    MOV BL,#lo(msg_win1)
-    MOV BH,#hi(msg_win1)
-    MOV CL,#4
-    MOV CH,#2
+    MOV BX,#msg_win1
+    MOV CX,#0x0204
     CALL puts
-    MOV BL,#lo(msg_win2)
-    MOV BH,#hi(msg_win2)
-    MOV CL,#3
-    MOV CH,#4
+    MOV BX,#msg_win2
+    MOV CX,#0x0403
     CALL puts
-    MOV BL,#lo(VICTORY_TUNE)
-    MOV BH,#hi(VICTORY_TUNE)
+    MOV CX,#0x0605
+    CALL show_new_record
+    MOV BX,#VICTORY_TUNE
     CALL play_tune
     CALL wait_dir_release
 sv_wait:
@@ -5004,18 +4887,16 @@ sgn_zero:
 px_to_row:
     STA [tmp3],AL
     LDA CL,[tmp3]
-    MOV BL,#lo(PX_TO_ROW)
-    MOV BH,#hi(PX_TO_ROW)
-    CALL idx_ptr
+    MOV BX,#PX_TO_ROW
+    ADD BX,CL
     LDA AL,[BX]
     RET
 
 px_to_col:
     STA [tmp3],AL
     LDA CL,[tmp3]
-    MOV BL,#lo(PX_TO_COL)
-    MOV BH,#hi(PX_TO_COL)
-    CALL idx_ptr
+    MOV BX,#PX_TO_COL
+    ADD BX,CL
     LDA AL,[BX]
     RET
 
@@ -5024,18 +4905,16 @@ px_to_col:
 row_to_px:
     STA [tmp3],AL
     LDA CL,[tmp3]
-    MOV BL,#lo(ROW_PX)
-    MOV BH,#hi(ROW_PX)
-    CALL idx_ptr
+    MOV BX,#ROW_PX
+    ADD BX,CL
     LDA AL,[BX]
     RET
 
 col_to_px:
     STA [tmp3],AL
     LDA CL,[tmp3]
-    MOV BL,#lo(COL_PX)
-    MOV BH,#hi(COL_PX)
-    CALL idx_ptr
+    MOV BX,#COL_PX
+    ADD BX,CL
     LDA AL,[BX]
     RET
 
@@ -5069,10 +4948,9 @@ cpx_d:
 ; --- shadow_set_px: enciende (px_x,px_y) en `shadow` --------------------
 shadow_set_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -5087,10 +4965,9 @@ shadow_set_px:
 ; justo por ahi.
 shadow_clear_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -5103,10 +4980,9 @@ shadow_clear_px:
 ; --- walls_set_px: enciende (px_x,px_y) en `walls` (draw_maze) ----------
 walls_set_px:
     CALL calc_pix
-    MOV BL,#lo(walls)
-    MOV BH,#hi(walls)
+    MOV BX,#walls
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -5120,10 +4996,9 @@ walls_set_px:
 ; (la pantalla de titulo), sin necesitar todo el pipeline de doble buffer.
 fb_set_px:
     CALL calc_pix
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     IN  AL,(BX)
@@ -5135,10 +5010,9 @@ fb_set_px:
 ; --- wall_test: entra (px_x,px_y) ; sale AL=0 si libre, !=0 si pared -----
 wall_test:
     CALL calc_pix
-    MOV BL,#lo(walls)
-    MOV BH,#hi(walls)
+    MOV BX,#walls
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -5150,60 +5024,29 @@ wall_test:
 ; clr_shadow: no vale el truco de contar paginas por BH, `walls` no empieza
 ; en un limite de pagina) -------------------------------------------------
 clr_walls:
-    MOV BL,#lo(walls)
-    MOV BH,#hi(walls)
+    ; pone a 0 el primer byte y deja que MOVB lo propague hacia delante
+    ; (origen y destino solapados a 1 byte de distancia, copia siempre
+    ; hacia adelante -- docs/isa.md SS4d): 1023 copias en una instruccion
     MOV AL,#0
-    MOV CL,#0
-    MOV CH,#4
-cw_l:
-    STA [BX],AL
-    ADD BL,#1
-    JMPNC cw_addr_ok
-    ADD BH,#1
-cw_addr_ok:
-    SUB CL,#1
-    JMPNC cw_cnt_ok
-    SUB CH,#1
-cw_cnt_ok:
-    MOV DL,CH
-    OR  DL,CL
-    JMPNZ cw_l
+    STA [walls],AL
+    MOV BX,#walls
+    MOV DX,#walls+1
+    MOV CX,#0x03FF
+    MOVB
     RET
 
 ; --- copy_walls_to_shadow: `shadow` = `walls` (1024 bytes) --------------
 copy_walls_to_shadow:
-    MOV BL,#lo(walls)
-    MOV BH,#hi(walls)
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
-    MOV CL,#0
-    MOV CH,#4
-cws_l:
-    LDA AL,[BX]
-    STA [DX],AL
-    ADD BL,#1
-    JMPNC cws_b_ok
-    ADD BH,#1
-cws_b_ok:
-    ADD DL,#1
-    JMPNC cws_d_ok
-    ADD DH,#1
-cws_d_ok:
-    SUB CL,#1
-    JMPNC cws_cnt_ok
-    SUB CH,#1
-cws_cnt_ok:
-    MOV AL,CH
-    OR  AL,CL
-    JMPNZ cws_l
+    MOV BX,#walls
+    MOV DX,#shadow
+    MOV CX,#0x0200          ; 512 palabras = 1024 bytes
+    MOVW                    ; antes un bucle de 1024 vueltas (~8000 instr.)
     RET
 
 ; --- blit: copia `shadow` al framebuffer real, solo lo que cambie -------
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -5212,10 +5055,7 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1
@@ -5225,8 +5065,7 @@ bl_dnc:
 
 ; --- clsg: apaga el framebuffer grafico completo ------------------------
 clsg:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0
 cg_l:
     OUT (BX),AL
@@ -5239,8 +5078,7 @@ cg_l:
 
 ; --- clst: borra la capa de texto (0x0400..0x04FF) ----------------------
 clst:
-    MOV DL,#0
-    MOV DH,#0x04
+    MOV DX,#0x0400
     MOV AL,#0
 clst_l:
     OUT (DX),AL
@@ -5260,13 +5098,8 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
@@ -5370,30 +5203,28 @@ dbl_l:
     LDA CL,[j]
     LDA BL,[lp_dx_lo]
     LDA BH,[lp_dx_hi]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL            ; dx (0-4)
 
     LDA CL,[j]
     LDA BL,[lp_dy_lo]
     LDA BH,[lp_dy_hi]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp2],AL            ; dy (0-6)
 
     LDA CL,[tmp1]
-    MOV BL,#lo(MUL3)
-    MOV BH,#hi(MUL3)
-    CALL idx_ptr
+    MOV BX,#MUL3
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[lp_x0]
     ADD AL,BL
     STA [wx0],AL              ; x0 + dx*LETTER_SCALE
 
     LDA CL,[tmp2]
-    MOV BL,#lo(MUL3)
-    MOV BH,#hi(MUL3)
-    CALL idx_ptr
+    MOV BX,#MUL3
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[lp_y0]
     ADD AL,BL
@@ -5448,10 +5279,8 @@ title_screen:
 
     MOV AL,#TITLE_X0
     STA [lp_x0],AL
-    MOV BL,#lo(LETTER_S_DX)
-    MOV BH,#hi(LETTER_S_DX)
-    MOV DL,#lo(LETTER_S_DY)
-    MOV DH,#hi(LETTER_S_DY)
+    MOV BX,#LETTER_S_DX
+    MOV DX,#LETTER_S_DY
     MOV AL,#LETTER_S_N
     STA [lp_n],AL
     CALL draw_big_letter
@@ -5459,10 +5288,8 @@ title_screen:
     LDA AL,[lp_x0]
     ADD AL,#TITLE_STEP
     STA [lp_x0],AL
-    MOV BL,#lo(LETTER_H_DX)
-    MOV BH,#hi(LETTER_H_DX)
-    MOV DL,#lo(LETTER_H_DY)
-    MOV DH,#hi(LETTER_H_DY)
+    MOV BX,#LETTER_H_DX
+    MOV DX,#LETTER_H_DY
     MOV AL,#LETTER_H_N
     STA [lp_n],AL
     CALL draw_big_letter
@@ -5470,10 +5297,8 @@ title_screen:
     LDA AL,[lp_x0]
     ADD AL,#TITLE_STEP
     STA [lp_x0],AL
-    MOV BL,#lo(LETTER_A_DX)
-    MOV BH,#hi(LETTER_A_DX)
-    MOV DL,#lo(LETTER_A_DY)
-    MOV DH,#hi(LETTER_A_DY)
+    MOV BX,#LETTER_A_DX
+    MOV DX,#LETTER_A_DY
     MOV AL,#LETTER_A_N
     STA [lp_n],AL
     CALL draw_big_letter
@@ -5481,10 +5306,8 @@ title_screen:
     LDA AL,[lp_x0]
     ADD AL,#TITLE_STEP
     STA [lp_x0],AL
-    MOV BL,#lo(LETTER_M_DX)
-    MOV BH,#hi(LETTER_M_DX)
-    MOV DL,#lo(LETTER_M_DY)
-    MOV DH,#hi(LETTER_M_DY)
+    MOV BX,#LETTER_M_DX
+    MOV DX,#LETTER_M_DY
     MOV AL,#LETTER_M_N
     STA [lp_n],AL
     CALL draw_big_letter
@@ -5492,10 +5315,8 @@ title_screen:
     LDA AL,[lp_x0]
     ADD AL,#TITLE_STEP
     STA [lp_x0],AL
-    MOV BL,#lo(LETTER_U_DX)
-    MOV BH,#hi(LETTER_U_DX)
-    MOV DL,#lo(LETTER_U_DY)
-    MOV DH,#hi(LETTER_U_DY)
+    MOV BX,#LETTER_U_DX
+    MOV DX,#LETTER_U_DY
     MOV AL,#LETTER_U_N
     STA [lp_n],AL
     CALL draw_big_letter
@@ -5503,19 +5324,17 @@ title_screen:
     LDA AL,[lp_x0]
     ADD AL,#TITLE_STEP
     STA [lp_x0],AL
-    MOV BL,#lo(LETTER_S_DX)
-    MOV BH,#hi(LETTER_S_DX)
-    MOV DL,#lo(LETTER_S_DY)
-    MOV DH,#hi(LETTER_S_DY)
+    MOV BX,#LETTER_S_DX
+    MOV DX,#LETTER_S_DY
     MOV AL,#LETTER_S_N
     STA [lp_n],AL
     CALL draw_big_letter
 
-    MOV BL,#lo(title_sub)
-    MOV BH,#hi(title_sub)
-    MOV CL,#4                ; centrado: (21-13)/2, "PRESS TO PLAY" son 13
-    MOV CH,#4
+    MOV BX,#title_sub
+    MOV CX,#0x0404 ; centrado: (21-13)/2, "PRESS TO PLAY" son 13
     CALL puts
+    MOV CX,#0x0604          ; "RECORD nnnnn" son 12: (21-12)/2 = 4
+    CALL show_record
 
     IN  AL,(P_DAT_BTN)
     STA [dat_btn_prev],AL
@@ -5525,8 +5344,7 @@ title_screen:
     ; la melodia suena UNA sola vez (con salida anticipada si se pulsa
     ; durante ella); si termina sin pulsar nada, se espera en silencio --
     ; nada de repetirla en bucle sin parar.
-    MOV BL,#lo(TITLE_TUNE)
-    MOV BH,#hi(TITLE_TUNE)
+    MOV BX,#TITLE_TUNE
     CALL play_tune_check
     CMP AL,#0
     JMPNZ ts_done
@@ -5716,6 +5534,9 @@ msg_win1: .asciiz "YOU WIN!"
 msg_win2: .asciiz "LEVEL 50 CLEAR"
 
 title_sub: .asciiz "PRESS TO PLAY"
+s_record: .ascii "RECORD "
+rec_d:    .asciiz "00000"
+s_newrec: .asciiz "NEW RECORD!"
 
 ; melodia de la pantalla de titulo: suena UNA sola vez, con una cadencia
 ; final de verdad en vez de cortarse en seco -- llamada de aventura (galope
@@ -5939,12 +5760,11 @@ dig100: .space 1
 dig10:  .space 1
 dig1:   .space 1
 
-; --- escritorio de nd16_digit (extraccion de digitos de 16 bits) ----------
+; --- escritorio de u16_digits (extraccion de digitos de 16 bits) ----------
 nd_val_lo:   .space 1
 nd_val_hi:   .space 1
-nd_place_lo: .space 1
-nd_place_hi: .space 1
-nd_digit:    .space 1
+record_lo:   .space 1     ; record cargado de la EEPROM (ver load_record)
+record_hi:   .space 1
 
 ; --- estado persistente de hasta 50 salas (MAX_ROOMS -- literal, no una
 ; constante simbolica, por la misma razon que NCELLS en otros .space: casm.py

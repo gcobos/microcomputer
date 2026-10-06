@@ -31,14 +31,12 @@ necesariamente LEGIBLE en esas zonas.
 
 Por que el resultado reensambla EXACTO: cada mnemonico que emite es el mismo
 texto, byte a byte, que ya emite disasm.cpp (por eso casm.py lo entiende sin
-cambios). Las pocas combinaciones de bits que NO tienen mnemonico documentado
--- el subop 6/7 de F_EXT2 (reservado, ver include/isa.h) o el subcampo de ALU
-con valor 0 o 7 en las formas OP_EXT/OP_ALUI (ver include/isa.h: AluOp solo
-define 0-6, y el valor 0 en la forma ALUI, aunque tecnicamente MOV, ambiguaria
-con la forma LDI de 2 bytes si se escribiera "MOV reg,#imm" a secas: casm.py
-SIEMPRE prefiere LDI, que no ocupa los mismos bytes) -- se vuelcan como `.db`
-con los bytes crudos en vez de inventarse un mnemonico, para no perder ni
-cambiar ni un bit.
+cambios). Las combinaciones de bits que NO tienen un texto que reensamble
+exacto -- familias o sub-operaciones libres, bits fuera del formato, u
+operaciones MOV en las formas de la ALU con inmediato/memoria (casm.py las
+escribiria con la forma corta LDI/LDA, que no ocupa los mismos bytes) -- se
+vuelcan como `.db` con los bytes crudos en vez de inventarse un mnemonico,
+para no perder ni cambiar ni un bit.
 
 Genera una etiqueta L<addr> (p.ej. L0100) para cada destino de JMP/CALL que
 caiga justo en el arranque de "su" instruccion segun esta misma particion; si
@@ -50,45 +48,40 @@ import sys
 
 IMAGE_SIZE = 65536
 
-# Familias de opcode (isa.h): opcode = family<<3 | reg.
-(F_NOP, F_HALT, F_LDI, F_LDA, F_STA, F_ADD, F_SUB, F_AND, F_OR, F_XOR,
- F_NOT, F_SHR, F_SHL, F_IN, F_OUT, F_PUSH, F_POP, F_JMP, F_CALL, F_RET,
- F_ALUI, F_LDAR, F_STAR, F_INR, F_OUTR, F_SHRN, F_SHLN,
- F_MUL, F_DIV, F_INCDEC16, F_EXT2) = range(31)
-F_EXT = 31
+# Familias de opcode (include/isa.h, ISA version 2): opcode = family<<3 | bajo3.
+(F_SYS, F_LDI, F_LDA, F_STA, F_LDAR, F_STAR, F_IN, F_OUT, F_INR, F_OUTR,
+ F_ALURR, F_ALUI, F_ALUM, F_ALUP, F_NOT, F_SHR, F_SHL, F_MUL, F_DIV,
+ F_INC, F_DEC, F_PUSH, F_POP, F_JMP, F_CALL, F_JX, F_R16, F_R16I,
+ F_INCDEC16, F_PUSHPOP16) = range(30)
 
 REG8 = ["AL", "AH", "BL", "BH", "CL", "CH", "DL", "DH"]
 REG16 = ["AX", "BX", "CX", "DX"]
 COND = ["", "Z", "NZ", "C", "NC", "N", "NN", "V"]
-ALU_NAMES = {0: "MOV", 1: "ADD", 2: "SUB", 3: "CMP", 4: "AND", 5: "OR", 6: "XOR"}
+ALU_NAMES = ["MOV", "ADD", "ADC", "SUB", "SBC", "CMP", "AND", "OR", "XOR"]
+SYS_NAMES = ["NOP", "HALT", "RET", "MOVB", "MOVW", "MOVBR"]
+UNARY = {F_NOT: "NOT", F_MUL: "MUL", F_DIV: "DIV", F_INC: "INC", F_DEC: "DEC",
+         F_PUSH: "PUSH", F_POP: "POP"}
 
 # Longitud (bytes) de cada familia -- igual que instrLen() en disasm.cpp.
-# F_MUL/F_DIV/F_INCDEC16 son LEN1 (caen al "return 1" de abajo). F_EXT2 es
-# la unica familia que mezcla longitudes -- se resuelve aparte, mirando el
-# subop (los 3 bits bajos del opcode), igual que disasm.cpp.
-_LEN2 = {F_LDI, F_EXT, F_LDAR, F_STAR, F_INR, F_OUTR, F_SHRN, F_SHLN}
-_LEN3 = {F_LDA, F_STA, F_ADD, F_SUB, F_AND, F_OR, F_XOR, F_IN, F_OUT,
-         F_JMP, F_CALL, F_ALUI}
+_LEN2 = {F_LDI, F_LDAR, F_STAR, F_INR, F_OUTR, F_ALURR, F_ALUP, F_SHR, F_SHL}
+_LEN3 = {F_LDA, F_STA, F_IN, F_OUT, F_ALUI, F_JMP, F_CALL}
 
 
 def instr_len(mem, addr):
     op = mem[addr]
-    fam = op >> 3
-    if fam == F_EXT2:
-        sub = op & 7
-        if sub <= 1:
-            return 2
-        if sub <= 3:
-            return 1
-        if sub <= 5:
-            return 3
-        if sub == 6:
-            return 4
-        return 1
+    fam, r = op >> 3, op & 7
     if fam in _LEN3:
         return 3
     if fam in _LEN2:
         return 2
+    if fam == F_ALUM:
+        return 4
+    if fam == F_JX:
+        return 3 if r <= 1 else 2 if r <= 3 else 1
+    if fam == F_R16:
+        return 2 if r <= 5 else 1
+    if fam == F_R16I:
+        return 4 if r in (0, 3) else 3 if r in (1, 2) else 1
     return 1
 
 
@@ -108,125 +101,94 @@ class Instr:
 
 
 def decode_one(mem, addr):
+    """Una instruccion: texto que casm.py reensambla a EXACTAMENTE los mismos
+    bytes, o None + raw (los bytes en crudo, .db) si no hay tal texto --
+    p.ej. bits fuera del formato, o una forma que casm escribiria con otra
+    codificacion mas corta (MOV reg,#imm en la ALU en vez de LDI)."""
     op = mem[addr]
     fam, r = op >> 3, op & 7
     b1 = rd(mem, addr + 1)
     b2 = rd(mem, addr + 2)
     b3 = rd(mem, addr + 3)
     a16 = b1 | (b2 << 8)
+    a23 = b2 | (b3 << 8)
+    n = instr_len(mem, addr)
 
-    if fam in (F_NOP, F_HALT, F_RET):
-        # casm.py siempre codifica estos tres con reg=0 (sin operando que
-        # transporte los otros valores posibles del campo reg); si el byte
-        # real trae algo distinto de 0 ahi (tipico de una tabla de datos
-        # coincidiendo con esta familia, no de codigo real: la CPU ignora
-        # ese campo para estos tres), el mnemonico limpio NO reproduce el
-        # byte exacto -- se deja en crudo.
-        if r != 0:
-            return Instr(addr, 1, None, raw=[op])
-        return Instr(addr, 1, {F_NOP: "NOP", F_HALT: "HALT", F_RET: "RET"}[fam])
+    def raw():
+        return Instr(addr, n, None, raw=[rd(mem, addr + i) for i in range(n)])
+
+    if fam == F_SYS:
+        return Instr(addr, 1, SYS_NAMES[r]) if r < len(SYS_NAMES) else raw()
     if fam == F_LDI:
         return Instr(addr, 2, f"MOV {REG8[r]},#0x{b1:02X}")
     if fam == F_LDA:
         return Instr(addr, 3, f"LDA {REG8[r]},[0x{a16:04X}]")
     if fam == F_STA:
         return Instr(addr, 3, f"STA [0x{a16:04X}],{REG8[r]}")
-    if fam in (F_ADD, F_SUB, F_AND, F_OR, F_XOR):
-        name = {F_ADD: "ADD", F_SUB: "SUB", F_AND: "AND", F_OR: "OR", F_XOR: "XOR"}[fam]
-        return Instr(addr, 3, f"{name} {REG8[r]},[0x{a16:04X}]")
-    if fam == F_NOT:
-        return Instr(addr, 1, f"NOT {REG8[r]}")
-    if fam == F_SHR:
-        return Instr(addr, 1, f"SHR {REG8[r]}")
-    if fam == F_SHL:
-        return Instr(addr, 1, f"SHL {REG8[r]}")
-    if fam in (F_SHRN, F_SHLN):
-        # casm.py solo escribe b1 = N-1 con N en 1..8 (0..7): si el byte real
-        # trae algo en los 5 bits altos, el mnemonico limpio no lo reproduce.
-        if b1 & 0xF8:
-            return Instr(addr, 2, None, raw=[op, b1])
-        mnem = "SHR" if fam == F_SHRN else "SHL"
-        return Instr(addr, 2, f"{mnem} {REG8[r]},#{(b1 & 7) + 1}")
+    if fam in (F_LDAR, F_STAR, F_INR, F_OUTR):
+        if b1 & 0xFC:
+            return raw()
+        p = REG16[b1 & 3]
+        return Instr(addr, 2, {F_LDAR: f"LDA {REG8[r]},[{p}]", F_STAR: f"STA [{p}],{REG8[r]}",
+                               F_INR: f"IN {REG8[r]},({p})", F_OUTR: f"OUT ({p}),{REG8[r]}"}[fam])
     if fam == F_IN:
         return Instr(addr, 3, f"IN {REG8[r]},(0x{a16:04X})")
     if fam == F_OUT:
         return Instr(addr, 3, f"OUT (0x{a16:04X}),{REG8[r]}")
-    if fam in (F_LDAR, F_STAR, F_INR, F_OUTR):
-        # b1 solo lleva el par de 16 bits en los 2 bits bajos (Reg16); si
-        # trae algo en los 6 altos, no hay mnemonico limpio que lo reproduzca.
-        if b1 & 0xFC:
-            return Instr(addr, 2, None, raw=[op, b1])
-        if fam == F_LDAR:
-            return Instr(addr, 2, f"LDA {REG8[r]},[{REG16[b1 & 3]}]")
-        if fam == F_STAR:
-            return Instr(addr, 2, f"STA [{REG16[b1 & 3]}],{REG8[r]}")
-        if fam == F_INR:
-            return Instr(addr, 2, f"IN {REG8[r]},({REG16[b1 & 3]})")
-        return Instr(addr, 2, f"OUT ({REG16[b1 & 3]}),{REG8[r]}")
-    if fam == F_PUSH:
-        return Instr(addr, 1, f"PUSH {REG8[r]}")
-    if fam == F_POP:
-        return Instr(addr, 1, f"POP {REG8[r]}")
+    if fam == F_ALURR:
+        aop = b1 >> 3
+        if aop >= len(ALU_NAMES):
+            return raw()
+        return Instr(addr, 2, f"{ALU_NAMES[aop]} {REG8[r]},{REG8[b1 & 7]}")
+    if fam == F_ALUI:
+        if b1 == 0 or b1 >= len(ALU_NAMES):    # MOV reg,#imm: casm usaria LDI
+            return raw()
+        return Instr(addr, 3, f"{ALU_NAMES[b1]} {REG8[r]},#0x{b2:02X}")
+    if fam == F_ALUM:
+        if b1 == 0 or b1 >= len(ALU_NAMES):    # MOV reg,[dir]: casm usaria LDA
+            return raw()
+        return Instr(addr, 4, f"{ALU_NAMES[b1]} {REG8[r]},[0x{a23:04X}]")
+    if fam == F_ALUP:
+        aop = b1 >> 2
+        if aop == 0 or aop >= len(ALU_NAMES):  # MOV reg,[r16]: casm usaria LDA
+            return raw()
+        return Instr(addr, 2, f"{ALU_NAMES[aop]} {REG8[r]},[{REG16[b1 & 3]}]")
+    if fam in UNARY:
+        return Instr(addr, 1, f"{UNARY[fam]} {REG8[r]}")
+    if fam in (F_SHR, F_SHL):
+        if b1 & 0xF8:
+            return raw()
+        return Instr(addr, 2, f"{'SHR' if fam == F_SHR else 'SHL'} {REG8[r]},#{(b1 & 7) + 1}")
     if fam in (F_JMP, F_CALL):
-        # r = condicion (0-6 documentadas + 7=V, ver isa.h JumpCond).
         mnem = "JMP" if fam == F_JMP else "CALL"
         return Instr(addr, 3, f"{mnem}{COND[r]} 0x{a16:04X}", target=a16)
-    if fam == F_EXT:
-        # r = AluOp (0-6 documentados, ver isa.h). r==7 no tiene mnemonico, y
-        # los 2 bits altos de b1 estan fuera de "dst:3|src:3" (siempre 0 al
-        # reensamblar) -- en cualquiera de los dos casos se deja en crudo.
-        if r in ALU_NAMES and not (b1 & 0xC0):
-            dst, src = (b1 >> 3) & 7, b1 & 7
-            return Instr(addr, 2, f"{ALU_NAMES[r]} {REG8[dst]},{REG8[src]}")
-        return Instr(addr, 2, None, raw=[op, b1])
-    if fam == F_ALUI:
-        # r==0 (MOV) reensamblaria mas corto via LDI (casm.py siempre prefiere
-        # esa forma para "MOV reg,#imm"), r==7 no tiene mnemonico, y b1 solo
-        # lleva el registro en los 3 bits bajos (el resto siempre 0 al
-        # reensamblar) -- cualquiera de los tres casos se deja en crudo.
-        if r in ALU_NAMES and r != 0 and not (b1 & 0xF8):
-            dst = b1 & 7
-            return Instr(addr, 3, f"{ALU_NAMES[r]} {REG8[dst]},#0x{b2:02X}")
-        return Instr(addr, 3, None, raw=[op, b1, b2])
-    if fam == F_MUL:
-        return Instr(addr, 1, f"MUL {REG8[r]}")
-    if fam == F_DIV:
-        return Instr(addr, 1, f"DIV {REG8[r]}")
+    if fam == F_JX:
+        if r in (0, 1):
+            return Instr(addr, 3, f"{'JMPNV' if r == 0 else 'CALLNV'} 0x{a16:04X}", target=a16)
+        if r in (2, 3) and not (b1 & 0xFC):
+            return Instr(addr, 2, f"{'JMP' if r == 2 else 'CALL'} {REG16[b1 & 3]}")
+        return raw()
+    if fam == F_R16:
+        if r > 5 or (b1 & 0xE0):
+            return raw()
+        d = REG16[(b1 >> 3) & 3]
+        if r <= 3:
+            if b1 & 0x04:
+                return raw()
+            return Instr(addr, 2, f"{['MOV', 'ADD', 'SUB', 'CMP'][r]} {d},{REG16[b1 & 3]}")
+        return Instr(addr, 2, f"{'ADD' if r == 4 else 'SUB'} {d},{REG8[b1 & 7]}")
+    if fam == F_R16I:
+        if r > 3 or (b1 & 0xFC):
+            return raw()
+        d = REG16[b1 & 3]
+        if r in (0, 3):
+            return Instr(addr, 4, f"{'MOV' if r == 0 else 'CMP'} {d},#0x{a23:04X}")
+        return Instr(addr, 3, f"{'ADD' if r == 1 else 'SUB'} {d},#0x{b2:02X}")
     if fam == F_INCDEC16:
-        # r = dir<<2 | reg16 (dir 0=INC 1=DEC); los bits por encima de eso
-        # (r>=8 es imposible, r ya son solo 3 bits) no existen aqui.
-        dec = (r & 4) != 0
-        return Instr(addr, 1, f"{'DEC' if dec else 'INC'} {REG16[r & 3]}")
-    if fam == F_EXT2:
-        sub = r
-        if sub in (0, 1):
-            # ADD/SUB dst16,src8: operando = (dst16<<3)|src8; los 3 bits
-            # altos de b1 estan fuera de ese layout (siempre 0 al
-            # reensamblar) -- si vienen puestos, se deja en crudo.
-            if b1 & 0xC0:
-                return Instr(addr, 2, None, raw=[op, b1])
-            dst16, src8 = (b1 >> 3) & 3, b1 & 7
-            mnem = "ADD" if sub == 0 else "SUB"
-            return Instr(addr, 2, f"{mnem} {REG16[dst16]},{REG8[src8]}")
-        if sub == 2:
-            return Instr(addr, 1, "MOVB")
-        if sub == 3:
-            return Instr(addr, 1, "MOVW")
-        if sub == 4:
-            return Instr(addr, 3, f"JMPNV 0x{a16:04X}", target=a16)
-        if sub == 5:
-            return Instr(addr, 3, f"CALLNV 0x{a16:04X}", target=a16)
-        if sub == 6:
-            # MOV reg16,#imm16: b1=reg16 (2 bits bajos), imm16 en b2/b3 --
-            # NO en a16 (que aqui vale b1|b2<<8 y no es el layout de esto).
-            if b1 & 0xFC:
-                return Instr(addr, 4, None, raw=[op, b1, b2, b3])
-            imm16 = b2 | (b3 << 8)
-            return Instr(addr, 4, f"MOV {REG16[b1 & 3]},#0x{imm16:04X}")
-        # subop 7: reservado, sin mnemonico (se ejecuta como NOP).
-        return Instr(addr, 1, None, raw=[op])
-    # Sin familias reservadas por ahora (27-30 ya se usan arriba).
-    return Instr(addr, 1, None, raw=[op])
+        return Instr(addr, 1, f"{'DEC' if r & 4 else 'INC'} {REG16[r & 3]}")
+    if fam == F_PUSHPOP16:
+        return Instr(addr, 1, f"{'POP' if r & 4 else 'PUSH'} {REG16[r & 3]}")
+    return raw()                                # familias 30/31: libres
 
 
 def disassemble(mem):

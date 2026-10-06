@@ -30,6 +30,10 @@
 ; ============================================================================
 
     .slot 14
+
+    .name "ROTARY ENCODER"
+
+    .category UTILITY
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -56,15 +60,11 @@ VPOS_MOD  = 200           ; techo de la posicion virtual -- multiplo exacto
 ; ============================================================================
 start:
     CALL clst
-    MOV BL,#lo(h_dir)
-    MOV BH,#hi(h_dir)
-    MOV CL,#1
-    MOV CH,#0
+    MOV BX,#h_dir
+    MOV CX,#0x0001
     CALL puts
-    MOV BL,#lo(h_dat)
-    MOV BH,#hi(h_dat)
-    MOV CL,#15
-    MOV CH,#0
+    MOV BX,#h_dat
+    MOV CX,#0x000F
     CALL puts
 
     ; siembra la lectura "anterior" con la actual, para que el primer delta
@@ -93,8 +93,7 @@ main_l:
     STA [vad_delta],AL
     LDA AL,[dir_raw]
     STA [dir_prev_raw],AL
-    MOV BL,#lo(dir_pos)
-    MOV BH,#hi(dir_pos)
+    MOV BX,#dir_pos
     CALL vpos_apply_delta
     LDA AL,[dir_pos]
     CALL mod20
@@ -109,8 +108,7 @@ main_l:
     STA [vad_delta],AL
     LDA AL,[dat_raw]
     STA [dat_prev_raw],AL
-    MOV BL,#lo(dat_pos)
-    MOV BH,#hi(dat_pos)
+    MOV BX,#dat_pos
     CALL vpos_apply_delta
     LDA AL,[dat_pos]
     CALL mod20
@@ -180,12 +178,10 @@ main_l:
 
     ; --- cifras de posicion virtual (0..199), fila 7 ------------------------
     LDA AL,[dir_pos]
-    MOV CL,#3
-    MOV CH,#7
+    MOV CX,#0x0703
     CALL put_dec3
     LDA AL,[dat_pos]
-    MOV CL,#14
-    MOV CH,#7
+    MOV CX,#0x070E
     CALL put_dec3
 
     MOV AL,#2
@@ -193,15 +189,17 @@ main_l:
     JMP main_l
 
 ; ============================================================================
-;  mod20:  AL = AL mod 20 (resta repetida; AL entra 0..255, max 12 vueltas)
+;  mod20:  AL = AL mod 20 (con DIV; respeta AH y BL)
 ; ============================================================================
 mod20:
-m20_l:
-    CMP AL,#20
-    JMPC m20_d
-    SUB AL,#20
-    JMP m20_l
-m20_d:
+    PUSH AH
+    PUSH BL
+    MOV AH,#0
+    MOV BL,#20
+    DIV BL                  ; AH = AX mod 20 (DIV por hardware)
+    MOV AL,AH
+    POP BL
+    POP AH
     RET
 
 ; ============================================================================
@@ -256,15 +254,11 @@ vad_done:
 needle_lookup:
     LDA CL,[nd_slot]
     SHL CL                     ; offset en bytes = slot*2
-    MOV BL,#lo(needle_off)
-    MOV BH,#hi(needle_off)
-    CALL idx_ptr                ; BX = needle_off + slot*2 (con acarreo)
+    MOV BX,#needle_off
+    ADD BX,CL   ; BX = needle_off + slot*2 (con acarreo)
     LDA AL,[BX]
     STA [nd_dx],AL
-    ADD BL,#1
-    JMPNC ndl_ok
-    ADD BH,#1
-ndl_ok:
+    INC BX
     LDA AL,[BX]
     STA [nd_dy],AL
     RET
@@ -278,7 +272,7 @@ ndl_ok:
 ;  Con [circ_fill]!=0, ademas 4 franjas horizontales por paso (mismas
 ;  coordenadas simetricas, pero de extremo a extremo): es la forma barata de
 ;  rellenar sin comprobar "dentro del circulo" pixel a pixel, que aqui
-;  costaria una multiplicacion (x*x+y*y) que esta CPU no tiene.
+;  costaria dos multiplicaciones (x*x+y*y) por pixel.
 ;  Verificado en Python antes de escribirlo (ver el historial de esta sesion).
 ; ============================================================================
 circle:
@@ -635,10 +629,9 @@ cpx_d:
 ; --- shadow_set_px:  enciende el pixel (px_x,px_y) en `shadow` -------------
 shadow_set_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -659,21 +652,16 @@ shadow_set_px:
 clr_shadow:
     MOV AL,#0
     STA [shadow],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV DL,#lo(shadow+1)
-    MOV DH,#hi(shadow+1)
-    MOV CL,#0xFF
-    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
     MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que cambie --------
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -682,10 +670,7 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1
@@ -709,13 +694,8 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
@@ -729,38 +709,30 @@ put_dec3:
     MOV DL,AL
     MOV DH,#0x04
 
-    MOV AL,#0
-pd3_h:
-    LDA BL,[pd_v]
-    CMP BL,#100
-    JMPC pd3_hd
-    SUB BL,#100
-    STA [pd_v],BL
-    ADD AL,#1
-    JMP pd3_h
+    LDA AL,[pd_v]
+    PUSH AH
+    MOV AH,#0
+    MOV BL,#100
+    DIV BL                  ; AL = cociente, resto -> [pd_v] y BL
+    STA [pd_v],AH
+    MOV BL,AH
+    POP AH
 pd3_hd:
     ADD AL,#0x30
     OUT (DX),AL
-    ADD DL,#1
-    JMPNC pd3_t1
-    ADD DH,#1
-pd3_t1:
-    MOV AL,#0
-pd3_t:
-    LDA BL,[pd_v]
-    CMP BL,#10
-    JMPC pd3_td
-    SUB BL,#10
-    STA [pd_v],BL
-    ADD AL,#1
-    JMP pd3_t
+    INC DX
+    LDA AL,[pd_v]
+    PUSH AH
+    MOV AH,#0
+    MOV BL,#10
+    DIV BL                  ; AL = cociente, resto -> [pd_v] y BL
+    STA [pd_v],AH
+    MOV BL,AH
+    POP AH
 pd3_td:
     ADD AL,#0x30
     OUT (DX),AL
-    ADD DL,#1
-    JMPNC pd3_u1
-    ADD DH,#1
-pd3_u1:
+    INC DX
     LDA AL,[pd_v]
     ADD AL,#0x30
     OUT (DX),AL
@@ -768,8 +740,7 @@ pd3_u1:
 
 ; --- clst:  borra la capa de texto (0x0400..0x04FF) -------------------------
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL

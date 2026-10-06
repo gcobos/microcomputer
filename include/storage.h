@@ -23,6 +23,29 @@ constexpr size_t MAX_PROGRAM_SLOTS = 60;
 // más.
 constexpr size_t EEPROM_SLOT_SIZE = 256;
 
+// Ajustes globales del aparato (brillo de pantalla, mute -- ver iomap.h
+// PORT_CFG_*), guardados en la flash para que sobrevivan a un reset o a
+// apagarlo. Viven en el KiB que sobra al final del chip, tras las EEPROM de
+// los 60 slots (16384 - 60*256 = 1024 bytes libres): no pertenecen a ningun
+// slot, ningun programa puede tocarlos desde los puertos de EEPROM.
+constexpr size_t SETTINGS_SIZE = 16;
+
+// Metadatos de cada slot: viajan con el programa y se guardan en la cabecera
+// del slot en la flash (bytes 1..15, antes reservados), no en su RAM:
+//   [0]     categoria (ver SLOT_CAT_*; 0xFF = sin categoria / slot antiguo)
+//   [1..14] nombre en ASCII, relleno con 0 (hasta 14 caracteres)
+// Los pone el ensamblador (.name/.category) y llegan por compi_send; al
+// grabar la RAM en un slot (panel, PORT_PROG_SAVE) se graban los del
+// programa que esta cargado. sisop.asm los lee para montar sus menus.
+constexpr size_t SLOT_META_SIZE = 15;
+constexpr uint8_t SLOT_CAT_NONE    = 0xFF;
+constexpr uint8_t SLOT_CAT_SYSTEM  = 1;   // sisop: no sale en ningun menu
+constexpr uint8_t SLOT_CAT_GAME    = 2;
+constexpr uint8_t SLOT_CAT_PROGRAM = 3;
+constexpr uint8_t SLOT_CAT_UTILITY = 4;
+constexpr uint8_t SLOT_CAT_DEMO    = 5;
+constexpr uint8_t SLOT_CAT_DOCS    = 6;
+
 // Interfaz de almacenamiento. Cualquier implementación (flash SPI real,
 // fichero...) es intercambiable.
 class IProgramStorage {
@@ -35,8 +58,13 @@ public:
     virtual bool loadProgram(int slot, uint8_t* dest) = 0;
     // Lee los primeros 'len' bytes de la imagen del slot (previsualización).
     virtual bool previewProgram(int slot, uint8_t* dest, uint32_t len) = 0;
-    // Escribe 'src' (PROGRAM_SIZE bytes) en el slot. Borra y reescribe.
-    virtual bool saveProgram(int slot, const uint8_t* src) = 0;
+    // Escribe 'src' (PROGRAM_SIZE bytes) en el slot, con sus metadatos
+    // ('meta', SLOT_META_SIZE bytes; nullptr = sin nombre ni categoria).
+    // Borra y reescribe.
+    virtual bool saveProgram(int slot, const uint8_t* src, const uint8_t* meta) = 0;
+    // Lee los metadatos del slot en 'meta' (SLOT_META_SIZE bytes). false si
+    // el slot esta vacio (y entonces 'meta' queda sin nombre ni categoria).
+    virtual bool readSlotMeta(int slot, uint8_t* meta) = 0;
     // Marca el slot como libre.
     virtual bool deleteProgram(int slot) = 0;
 
@@ -46,6 +74,10 @@ public:
     // de 0..MAX_PROGRAM_SLOTS-1.
     virtual bool readEeprom(int slot, uint8_t* dest) = 0;
     virtual bool writeEeprom(int slot, const uint8_t* src) = 0;
+
+    // Lee/escribe los SETTINGS_SIZE bytes de ajustes globales (ver arriba).
+    virtual bool readSettings(uint8_t* dest) = 0;
+    virtual bool writeSettings(const uint8_t* src) = 0;
 };
 
 } // namespace compi

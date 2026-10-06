@@ -7,8 +7,8 @@
 ;  distancia recorrida (en pasos, no en pixeles) da la altura de la franja
 ;  vertical de pared que se dibuja para ese rayo (mas cerca = mas alta).
 ;
-;  Sin multiplicacion ni division real, ni trigonometria en tiempo de
-;  ejecucion -- todo son tablas, calculadas una vez con Python (ver el
+;  El motor de paredes no multiplica ni divide, ni hace trigonometria en
+;  tiempo de ejecucion -- todo son tablas, calculadas una vez con Python (ver el
 ;  comentario de cada tabla mas abajo) y trucos de potencia de 2:
 ;    - Posicion del jugador de 8 bits, "baldosa" = 16 unidades (potencia de
 ;      2): la baldosa de una posicion es solo un SHR x4, no una division.
@@ -37,45 +37,27 @@
 ;  profundidad explicita justo donde importa.
 ;
 ;  Pulsar CUALQUIERA de los dos pulsadores (DIRECCION o DATOS) lanza un
-;  proyectil redondo ("bola de fuego") que sale disparado en linea recta
-;  hacia donde mira el jugador en ese instante, con un sonido descendente
-;  (silbido tipo "fwoosh"). Puede haber hasta PROJ_COUNT=4 en vuelo a la
-;  vez -- cada uno lleva su PROPIO angulo de disparo (proj_launch_facing)
-;  y su PROPIA distancia recorrida (proj_steps), en tablas de 4 bytes
-;  (una celda por proyectil) en vez de una sola variable; al disparar se
-;  usa el primer hueco libre, y si los 4 estan ocupados la pulsacion se
-;  ignora. El proyectil viaja usando la misma tabla de direcciones que
-;  los rayos (ray_tbl), asi que su distancia recorrida se puede comparar
-;  directamente contra la distancia de la pared de la columna en pantalla
-;  donde le toque aparecer: solo se dibuja cuando esta mas cerca que esa
-;  pared (si no, "se pierde" tras ella, exactamente el mismo criterio de
-;  mas-lejos-primero que las paredes, aplicado al unico tipo de objeto que
-;  lo necesita). Se dibuja RELLENO DE NEGRO (apaga pixeles, no los
-;  enciende) para que se distinga como una silueta oscura tanto sobre una
-;  pared cercana solida y blanca como sobre una con trama de puntos; su
-;  tamano se reduce en 4 escalones segun se aleja (grande, mediano,
-;  pequeno, punto). Cada proyectil se apaga solo al chocar contra una
-;  pared o al llegar al limite de MAX_STEPS (la garantia de la cabecera
-;  de arriba asegura que eso pasa siempre, dentro de ese limite).
+;  proyectil que sale en linea recta hacia donde mira el jugador, despacio
+;  (1/4 de baldosa por fotograma, move_tbl) para que se le vea alejarse, con
+;  un silbido descendente al salir y un golpe grave al chocar contra una
+;  pared (o al llegar a MAX_STEPS baldosas). Hasta PROJ_COUNT=4 a la vez.
 ;
-;  DOT_COUNT=10 "bolitas" recolectables estan repartidas por el mapa (una
-;  posicion fija por nivel, en el centro de una baldosa libre). Se ven y se
-;  dibujan con el MISMO mecanismo de "angulo relativo a facing -> columna de
-;  pantalla" que los proyectiles (calc_dot_angle, calculo de octante sin
-;  multiplicacion/trigonometria -- ver actualiza_dots), y se recogen sin mas
-;  que acercarse (distancia en pixeles por eje, igual criterio que el
-;  contacto del antiguo esqueleto). Al recoger la ultima bolita de un nivel,
-;  aparece "LEVEL PASSED!" con un jingle corto y se genera un nivel nuevo:
-;  no hay generacion de laberintos al vuelo (esta CPU no tiene division, y
-;  un backtracking recursivo como el de shamus.asm seria mucho para un
-;  bonus de este programa), asi que "nuevo" quiere decir el SIGUIENTE de
-;  MAP_COUNT=3 mapas prehechos (uno de ellos el original, dos mas nuevos,
-;  cada uno verificado en Python con el mismo criterio de "ningun rayo se
-;  queda sin chocar dentro de MAX_STEPS" que el mapa original, ver el aviso
-;  de la cabecera de arriba), en bucle (vuelve al primero tras el tercero).
-;  El mapa activo se copia de una tabla en ROM a un buffer en RAM (`mapa`)
-;  al cargar cada nivel (ver load_level); el resto del motor (es_pared,
-;  march_ray) no cambia nada, sigue leyendo siempre de `mapa`.
+;  DOT_COUNT=10 bolitas por nivel, en posiciones fijas; se recogen
+;  acercandose (DOT_TOUCH_DIST px por eje), con un "ding" agudo, y arriba
+;  se ve cuantas quedan ("DOTS LEFT n"). Al recoger la ultima aparece
+;  "LEVEL PASSED!" y se pasa al siguiente de MAP_COUNT=3 mapas prehechos,
+;  en bucle. Es una demo: no hay puntos ni record.
+;
+;  Bolitas y proyectiles se dibujan como DIANAS: circulos concentricos de
+;  2 px que alternan encendido/apagado, de radio segun la distancia (tabla
+;  OBJ_R, en medias baldosas) -- un patron de anillos se distingue sobre las
+;  paredes blancas, sobre las tramadas y sobre el fondo, cosa que un relleno
+;  plano no conseguia. Las bolitas se apoyan en el suelo y los proyectiles
+;  van a la altura de los ojos. Su posicion en pantalla sale del angulo de
+;  verdad respecto al jugador (atan(menor/mayor) con MUL/DIV y la tabla
+;  ATAN32, ver obj_project), y se dibujan tras paredes y nubes recortadas
+;  pixel a pixel contra la pared de cada columna (dist4_tbl): una pared mas
+;  cercana tapa la parte de la diana que quede detras.
 ;
 ;  El cielo lleva CLOUD_COUNT=8 nubes grandes, huecas y de lineas curvas
 ;  (el contorno de la union de varios circulos, con el interior vacio --
@@ -128,6 +110,10 @@
 ; ============================================================================
 
     .slot 9
+
+    .name "RAYCAST"
+
+    .category DEMO
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -151,11 +137,6 @@ TURN_STEP  = 4           ; cuanto gira `facing` por detente (de 128, ~11 grados)
 ; con su propio angulo de disparo y su propia distancia recorrida ------------
 PROJ_COUNT      = 4      ; proyectiles simultaneos como maximo
 PROJ_ROW        = 31     ; fila central donde se dibujan (altura de "los ojos")
-; tamano segun pasos recorridos (mas pasos = mas lejos = mas pequeno):
-PROJ_SIZE_T1    = 5      ; pasos < T1  -> el mas grande  (5 filas)
-PROJ_SIZE_T2    = 10     ; pasos < T2  -> mediano        (3 filas)
-PROJ_SIZE_T3    = 15     ; pasos < T3  -> pequeno        (1 fila, nibble entero)
-                          ; pasos >= T3 -> punto          (1 fila, medio nibble)
 
 ; --- sonido del disparo: silbido descendente (un solo canal, monofonico;
 ; cada disparo nuevo lo reinicia aunque ya haya otros proyectiles en vuelo) --
@@ -174,8 +155,6 @@ DOT_COUNT           = 10    ; bolitas por nivel
 DOT_TOUCH_DIST      = 10    ; distancia (px, por eje) para recogerla -- NO
                              ; la misma baldosa (16x16): igual criterio que
                              ; usaba el contacto del enemigo, mas generoso
-DOT_ROW             = 40    ; fila donde se dibuja cada bolita (altura de
-                             ; "el suelo", por debajo de la de los ojos)
 MAP_COUNT           = 3     ; niveles prehechos, en bucle (ver load_level)
 ; pitido corto al recoger una bolita (mismo mecanismo de silbido que
 ; dispara, reutilizando snd_timer/snd_freq_* -- un solo canal):
@@ -200,10 +179,8 @@ CLOUD_DRIFT_STEP_B = 2   ; idem para las alargadas -- el doble, se ven mas rapid
 ; ============================================================================
 start:
     CALL clst
-    MOV BL,#lo(h_title)
-    MOV BH,#hi(h_title)
-    MOV CL,#4
-    MOV CH,#3
+    MOV BX,#h_title
+    MOV CX,#0x0304
     CALL puts
     MOV AL,#8
     CALL frame_wait
@@ -213,6 +190,7 @@ start:
     STA [map_idx],AL
     CALL load_level         ; posiciona al jugador y puebla mapa/bolitas
                               ; del nivel 0 (ver load_level)
+    CALL show_hud
 
     MOV AL,#0
     STA [proj_active],AL
@@ -263,94 +241,20 @@ ray_loop:
     ; guarda el techo libre de esta columna (para la oclusion de las
     ; nubes, que se dibujan aparte tras el bucle -- ver dibuja_nubes)
     LDA AL,[y0]
-    MOV BL,#lo(y0_tbl)
-    MOV BH,#hi(y0_tbl)
+    MOV BX,#y0_tbl
     LDA CL,[ray_i]
-    CALL idx_ptr
+    ADD BX,CL
     STA [BX],AL
 
-    ; cada proyectil activo y visible cae en una unica columna (su propio
-    ; [proj_ray_i]) -- solo se dibuja ahi, y solo si esta mas cerca que la
-    ; pared que se acaba de dibujar en esa misma columna ([dist], recien
-    ; calculado por march_ray): "mas lejos primero, mas cerca despues",
-    ; igual que las paredes, pero aplicado a lo unico que puede solaparse
-    ; con ellas. Se recorren los PROJ_COUNT slots porque cada uno puede
-    ; estar en una columna distinta.
-    MOV AL,#0
-    STA [proj_i],AL
-ray_proj_loop:
-    MOV BL,#lo(proj_active)
-    MOV BH,#hi(proj_active)
-    CALL proj_field_addr
-    LDA AL,[BX]
-    CMP AL,#0
-    JMPZ ray_proj_next
-    MOV BL,#lo(proj_visible)
-    MOV BH,#hi(proj_visible)
-    CALL proj_field_addr
-    LDA AL,[BX]
-    CMP AL,#0
-    JMPZ ray_proj_next
-    MOV BL,#lo(proj_ray_i)
-    MOV BH,#hi(proj_ray_i)
-    CALL proj_field_addr
-    LDA AL,[BX]
-    LDA BL,[ray_i]
-    CMP AL,BL
-    JMPNZ ray_proj_next
-    MOV BL,#lo(proj_steps)
-    MOV BH,#hi(proj_steps)
-    CALL proj_field_addr
-    LDA AL,[BX]
-    LDA BL,[dist]
-    CMP AL,BL
-    JMPNC ray_proj_next     ; proj_steps >= dist -> la pared esta delante
-    CALL dibuja_proyectil
-ray_proj_next:
-    LDA AL,[proj_i]
-    ADD AL,#1
-    STA [proj_i],AL
-    CMP AL,#PROJ_COUNT
-    JMPNZ ray_proj_loop
-
-    ; cada bolita activa y visible cae en una unica columna (su propio
-    ; [dot_rayi]) -- mismo criterio de profundidad "mas lejos primero, mas
-    ; cerca despues" que los proyectiles de arriba (ver actualiza_dots para
-    ; [dot_vis]/[dot_rayi]/[dot_steps_arr], recalculados una vez por
-    ; fotograma antes de este bucle, no columna a columna)
-    MOV AL,#0
-    STA [dot_i],AL
-ray_dot_loop:
-    MOV BL,#lo(dot_vis)
-    MOV BH,#hi(dot_vis)
-    LDA CL,[dot_i]
-    CALL idx_ptr
-    LDA AL,[BX]
-    CMP AL,#0
-    JMPZ ray_dot_next
-    MOV BL,#lo(dot_rayi)
-    MOV BH,#hi(dot_rayi)
-    LDA CL,[dot_i]
-    CALL idx_ptr
-    LDA AL,[BX]
-    LDA BL,[ray_i]
-    CMP AL,BL
-    JMPNZ ray_dot_next
-    MOV BL,#lo(dot_steps_arr)
-    MOV BH,#hi(dot_steps_arr)
-    LDA CL,[dot_i]
-    CALL idx_ptr
-    LDA AL,[BX]
-    LDA BL,[dist]
-    CMP AL,BL
-    JMPNC ray_dot_next      ; dot_steps >= dist -> la pared esta delante
-    CALL dibuja_dot
-ray_dot_next:
-    LDA AL,[dot_i]
-    ADD AL,#1
-    STA [dot_i],AL
-    CMP AL,#DOT_COUNT
-    JMPNZ ray_dot_loop
+    ; distancia de la pared de esta columna, x4 (en cuartos de baldosa, la
+    ; escala de [ov_q]): dibuja_objetos la usa DESPUES del bucle para
+    ; recortar bolitas y proyectiles pixel a pixel tras las paredes
+    LDA AL,[dist]
+    SHL AL,#2
+    MOV BX,#dist4_tbl
+    LDA CL,[ray_i]
+    ADD BX,CL
+    STA [BX],AL
 
     LDA AL,[ray_i]
     ADD AL,#1
@@ -359,6 +263,7 @@ ray_dot_next:
     JMPNZ ray_loop
 
     CALL dibuja_nubes
+    CALL dibuja_objetos
     CALL blit
     MOV AL,#2
     CALL frame_wait
@@ -452,15 +357,11 @@ buscar_mov:
     LDA AL,[facing]
     SHL AL                  ; offset = facing*2 (2 bytes/entrada)
     MOV CL,AL
-    MOV BL,#lo(move_tbl)
-    MOV BH,#hi(move_tbl)
-    CALL idx_ptr
+    MOV BX,#move_tbl
+    ADD BX,CL
     LDA AL,[BX]
     STA [mv_dx],AL
-    ADD BL,#1
-    JMPNC bm_ok
-    ADD BH,#1
-bm_ok:
+    INC BX
     LDA AL,[BX]
     STA [mv_dy],AL
     RET
@@ -507,8 +408,7 @@ dispara:
     MOV AL,#0
     STA [proj_i],AL
 dsp_find:
-    MOV BL,#lo(proj_active)
-    MOV BH,#hi(proj_active)
+    MOV BX,#proj_active
     CALL proj_field_addr
     LDA AL,[BX]
     CMP AL,#0
@@ -524,51 +424,43 @@ dsp_found:
     STA [BX],AL              ; proj_active[proj_i] = 1 (BX ya apunta ahi)
 
     LDA AL,[facing]
-    MOV BL,#lo(proj_launch_facing)
-    MOV BH,#hi(proj_launch_facing)
+    MOV BX,#proj_launch_facing
     CALL proj_field_addr
     STA [BX],AL
 
     MOV AL,#0
-    MOV BL,#lo(proj_steps)
-    MOV BH,#hi(proj_steps)
+    MOV BX,#proj_steps
     CALL proj_field_addr
     STA [BX],AL
 
     LDA AL,[facing]
-    SHL AL                  ; offset = facing*2 (ray_tbl, 2 bytes/entrada)
+    SHL AL                  ; offset = facing*2 (move_tbl, 2 bytes/entrada:
+                              ; 1/4 de baldosa por fotograma, para que se
+                              ; vea volar en vez de cruzar el mapa de golpe)
     MOV CL,AL
-    MOV BL,#lo(ray_tbl)
-    MOV BH,#hi(ray_tbl)
-    CALL idx_ptr
+    MOV BX,#move_tbl
+    ADD BX,CL
     LDA AL,[BX]
     STA [dsp_dx],AL
-    ADD BL,#1
-    JMPNC dsp_ok
-    ADD BH,#1
-dsp_ok:
+    INC BX
     LDA AL,[BX]
     STA [dsp_dy],AL
 
     LDA AL,[dsp_dx]
-    MOV BL,#lo(proj_dx)
-    MOV BH,#hi(proj_dx)
+    MOV BX,#proj_dx
     CALL proj_field_addr
     STA [BX],AL
     LDA AL,[dsp_dy]
-    MOV BL,#lo(proj_dy)
-    MOV BH,#hi(proj_dy)
+    MOV BX,#proj_dy
     CALL proj_field_addr
     STA [BX],AL
 
     LDA AL,[player_x]
-    MOV BL,#lo(proj_rx)
-    MOV BH,#hi(proj_rx)
+    MOV BX,#proj_rx
     CALL proj_field_addr
     STA [BX],AL
     LDA AL,[player_y]
-    MOV BL,#lo(proj_ry)
-    MOV BH,#hi(proj_ry)
+    MOV BX,#proj_ry
     CALL proj_field_addr
     STA [BX],AL
 
@@ -586,7 +478,7 @@ dsp_ok:
 ; slot "actual" sin repetir la aritmetica de puntero cada vez --------------
 proj_field_addr:
     LDA CL,[proj_i]
-    CALL idx_ptr
+    ADD BX,CL
     RET
 
 ; --- actualiza_proyectil: recorre los PROJ_COUNT slots; el que este activo
@@ -597,54 +489,46 @@ actualiza_proyectil:
     MOV AL,#0
     STA [proj_i],AL
 apr_loop:
-    MOV BL,#lo(proj_active)
-    MOV BH,#hi(proj_active)
+    MOV BX,#proj_active
     CALL proj_field_addr
     LDA AL,[BX]
     CMP AL,#0
     JMPZ apr_next
 
-    MOV BL,#lo(proj_dx)
-    MOV BH,#hi(proj_dx)
+    MOV BX,#proj_dx
     CALL proj_field_addr
     LDA AL,[BX]
     STA [apr_dx],AL
-    MOV BL,#lo(proj_dy)
-    MOV BH,#hi(proj_dy)
+    MOV BX,#proj_dy
     CALL proj_field_addr
     LDA AL,[BX]
     STA [apr_dy],AL
 
-    MOV BL,#lo(proj_rx)
-    MOV BH,#hi(proj_rx)
+    MOV BX,#proj_rx
     CALL proj_field_addr
     LDA AL,[BX]
     ADD AL,[apr_dx]
     STA [BX],AL
-    MOV BL,#lo(proj_ry)
-    MOV BH,#hi(proj_ry)
+    MOV BX,#proj_ry
     CALL proj_field_addr
     LDA AL,[BX]
     ADD AL,[apr_dy]
     STA [BX],AL
 
-    MOV BL,#lo(proj_steps)
-    MOV BH,#hi(proj_steps)
+    MOV BX,#proj_steps
     CALL proj_field_addr
     LDA AL,[BX]
     ADD AL,#1
     STA [BX],AL
     STA [apr_steps],AL
 
-    MOV BL,#lo(proj_rx)
-    MOV BH,#hi(proj_rx)
+    MOV BX,#proj_rx
     CALL proj_field_addr
     LDA AL,[BX]
     SHR AL,#4
     STA [apr_tx],AL          ; tile x en memoria: proj_field_addr usa CL,
                               ; no se puede dejar ahi entre dos llamadas
-    MOV BL,#lo(proj_ry)
-    MOV BH,#hi(proj_ry)
+    MOV BX,#proj_ry
     CALL proj_field_addr
     LDA AL,[BX]
     SHR AL,#4
@@ -656,64 +540,23 @@ apr_chk_wall:
     CMP AL,#0
     JMPNZ apr_stop
     LDA AL,[apr_steps]
-    CMP AL,#MAX_STEPS
+    CMP AL,#(MAX_STEPS*4)
     JMPNC apr_stop
-    JMP apr_vis
+    JMP apr_next
 apr_stop:
     MOV AL,#0
-    MOV BL,#lo(proj_active)
-    MOV BH,#hi(proj_active)
+    MOV BX,#proj_active
     CALL proj_field_addr
     STA [BX],AL
+    ; golpe grave al chocar: que se oiga DONDE acaba el disparo
+    MOV AL,#0
+    STA [snd_timer],AL       ; corta el silbido del disparo si seguia
+    MOV AL,#8
+    OUT (P_SND_DUR),AL
+    MOV AL,#36
+    OUT (P_SND_NOTE),AL
     JMP apr_next
 
-; visible cuando la diferencia entre el angulo de disparo de ESTE slot y
-; `facing` actual cae dentro del abanico de 32 rayos (facing-16..facing+15)
-apr_vis:
-    MOV BL,#lo(proj_launch_facing)
-    MOV BH,#hi(proj_launch_facing)
-    CALL proj_field_addr
-    LDA AL,[BX]
-    LDA BL,[facing]
-    SUB AL,BL
-    AND AL,#0x7F
-    CMP AL,#16
-    JMPC apr_lo
-    CMP AL,#112
-    JMPNC apr_hi
-    MOV AL,#0
-    MOV BL,#lo(proj_visible)
-    MOV BH,#hi(proj_visible)
-    CALL proj_field_addr
-    STA [BX],AL
-    JMP apr_next
-apr_lo:
-    ADD AL,#16
-    STA [apr_rayi],AL
-    MOV BL,#lo(proj_ray_i)
-    MOV BH,#hi(proj_ray_i)
-    CALL proj_field_addr
-    LDA AL,[apr_rayi]
-    STA [BX],AL
-    MOV AL,#1
-    MOV BL,#lo(proj_visible)
-    MOV BH,#hi(proj_visible)
-    CALL proj_field_addr
-    STA [BX],AL
-    JMP apr_next
-apr_hi:
-    SUB AL,#112
-    STA [apr_rayi],AL
-    MOV BL,#lo(proj_ray_i)
-    MOV BH,#hi(proj_ray_i)
-    CALL proj_field_addr
-    LDA AL,[apr_rayi]
-    STA [BX],AL
-    MOV AL,#1
-    MOV BL,#lo(proj_visible)
-    MOV BH,#hi(proj_visible)
-    CALL proj_field_addr
-    STA [BX],AL
 apr_next:
     LDA AL,[proj_i]
     ADD AL,#1
@@ -722,89 +565,8 @@ apr_next:
     JMPNZ apr_loop
     RET
 
-; --- dibuja_proyectil: estampa el proyectil del slot [proj_i] en la columna
-; actual (usa [byte_col]/[nibble], ya calculados por render_column para
-; este ray_i). RELLENO DE NEGRO (apaga pixeles, no los enciende) para que
-; se distinga como silueta oscura tanto sobre una pared blanca solida como
-; sobre una con trama de puntos. Tamano en 4 escalones segun los pasos
-; recorridos de ESTE slot (mas pasos = mas lejos = mas pequeno): 5 filas ->
-; 3 filas -> 1 fila entera -> 1 fila a medias (el mas pequeno) -------------
-dibuja_proyectil:
-    MOV BL,#lo(proj_steps)
-    MOV BH,#hi(proj_steps)
-    CALL proj_field_addr
-    LDA AL,[BX]
-    CMP AL,#PROJ_SIZE_T1
-    JMPNC dpr_t2
-    MOV AL,#PROJ_ROW-2
-    STA [rowy],AL
-    CALL proj_row_half
-    MOV AL,#PROJ_ROW-1
-    STA [rowy],AL
-    CALL proj_row_full
-    MOV AL,#PROJ_ROW
-    STA [rowy],AL
-    CALL proj_row_full
-    MOV AL,#PROJ_ROW+1
-    STA [rowy],AL
-    CALL proj_row_full
-    MOV AL,#PROJ_ROW+2
-    STA [rowy],AL
-    CALL proj_row_half
-    RET
-dpr_t2:
-    CMP AL,#PROJ_SIZE_T2
-    JMPNC dpr_t3
-    MOV AL,#PROJ_ROW-1
-    STA [rowy],AL
-    CALL proj_row_half
-    MOV AL,#PROJ_ROW
-    STA [rowy],AL
-    CALL proj_row_full
-    MOV AL,#PROJ_ROW+1
-    STA [rowy],AL
-    CALL proj_row_half
-    RET
-dpr_t3:
-    CMP AL,#PROJ_SIZE_T3
-    JMPNC dpr_t4
-    MOV AL,#PROJ_ROW
-    STA [rowy],AL
-    CALL proj_row_full
-    RET
-dpr_t4:
-    MOV AL,#PROJ_ROW
-    STA [rowy],AL
-    CALL proj_row_half
-    RET
-
-; --- proj_row_full/proj_row_half: APAGAN (negro), en la fila [rowy] de la
-; columna [byte_col], todo el nibble [nibble] o solo los 2 bits centrales
-; (para un contorno mas redondeado que un bloque macizo) -------------------
-proj_row_full:
-    LDA AL,[nibble]
-    STA [proj_mask],AL
-    JMP proj_row_common
-proj_row_half:
-    LDA AL,[nibble]
-    CMP AL,#0xF0
-    JMPZ prh_hi
-    MOV AL,#0x06
-    JMP prh_set
-prh_hi:
-    MOV AL,#0x60
-prh_set:
-    STA [proj_mask],AL
-proj_row_common:
-    CALL calc_shadow_addr
-    LDA AL,[BX]
-    LDA DL,[proj_mask]
-    NOT DL
-    AND AL,DL
-    STA [BX],AL
-    RET
-
 ; ============================================================================
+;  BOLITAS RECOLECTABLES; ============================================================================
 ;  BOLITAS RECOLECTABLES: DOT_COUNT posiciones fijas por nivel (ver la
 ;  cabecera de constantes). Cada fotograma se recalcula su angulo/
 ;  visibilidad/distancia respecto al jugador (calc_dot_angle, igual
@@ -822,24 +584,21 @@ actualiza_dots:
     MOV AL,#0
     STA [dot_i],AL
 ad_loop:
-    MOV BL,#lo(dot_active)
-    MOV BH,#hi(dot_active)
+    MOV BX,#dot_active
     LDA CL,[dot_i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ ad_mark_invis      ; inactiva (ya recogida) -- no se dibuja
 
-    MOV BL,#lo(dot_x)
-    MOV BH,#hi(dot_x)
+    MOV BX,#dot_x
     LDA CL,[dot_i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_dot_x],AL
-    MOV BL,#lo(dot_y)
-    MOV BH,#hi(dot_y)
+    MOV BX,#dot_y
     LDA CL,[dot_i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_dot_y],AL
 
@@ -857,33 +616,7 @@ ad_loop:
     JMP ad_mark_invis        ; recogida este mismo fotograma -> no se dibuja
 
 ad_no_pick:
-    CALL calc_dot_angle      ; -> dot_vis_s/dot_rayi_s/dot_steps_s
-    LDA AL,[dot_vis_s]
-    MOV BL,#lo(dot_vis)
-    MOV BH,#hi(dot_vis)
-    LDA CL,[dot_i]
-    CALL idx_ptr
-    STA [BX],AL
-    LDA AL,[dot_rayi_s]
-    MOV BL,#lo(dot_rayi)
-    MOV BH,#hi(dot_rayi)
-    LDA CL,[dot_i]
-    CALL idx_ptr
-    STA [BX],AL
-    LDA AL,[dot_steps_s]
-    MOV BL,#lo(dot_steps_arr)
-    MOV BH,#hi(dot_steps_arr)
-    LDA CL,[dot_i]
-    CALL idx_ptr
-    STA [BX],AL
-    JMP ad_next
 ad_mark_invis:
-    MOV AL,#0
-    MOV BL,#lo(dot_vis)
-    MOV BH,#hi(dot_vis)
-    LDA CL,[dot_i]
-    CALL idx_ptr
-    STA [BX],AL
 ad_next:
     LDA AL,[dot_i]
     ADD AL,#1
@@ -938,122 +671,29 @@ cdd_yneg:
     STA [dot_ady],AL
     RET
 
-; --- calc_dot_angle: a partir de [dot_adx]/[dot_ady]/[dot_xneg]/[dot_yneg]
-; (ver calc_dot_deltas, llamada antes por quien llama a esta), calcula el
-; pseudo-angulo de la bolita visto desde el jugador en 8 octantes (sin
-; multiplicacion/division/trigonometria: solo comparaciones y un SHL para
-; probar "domina claramente un eje" -- igual que calc_skel_angle del
-; enemigo de la version anterior), [dot_steps_s] (distancia aproximada,
-; misma escala que march_ray) y [dot_vis_s]/[dot_rayi_s] con el mismo
-; criterio de ventana de 32 rayos que apr_vis usa para los proyectiles -----
-calc_dot_angle:
-    LDA AL,[dot_adx]
-    LDA BL,[dot_ady]
-    CMP AL,BL
-    JMPNC cda_maxdone
-    MOV AL,BL
-cda_maxdone:
-    SHR AL,#4
-    STA [dot_steps_s],AL
-
-    LDA AL,[dot_ady]
-    SHL AL,#1
-    STA [dot_tmp2],AL
-    LDA AL,[dot_adx]
-    LDA BL,[dot_tmp2]
-    CMP AL,BL
-    JMPC cda_not_pure_h   ; adx < ady*2 -> el eje X no domina claramente
-    LDA AL,[dot_xneg]
-    CMP AL,#0
-    JMPNZ cda_w
-    MOV AL,#0             ; Este
-    JMP cda_done
-cda_w:
-    MOV AL,#64            ; Oeste
-    JMP cda_done
-cda_not_pure_h:
-    LDA AL,[dot_adx]
-    SHL AL,#1
-    STA [dot_tmp2],AL
-    LDA AL,[dot_ady]
-    LDA BL,[dot_tmp2]
-    CMP AL,BL
-    JMPC cda_diag         ; ady < adx*2 tampoco -> ningun eje domina: diagonal
-    LDA AL,[dot_yneg]
-    CMP AL,#0
-    JMPNZ cda_n
-    MOV AL,#32            ; Sur
-    JMP cda_done
-cda_n:
-    MOV AL,#96            ; Norte
-    JMP cda_done
-cda_diag:
-    LDA AL,[dot_xneg]
-    CMP AL,#0
-    JMPNZ cda_diag_w
-    LDA AL,[dot_yneg]
-    CMP AL,#0
-    JMPNZ cda_ne
-    MOV AL,#16            ; Sureste
-    JMP cda_done
-cda_ne:
-    MOV AL,#112           ; Noreste
-    JMP cda_done
-cda_diag_w:
-    LDA AL,[dot_yneg]
-    CMP AL,#0
-    JMPNZ cda_nw
-    MOV AL,#48            ; Suroeste
-    JMP cda_done
-cda_nw:
-    MOV AL,#80            ; Noroeste
-cda_done:
-    STA [dot_ang_s],AL
-
-    LDA BL,[facing]
-    SUB AL,BL
-    AND AL,#0x7F
-    CMP AL,#16
-    JMPC cda_lo
-    CMP AL,#112
-    JMPNC cda_hi
-    MOV AL,#0
-    STA [dot_vis_s],AL
-    RET
-cda_lo:
-    ADD AL,#16
-    STA [dot_rayi_s],AL
-    MOV AL,#1
-    STA [dot_vis_s],AL
-    RET
-cda_hi:
-    SUB AL,#112
-    STA [dot_rayi_s],AL
-    MOV AL,#1
-    STA [dot_vis_s],AL
-    RET
-
-; --- dot_pickup: el jugador ha recogido la bolita [dot_i] -- la desactiva,
+; --- dot_pickup:; --- dot_pickup: el jugador ha recogido la bolita [dot_i] -- la desactiva,
 ; resta 1 de [dot_remaining], y suena un pitido corto (reutiliza el mismo
 ; mecanismo de silbido que dispara). Si era la ultima, arranca level_passed
 dot_pickup:
     MOV AL,#0
-    MOV BL,#lo(dot_active)
-    MOV BH,#hi(dot_active)
+    MOV BX,#dot_active
     LDA CL,[dot_i]
-    CALL idx_ptr
+    ADD BX,CL
     STA [BX],AL
 
     LDA AL,[dot_remaining]
     SUB AL,#1
     STA [dot_remaining],AL
 
-    MOV AL,#DOT_PICK_SWEEP_FRAMES
+    ; "ding": una nota aguda corta, bien distinta del silbido descendente
+    ; del disparo y del golpe grave del choque
+    MOV AL,#0
     STA [snd_timer],AL
-    MOV AL,#lo(DOT_PICK_FREQ_START)
-    STA [snd_freq_lo],AL
-    MOV AL,#hi(DOT_PICK_FREQ_START)
-    STA [snd_freq_hi],AL
+    MOV AL,#12
+    OUT (P_SND_DUR),AL
+    MOV AL,#88               ; MI6
+    OUT (P_SND_NOTE),AL
+    CALL show_hud
 
     LDA AL,[dot_remaining]
     CMP AL,#0
@@ -1068,10 +708,8 @@ dp_d:
 ; MAP_COUNT mapas prehechos (en bucle, ver load_level) ---------------------
 level_passed:
     CALL clst
-    MOV BL,#lo(h_level_passed)
-    MOV BH,#hi(h_level_passed)
-    MOV CL,#3
-    MOV CH,#3
+    MOV BX,#h_level_passed
+    MOV CX,#0x0303
     CALL puts
 
     MOV AL,#8
@@ -1104,19 +742,10 @@ lp_store:
     STA [map_idx],AL
     CALL load_level
     CALL clst
+    CALL show_hud
     RET
 
-; --- dibuja_dot: estampa la bolita [dot_i] en la columna actual (usa
-; [byte_col]/[nibble], ya calculados por render_column para este ray_i --
-; reutiliza proj_row_half). Sin escalones de tamano (a diferencia del
-; proyectil/enemigo): es solo una marca pequena, no hace falta mas ---------
-dibuja_dot:
-    MOV AL,#DOT_ROW
-    STA [rowy],AL
-    CALL proj_row_half
-    RET
-
-; --- load_level: copia el mapa ROM de [map_idx] al buffer en RAM `mapa`,
+; --- load_level:; --- load_level: copia el mapa ROM de [map_idx] al buffer en RAM `mapa`,
 ; puebla dot_x/dot_y/dot_active desde la tabla de bolitas de ese mismo
 ; nivel, reinicia [dot_remaining] y coloca al jugador (posicion y facing)
 ; en el punto de partida de ese mapa -- llamada al arrancar y de nuevo al
@@ -1125,86 +754,46 @@ load_level:
     LDA AL,[map_idx]
     SHL AL                  ; offset = map_idx*2 (2 bytes/puntero)
     MOV CL,AL
-    MOV BL,#lo(MAP_PTRS)
-    MOV BH,#hi(MAP_PTRS)
-    CALL idx_ptr
+    MOV BX,#MAP_PTRS
+    ADD BX,CL
     LDA AL,[BX]
     STA [lvl_lo],AL
-    ADD BL,#1
-    JMPNC ll_c1
-    ADD BH,#1
-ll_c1:
+    INC BX
     LDA AL,[BX]
     STA [lvl_hi],AL
 
     LDA BL,[lvl_lo]
     LDA BH,[lvl_hi]          ; BX = mapa ROM de este nivel (32 bytes)
-    MOV DL,#lo(mapa)
-    MOV DH,#hi(mapa)
-    MOV AL,#0
-    STA [ll_cnt],AL          ; contador de bytes PROPIO -- ver el aviso de
-                              ; abajo sobre por que no puede ser [dot_i]
-ll_map_copy:
-    LDA AL,[BX]
-    STA [DX],AL
-    ADD BL,#1
-    JMPNC llmc_bnc
-    ADD BH,#1
-llmc_bnc:
-    ADD DL,#1
-    JMPNC llmc_dnc
-    ADD DH,#1
-llmc_dnc:
-    LDA AL,[ll_cnt]
-    ADD AL,#1
-    STA [ll_cnt],AL
-    CMP AL,#32
-    JMPNZ ll_map_copy
+    MOV DX,#mapa
+    MOV CX,#32
+    MOVB                     ; copia los 32 bytes del mapa de una vez
 
     LDA AL,[map_idx]
     SHL AL
     MOV CL,AL
-    MOV BL,#lo(DOT_DATA_PTRS)
-    MOV BH,#hi(DOT_DATA_PTRS)
-    CALL idx_ptr
+    MOV BX,#DOT_DATA_PTRS
+    ADD BX,CL
     LDA AL,[BX]
     STA [lvl_lo],AL
-    ADD BL,#1
-    JMPNC ll_c2
-    ADD BH,#1
-ll_c2:
+    INC BX
     LDA AL,[BX]
     STA [lvl_hi],AL
 
     LDA BL,[lvl_lo]
     LDA BH,[lvl_hi]           ; BX = tabla de bolitas de este nivel (x,y...)
-    MOV DL,#lo(dot_x)
-    MOV DH,#hi(dot_x)
-    MOV CL,#lo(dot_y)
-    MOV CH,#hi(dot_y)
+    MOV DX,#dot_x
+    MOV CX,#dot_y
     MOV AL,#0
     STA [ll_cnt],AL
 ll_dot_copy:
     LDA AL,[BX]              ; x
     STA [DX],AL
-    ADD BL,#1
-    JMPNC lldc_a
-    ADD BH,#1
-lldc_a:
+    INC BX
     LDA AL,[BX]              ; y
     STA [CX],AL
-    ADD BL,#1
-    JMPNC lldc_b
-    ADD BH,#1
-lldc_b:
-    ADD DL,#1
-    JMPNC lldc_c
-    ADD DH,#1
-lldc_c:
-    ADD CL,#1
-    JMPNC lldc_d
-    ADD CH,#1
-lldc_d:
+    INC BX
+    INC DX
+    INC CX
     LDA AL,[ll_cnt]
     ADD AL,#1
     STA [ll_cnt],AL
@@ -1212,15 +801,11 @@ lldc_d:
     JMPNZ ll_dot_copy
 
     MOV AL,#1
-    MOV BL,#lo(dot_active)
-    MOV BH,#hi(dot_active)
+    MOV BX,#dot_active
     MOV CL,#0
 ll_dot_act:
     STA [BX],AL
-    ADD BL,#1
-    JMPNC lldact_nc
-    ADD BH,#1
-lldact_nc:
+    INC BX
     ADD CL,#1
     CMP CL,#DOT_COUNT
     JMPNZ ll_dot_act
@@ -1228,16 +813,14 @@ lldact_nc:
     MOV AL,#DOT_COUNT
     STA [dot_remaining],AL
 
-    MOV BL,#lo(MAP_SPAWN_X)
-    MOV BH,#hi(MAP_SPAWN_X)
+    MOV BX,#MAP_SPAWN_X
     LDA CL,[map_idx]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [player_x],AL
-    MOV BL,#lo(MAP_SPAWN_Y)
-    MOV BH,#hi(MAP_SPAWN_Y)
+    MOV BX,#MAP_SPAWN_Y
     LDA CL,[map_idx]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [player_y],AL
     MOV AL,#0
@@ -1298,9 +881,8 @@ dn_drift_have:
     STA [cloud_drift_cur],AL
 
     LDA CL,[cloud_i]
-    MOV BL,#lo(cloud_angle_tbl)
-    MOV BH,#hi(cloud_angle_tbl)
-    CALL idx_ptr
+    MOV BX,#cloud_angle_tbl
+    ADD BX,CL
     LDA AL,[BX]
     LDA BL,[cloud_drift_cur]
     ADD AL,BL
@@ -1321,10 +903,9 @@ dn_hi:
 dn_have:
     STA [cloud_ray_i],AL
 
-    MOV BL,#lo(y0_tbl)
-    MOV BH,#hi(y0_tbl)
+    MOV BX,#y0_tbl
     LDA CL,[cloud_ray_i]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#CLOUD_MIN_Y0
     JMPC dn_next            ; la pared de la columna central ya la tapa
@@ -1376,13 +957,10 @@ dng_l:
     SHL CL                    ; offset = indice*2 (2 bytes/punto)
     LDA BL,[cloud_shape_lo]
     LDA BH,[cloud_shape_hi]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [cloud_dx],AL
-    ADD BL,#1
-    JMPNC dng_ok
-    ADD BH,#1
-dng_ok:
+    INC BX
     LDA AL,[BX]
     STA [cloud_dy],AL
 
@@ -1440,10 +1018,9 @@ cpx_d:
 
 ; --- shadow_set_pix: enciende en `shadow` el bit de pix_lo/pix_hi/pix_mask -
 shadow_set_pix:
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -1489,22 +1066,15 @@ as_d:
 es_pared:
     MOV AL,CH
     SHL AL                  ; fila*2 = byte0 de esa fila dentro de `mapa`
-    MOV BL,#lo(mapa)
-    MOV BH,#hi(mapa)
-    ADD BL,AL
-    JMPNC ep_ok
-    ADD BH,#1
-ep_ok:
+    MOV BX,#mapa
+    ADD BX,AL
     CMP CL,#8
     JMPNC ep_hi
     LDA AL,[BX]             ; columna 0-7 -> byte0
     MOV DL,CL               ; bit = 7-x
     JMP ep_bit
 ep_hi:
-    ADD BL,#1
-    JMPNC ep_hi2
-    ADD BH,#1
-ep_hi2:
+    INC BX
     LDA AL,[BX]             ; columna 8-15 -> byte1
     MOV DL,CL
     SUB DL,#8               ; bit = 7-(x-8)
@@ -1535,15 +1105,11 @@ ep_libre:
 march_ray:
     LDA CL,[ray_ang]
     SHL CL                  ; offset = ang*2
-    MOV BL,#lo(ray_tbl)
-    MOV BH,#hi(ray_tbl)
-    CALL idx_ptr
+    MOV BX,#ray_tbl
+    ADD BX,CL
     LDA AL,[BX]
     STA [rdx],AL
-    ADD BL,#1
-    JMPNC mr_ok
-    ADD BH,#1
-mr_ok:
+    INC BX
     LDA AL,[BX]
     STA [rdy],AL
 
@@ -1607,16 +1173,14 @@ rc_hi:
     STA [nibble],AL
 rc_have:
     LDA CL,[dist]
-    MOV BL,#lo(height_tbl)
-    MOV BH,#hi(height_tbl)
-    CALL idx_ptr
+    MOV BX,#height_tbl
+    ADD BX,CL
     LDA AL,[BX]
     STA [wall_h],AL
 
     LDA CL,[dist]
-    MOV BL,#lo(shade_by_dist)
-    MOV BH,#hi(shade_by_dist)
-    CALL idx_ptr
+    MOV BX,#shade_by_dist
+    ADD BX,CL
     LDA AL,[BX]
     STA [shade_level],AL
 
@@ -1674,10 +1238,9 @@ calc_shadow_addr:
     SHR AL,#4
     STA [wrf_pag],AL
 
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[wrf_off]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[wrf_pag]
     ADD BH,AL
     RET
@@ -1701,9 +1264,8 @@ calc_shade_mask:
     JMPZ csm_hi
     ADD CL,#1                ; +1 si es el nibble bajo
 csm_hi:
-    MOV BL,#lo(shade_tbl)
-    MOV BH,#hi(shade_tbl)
-    CALL idx_ptr
+    MOV BX,#shade_tbl
+    ADD BX,CL
     LDA AL,[BX]
     STA [shade_mask],AL
     RET
@@ -1730,21 +1292,16 @@ idx_ptr:
 clr_shadow:
     MOV AL,#0
     STA [shadow],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV DL,#lo(shadow+1)
-    MOV DH,#hi(shadow+1)
-    MOV CL,#0xFF
-    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
     MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que cambie --------
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -1753,15 +1310,349 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1
     CMP BH,#4
     JMPNZ bl_l
+    RET
+
+; ============================================================================
+;  BOLITAS Y PROYECTILES EN PANTALLA: "dianas" de circulos concentricos
+;  (anillos de 2 px que alternan encendido/apagado), con el tamano segun la
+;  distancia. Se dibujan DESPUES de paredes y nubes, recortadas pixel a
+;  pixel contra la pared de cada columna (dist4_tbl): si una pared esta mas
+;  cerca, tapa esa parte de la diana. Un patron de anillos se distingue a la
+;  vez sobre paredes blancas, tramadas y sobre el fondo negro.
+; ============================================================================
+
+; --- dibuja_objetos: todas las bolitas activas (apoyadas en el suelo) y
+; todos los proyectiles en vuelo (a la altura de los ojos) -----------------
+dibuja_objetos:
+    MOV AL,#0
+    STA [ob_i],AL
+do_dot_l:
+    MOV BX,#dot_active
+    LDA CL,[ob_i]
+    ADD BX,CL
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPZ do_dot_next
+    MOV BX,#dot_x
+    ADD BX,CL
+    LDA AL,[BX]
+    STA [cur_dot_x],AL
+    MOV BX,#dot_y
+    ADD BX,CL
+    LDA AL,[BX]
+    STA [cur_dot_y],AL
+    CALL obj_project
+    LDA AL,[ov_vis]
+    CMP AL,#0
+    JMPZ do_dot_next
+    ; centro: apoyada en el suelo -- el borde de abajo de la pared a esa
+    ; distancia (32 + alto/2 - 1) menos el radio
+    LDA AL,[ov_q]
+    SHR AL,#2               ; baldosas
+    CMP AL,#21
+    JMPC do_dot_d
+    MOV AL,#20
+do_dot_d:
+    MOV CL,AL
+    MOV BX,#height_tbl
+    ADD BX,CL
+    LDA AL,[BX]
+    SHR AL
+    ADD AL,#31
+    LDA BL,[be_r]
+    SUB AL,BL
+    STA [be_cy],AL
+    CALL draw_bullseye
+do_dot_next:
+    LDA AL,[ob_i]
+    ADD AL,#1
+    STA [ob_i],AL
+    CMP AL,#DOT_COUNT
+    JMPNZ do_dot_l
+
+    MOV AL,#0
+    STA [ob_i],AL
+do_pr_l:
+    MOV BX,#proj_active
+    LDA CL,[ob_i]
+    ADD BX,CL
+    LDA AL,[BX]
+    CMP AL,#0
+    JMPZ do_pr_next
+    MOV BX,#proj_rx
+    ADD BX,CL
+    LDA AL,[BX]
+    STA [cur_dot_x],AL
+    MOV BX,#proj_ry
+    ADD BX,CL
+    LDA AL,[BX]
+    STA [cur_dot_y],AL
+    CALL obj_project
+    LDA AL,[ov_vis]
+    CMP AL,#0
+    JMPZ do_pr_next
+    MOV AL,#PROJ_ROW
+    STA [be_cy],AL
+    CALL draw_bullseye
+do_pr_next:
+    LDA AL,[ob_i]
+    ADD AL,#1
+    STA [ob_i],AL
+    CMP AL,#PROJ_COUNT
+    JMPNZ do_pr_l
+    RET
+
+; --- obj_project: objeto en (cur_dot_x,cur_dot_y) visto desde el jugador.
+; Sale [ov_vis] (1 = dentro de los 90 grados de vista), [be_cx] (columna de
+; pantalla 0..127), [ov_q] (distancia en cuartos de baldosa, misma escala
+; que dist4_tbl) y [be_r] (radio de la diana segun esa distancia).
+; Angulo de verdad (no por octantes): atan(menor/mayor) con MUL/DIV y la
+; tabla ATAN32, en unidades de 256 por vuelta (2 px de pantalla por unidad,
+; el doble de fino que la rejilla de 4 px de los rayos). --------------------
+obj_project:
+    CALL calc_dot_deltas     ; -> dot_adx/dot_ady/dot_xneg/dot_yneg
+    LDA AL,[dot_adx]
+    LDA BL,[dot_ady]
+    MOV AH,#1                ; 1 = domina X
+    CMP AL,BL
+    JMPNC op_ord
+    MOV AH,#0
+    MOV CL,AL                ; intercambia: AL = mayor, BL = menor
+    MOV AL,BL
+    MOV BL,CL
+op_ord:
+    STA [ov_mx],AL
+    STA [ov_mn],BL
+    STA [ov_xdom],AH
+    ; distancia ~ mayor + 3/8 menor, en cuartos de baldosa (/4)
+    MOV AL,BL
+    MOV BL,#3
+    MUL BL
+    SHR AL,#3
+    SHL AH,#5
+    OR  AL,AH                ; (menor*3) >> 3
+    SHR AL,#2
+    STA [ov_q],AL
+    LDA AL,[ov_mx]
+    SHR AL,#2
+    LDA BL,[ov_q]
+    ADD AL,BL
+    STA [ov_q],AL
+    ; radio segun las medias baldosas de distancia
+    SHR AL
+    CMP AL,#41
+    JMPC op_rd
+    MOV AL,#40
+op_rd:
+    MOV CL,AL
+    MOV BX,#OBJ_R
+    ADD BX,CL
+    LDA AL,[BX]
+    STA [be_r],AL
+    ; angulo dentro del cuadrante (0..64 = 0..90 grados)
+    LDA AL,[ov_mx]
+    CMP AL,#0
+    JMPZ op_a0
+    LDA AL,[ov_mn]
+    MOV BL,#32
+    MUL BL                   ; AX = menor*32 (<= 8160)
+    LDA BL,[ov_mx]
+    DIV BL                   ; AL = menor*32/mayor, 0..32 (cabe siempre)
+    MOV CL,AL
+    MOV BX,#ATAN32
+    ADD BX,CL
+    LDA AL,[BX]
+    LDA BL,[ov_xdom]
+    CMP BL,#0
+    JMPNZ op_quad
+    MOV BL,AL
+    MOV AL,#64
+    SUB AL,BL                ; domina Y: 90 grados menos el angulo
+    JMP op_quad
+op_a0:
+    MOV AL,#0
+op_quad:
+    ; cuadrante: x hacia el este, y hacia el sur (igual que ray_tbl)
+    MOV BL,AL
+    LDA AL,[dot_xneg]
+    CMP AL,#0
+    JMPZ op_xpos
+    LDA AL,[dot_yneg]
+    CMP AL,#0
+    JMPNZ op_q3
+    MOV AL,#128              ; oeste-sur: 180 - a
+    SUB AL,BL
+    JMP op_have
+op_q3:
+    MOV AL,#128              ; oeste-norte: 180 + a
+    ADD AL,BL
+    JMP op_have
+op_xpos:
+    LDA AL,[dot_yneg]
+    CMP AL,#0
+    JMPZ op_q1
+    MOV AL,#0                ; este-norte: -a
+    SUB AL,BL
+    JMP op_have
+op_q1:
+    MOV AL,BL                ; este-sur: a
+op_have:
+    ; relativo a donde mira el jugador ([facing] va en 128 por vuelta)
+    LDA BL,[facing]
+    SHL BL
+    SUB AL,BL
+    ADD AL,#32               ; -32..31 -> 0..63 si esta dentro de la vista
+    CMP AL,#64
+    JMPC op_vis
+    MOV AL,#0
+    STA [ov_vis],AL
+    RET
+op_vis:
+    SHL AL
+    ADD AL,#1
+    STA [be_cx],AL
+    MOV AL,#1
+    STA [ov_vis],AL
+    RET
+
+; --- draw_bullseye: diana de radio [be_r] (<= 15, OBJ_R llega a 12) centrada en ([be_cx],
+; [be_cy]) en `shadow`; anillos de 2 px desde el centro, encendido/apagado
+; alternos. Solo pinta los pixeles cuya columna tenga la pared MAS LEJOS
+; que el objeto ([ov_q] < dist4_tbl[x/4]) ---------------------------------
+draw_bullseye:
+    LDA AL,[be_cy]
+    LDA BL,[be_r]
+    SUB AL,BL
+    STA [be_y],AL
+    MOV AL,BL
+    SHL AL
+    ADD AL,#1
+    STA [be_n],AL            ; 2r+1 filas (y columnas)
+    STA [be_rows],AL
+be_row:
+    LDA AL,[be_y]
+    CMP AL,#64
+    JMPNC be_row_next        ; fuera de pantalla (o "negativa", da la vuelta)
+    ; |y - cy|
+    LDA BL,[be_cy]
+    SUB AL,BL
+    JMPNN be_ady_ok
+    NOT AL
+    ADD AL,#1
+be_ady_ok:
+    SHL AL,#4
+    STA [be_ady16],AL        ; fila de la tabla DIST16
+    ; base de la fila en shadow: shadow + y*16
+    LDA AL,[be_y]
+    MOV BL,#16
+    MUL BL
+    STA [be_rb_lo],AL
+    MOV AL,AH
+    STA [be_rb_hi],AL
+    ; columnas cx-r .. cx+r
+    LDA AL,[be_cx]
+    LDA BL,[be_r]
+    SUB AL,BL
+    STA [be_x],AL
+    LDA AL,[be_n]
+    STA [be_cols],AL
+be_px:
+    LDA AL,[be_x]
+    CMP AL,#128
+    JMPNC be_px_next
+    ; recorte contra la pared de esta columna
+    SHR AL,#2
+    MOV CL,AL
+    MOV BX,#dist4_tbl
+    ADD BX,CL
+    LDA BL,[BX]
+    LDA AL,[ov_q]
+    CMP AL,BL
+    JMPNC be_px_next         ; la pared esta delante
+    ; distancia al centro (tabla) -> dentro del circulo y en que anillo
+    LDA AL,[be_x]
+    LDA BL,[be_cx]
+    SUB AL,BL
+    JMPNN be_adx_ok
+    NOT AL
+    ADD AL,#1
+be_adx_ok:
+    LDA BL,[be_ady16]
+    ADD AL,BL
+    MOV CL,AL
+    MOV BX,#DIST16
+    ADD BX,CL
+    LDA AL,[BX]
+    LDA BL,[be_r]
+    CMP BL,AL
+    JMPC be_px_next          ; d > r: fuera del circulo
+    SHR AL
+    AND AL,#1
+    STA [be_col],AL          ; 0 = anillo encendido, 1 = apagado
+    ; byte y mascara del pixel
+    MOV BX,#shadow
+    LDA CL,[be_rb_lo]
+    ADD BX,CL
+    LDA CL,[be_rb_hi]
+    ADD BH,CL
+    LDA AL,[be_x]
+    SHR AL,#3
+    ADD BX,AL
+    LDA AL,[be_x]
+    AND AL,#7
+    MOV CL,AL
+    MOV DX,#MASK8
+    ADD DX,CL
+    LDA CL,[DX]
+    LDA AL,[BX]
+    LDA DL,[be_col]
+    CMP DL,#0
+    JMPNZ be_off
+    OR  AL,CL
+    STA [BX],AL
+    JMP be_px_next
+be_off:
+    NOT CL
+    AND AL,CL
+    STA [BX],AL
+be_px_next:
+    LDA AL,[be_x]
+    ADD AL,#1
+    STA [be_x],AL
+    LDA AL,[be_cols]
+    SUB AL,#1
+    STA [be_cols],AL
+    JMPNZ be_px
+be_row_next:
+    LDA AL,[be_y]
+    ADD AL,#1
+    STA [be_y],AL
+    LDA AL,[be_rows]
+    SUB AL,#1
+    STA [be_rows],AL
+    JMPNZ be_row
+    RET
+
+; --- show_hud: "DOTS LEFT nn" en la fila 0 de texto ------------------------
+show_hud:
+    MOV BX,#h_dots
+    MOV CX,#0x0000
+    CALL puts
+    LDA AL,[dot_remaining]
+    MOV AH,#0
+    MOV BL,#10
+    DIV BL
+    ADD AL,#'0'
+    OUT (0x040A),AL
+    MOV AL,AH
+    ADD AL,#'0'
+    OUT (0x040B),AL
     RET
 
 ; ============================================================================
@@ -1780,21 +1671,15 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
 
 ; --- clst:  borra la capa de texto (0x0400..0x04FF) -------------------------
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL
@@ -1859,8 +1744,6 @@ proj_dx:      .space 4
 proj_dy:      .space 4
 proj_steps:   .space 4
 proj_launch_facing: .space 4
-proj_visible: .space 4
-proj_ray_i:   .space 4
 proj_mask:    .space 1    ; escalar: buffer de dibujo transitorio (proyectil y nube)
 
 ; escalares de trabajo de dispara/actualiza_proyectil (no pueden vivir en
@@ -1886,9 +1769,6 @@ snd_freq_hi:  .space 1
 dot_x:        .space 10    ; DOT_COUNT -- literal, .space no admite constantes
 dot_y:        .space 10
 dot_active:   .space 10
-dot_vis:      .space 10
-dot_rayi:     .space 10
-dot_steps_arr: .space 10
 dot_remaining: .space 1
 dot_i:        .space 1    ; slot "actual" durante los bucles per-bolita
 
@@ -1901,11 +1781,6 @@ dot_xneg: .space 1   ; 1 = la bolita esta al oeste del jugador
 dot_yneg: .space 1   ; 1 = la bolita esta al norte del jugador
 dot_adx: .space 1
 dot_ady: .space 1
-dot_tmp2: .space 1
-dot_ang_s: .space 1
-dot_vis_s: .space 1
-dot_rayi_s: .space 1
-dot_steps_s: .space 1
 
 ; nivel actual: que mapa/bolitas hay cargados en RAM (ver load_level)
 map_idx: .space 1
@@ -1954,6 +1829,56 @@ pix_mask:   .space 1
 ; guardado durante ray_loop para que dibuja_nubes (que corre DESPUES de
 ; ese bucle) pueda decidir la oclusion de la columna central de cada nube
 y0_tbl:     .space 32
+dist4_tbl:  .space 32   ; distancia de pared de cada columna x4 (ver ray_loop)
+
+; --- dianas (dibuja_objetos/obj_project/draw_bullseye) -----------------------
+ob_i:       .space 1
+ov_vis:     .space 1
+ov_q:       .space 1
+ov_mx:      .space 1
+ov_mn:      .space 1
+ov_xdom:    .space 1
+be_cx:      .space 1
+be_cy:      .space 1
+be_r:       .space 1
+be_y:       .space 1
+be_x:       .space 1
+be_n:       .space 1
+be_rows:    .space 1
+be_cols:    .space 1
+be_ady16:   .space 1
+be_rb_lo:   .space 1
+be_rb_hi:   .space 1
+be_col:     .space 1
+h_dots:     .asciiz "DOTS LEFT "
+
+; radio de la diana segun la distancia en MEDIAS baldosas (0..40, para que
+; encoja de forma continua al alejarse, no a saltos): bastante mas
+; grande que la proporcion de las paredes, para que se vea bien de lejos
+OBJ_R:      .db 12, 12, 12, 12, 11, 10, 10, 10, 9, 8, 8, 8, 7, 6, 6, 6, 5, 5, 5, 4, 4
+            .db 4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2, 2, 2
+; atan(t/32) en unidades de 256 por vuelta, t = 0..32 (0..45 grados)
+ATAN32:     .db 0, 1, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19
+            .db 20, 21, 22, 23, 24, 25, 25, 26, 27, 28, 29, 29, 30, 31, 31, 32
+MASK8:      .db 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01
+; DIST16[dy*16+dx] = round(sqrt(dx*dx+dy*dy)), dx,dy = 0..15
+DIST16:
+    .db 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+    .db 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+    .db 2, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+    .db 3, 3, 4, 4, 5, 6, 7, 8, 9, 9, 10, 11, 12, 13, 14, 15
+    .db 4, 4, 4, 5, 6, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+    .db 5, 5, 5, 6, 6, 7, 8, 9, 9, 10, 11, 12, 13, 14, 15, 16
+    .db 6, 6, 6, 7, 7, 8, 8, 9, 10, 11, 12, 13, 13, 14, 15, 16
+    .db 7, 7, 7, 8, 8, 9, 9, 10, 11, 11, 12, 13, 14, 15, 16, 17
+    .db 8, 8, 8, 9, 9, 9, 10, 11, 11, 12, 13, 14, 14, 15, 16, 17
+    .db 9, 9, 9, 9, 10, 10, 11, 11, 12, 13, 13, 14, 15, 16, 17, 17
+    .db 10, 10, 10, 10, 11, 11, 12, 12, 13, 13, 14, 15, 16, 16, 17, 18
+    .db 11, 11, 11, 11, 12, 12, 13, 13, 14, 14, 15, 16, 16, 17, 18, 19
+    .db 12, 12, 12, 12, 13, 13, 13, 14, 14, 15, 16, 16, 17, 18, 18, 19
+    .db 13, 13, 13, 13, 14, 14, 14, 15, 15, 16, 16, 17, 18, 18, 19, 20
+    .db 14, 14, 14, 14, 15, 15, 15, 16, 16, 17, 17, 18, 18, 19, 20, 21
+    .db 15, 15, 15, 15, 16, 16, 16, 17, 17, 17, 18, 19, 19, 20, 21, 21
 
 h_title:    .asciiz "RAYCAST 3D"
 h_level_passed: .asciiz "LEVEL PASSED!"

@@ -23,6 +23,10 @@
 ; ============================================================================
 
     .slot 5
+
+    .name "STARS"
+
+    .category DEMO
     .org 0x0000
 
 NSTARS   = 16
@@ -56,10 +60,8 @@ start:
 init:
     CALL clsg
     CALL clst
-    MOV BL,#lo(h_title)
-    MOV BH,#hi(h_title)
-    MOV CL,#6
-    MOV CH,#0
+    MOV BX,#h_title
+    MOV CX,#0x0006
     CALL puts
     MOV AL,#0
     STA [g_exit],AL
@@ -80,8 +82,7 @@ ix_uok:
     JMPNC ix_lok
     MOV AL,#4
 ix_lok:
-    MOV BL,#lo(star_x)
-    MOV BH,#hi(star_x)
+    MOV BX,#star_x
     CALL star_ptr
     STA [BX],AL
 
@@ -96,14 +97,12 @@ iy_uok:
     JMPNC iy_lok
     MOV AL,#10
 iy_lok:
-    MOV BL,#lo(star_y)
-    MOV BH,#hi(star_y)
+    MOV BX,#star_y
     CALL star_ptr
     STA [BX],AL
 
     ; estado inicial = 0 (apagada)
-    MOV BL,#lo(star_state)
-    MOV BH,#hi(star_state)
+    MOV BX,#star_state
     CALL star_ptr
     MOV AL,#0
     STA [BX],AL
@@ -112,8 +111,7 @@ iy_lok:
     CALL rnd
     AND AL,#0x3F
     ADD AL,#4
-    MOV BL,#lo(star_timer)
-    MOV BH,#hi(star_timer)
+    MOV BX,#star_timer
     CALL star_ptr
     STA [BX],AL
 
@@ -179,15 +177,13 @@ main_x:
 ; ============================================================================
 do_star:
     LDA CL,[idx]
-    MOV BL,#lo(star_state)
-    MOV BH,#hi(star_state)
+    MOV BX,#star_state
     CALL star_ptr
     LDA AL,[BX]
     STA [st_state],AL
 
     LDA CL,[idx]
-    MOV BL,#lo(star_timer)
-    MOV BH,#hi(star_timer)
+    MOV BX,#star_timer
     CALL star_ptr
     LDA AL,[BX]
     STA [st_timer],AL
@@ -198,8 +194,7 @@ do_star:
     SUB AL,#1
     STA [st_timer],AL
     LDA CL,[idx]
-    MOV BL,#lo(star_timer)
-    MOV BH,#hi(star_timer)
+    MOV BX,#star_timer
     CALL star_ptr
     STA [BX],AL
     LDA AL,[st_state]
@@ -214,15 +209,13 @@ ds_ret:
 ds_transition:
     ; carga x,y de la estrella (para borrar/dibujar)
     LDA CL,[idx]
-    MOV BL,#lo(star_x)
-    MOV BH,#hi(star_x)
+    MOV BX,#star_x
     CALL star_ptr
     LDA AL,[BX]
     STA [px_x],AL
 
     LDA CL,[idx]
-    MOV BL,#lo(star_y)
-    MOV BH,#hi(star_y)
+    MOV BX,#star_y
     CALL star_ptr
     LDA AL,[BX]
     STA [px_y],AL
@@ -276,15 +269,13 @@ ds_settimer:
     STA [st_timer],AL
 
     LDA CL,[idx]
-    MOV BL,#lo(star_state)
-    MOV BH,#hi(star_state)
+    MOV BX,#star_state
     CALL star_ptr
     LDA AL,[st_state]
     STA [BX],AL
 
     LDA CL,[idx]
-    MOV BL,#lo(star_timer)
-    MOV BH,#hi(star_timer)
+    MOV BX,#star_timer
     CALL star_ptr
     LDA AL,[st_timer]
     STA [BX],AL
@@ -430,21 +421,15 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------
 clsg:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0
 cg_l:
     OUT (BX),AL
@@ -457,8 +442,7 @@ cg_l:
 
 ; --- clst:  borra la capa de texto (0x0400..0x04FF) -------------------------
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL

@@ -1,5 +1,7 @@
 .org 0x0000
 .slot 11
+.name "BLINK LED"
+.category UTILITY
 
 L0000:
     MOV AL,#0x01  

@@ -85,10 +85,10 @@ La **vista** es función pura de los dos interruptores — nada oculto:
 
 | SW_MODE | SW_STEP | Vista | Pantalla |
 |---|---|---|---|
-| EDIT | ▲ | `EditMem` | listado desensamblado + registros |
-| EDIT | ▼ | `EditPrg` | selector de slot + previsualización |
-| RUN | ▲ | `ExecPaso` | listado + registros, `*` en el PC |
-| RUN | ▼ | `ExecCont` | framebuffer del programa |
+| EDIT | SINGLE | `EditMem` | listado desensamblado + registros |
+| EDIT | CONTINUOUS | `EditPrg` | selector de slot + previsualización |
+| RUN | SINGLE | `ExecPaso` | listado + registros, `*` en el PC |
+| RUN | CONTINUOUS | `ExecCont` | framebuffer del programa |
 
 | Vista | ADDR girar | ADDR pulsar CORTA | ADDR pulsar LARGA | DATA girar | DATA pulsar |
 |---|---|---|---|---|---|
@@ -109,7 +109,7 @@ y en `specs.txt` §12; el detalle de `ExecPaso` en `specs.txt` §12 también.)
 - Cualquier (re)inicio de ejecución — entrar en RUN desde EDIT, o pulsación
   larga de ADDR en STEP — hace `cpu.reset()` (PC=0) + `resetPositions()` +
   borra el framebuffer y la capa de texto + `g_led=0` + `resetTimers()` +
-  `resetSound()`. Dentro de RUN, cambiar entre ▲ STEP y ▼ CONTINUOUS **no**
+  `resetSound()`. Dentro de RUN, cambiar entre SINGLE y CONTINUOUS **no**
   resetea: STEP congela donde esté y CONTINUOUS sigue desde ahí (para poder
   parar un programa, inspeccionarlo paso a paso y dejarlo seguir).
 - Volver a EDIT **no** resetea: se ve dónde quedó el PC.
@@ -222,7 +222,9 @@ periféricos va en `0x06xx`.
 `provisionPoll()` se sondea al principio de cada `loop()`, leyendo líneas del
 puerto serie (115200 baudios). Dos protocolos, simétricos:
 
-- **LOAD** (host → aparato, `provisionLoad()`): `"COMPI LOAD <slot> <len>\n"`
+- **LOAD** (host → aparato, `provisionLoad()`): `"COMPI LOAD <slot> <len>
+  [<cat> <nombre>]\n"` (categoría en decimal y nombre hasta fin de línea,
+  máx. 14 caracteres: van a la cabecera del slot, ver `include/storage.h`)
   + `<len>` bytes a trozos de `COMPI_CHUNK` (1024), con eco `"COMPI CHUNK
   <n>"` por bloque -- necesario porque la cola de RECEPCIÓN del USB-CDC
   nativo del C3 es de solo 256 B por defecto y descarta en silencio si se
@@ -233,6 +235,22 @@ puerto serie (115200 baudios). Dos protocolos, simétricos:
   con `flash.loadProgram()` en `g_provisionBuf` y lo manda de un tirón
   (`Serial.write()`, sin trocear: para ENVIAR no hay el problema de cola
   pequeña de LOAD).
+
+**Cuelgues del USB.** El driver HWCDC de arduino-esp32 se da por
+desconectado si el host deja de leer más de 100 ms (típicamente ModemManager
+sondeando el `/dev/ttyACM0` recién aparecido): desactiva la interrupción de
+"FIFO vacía" y su búfer de envío se queda lleno para siempre, así que desde
+ese momento todo `Serial.write()` se descarta en silencio y el host espera
+respuestas que no llegan. `usbTxRecover()` (main.cpp) se llama al recibir
+cada línea `COMPI ...` (prueba de que el host está ahí): vacía y rearma la
+transmisión. `usbWriteAll()` escribe a trozos de 256 B esperando a que haya
+sitio, en vez de un `Serial.write()` grande que podía perder la cola. En el
+PC conviene además que ModemManager no toque el aparato:
+
+```
+# /etc/udev/rules.d/99-compi.rules
+ATTRS{idVendor}=="303a", ENV{ID_MM_DEVICE_IGNORE}="1", MODE="0660", GROUP="dialout"
+```
 
 `g_provisionBuf` es un búfer aparte de `cpu.ram()` a propósito: antes,
 LOAD/DUMP reutilizaban la RAM de la CPU emulada como scratch, así que mandar
@@ -267,15 +285,9 @@ Trabaja sobre un buffer plano `(mem, memLen)`; direcciones `>= memLen` leen 0.
   girar/pulsar en `EditMem` y `ExecPaso` (`stepCursorByInstr` en `main.cpp`).
 - Para la RAM: `(cpu.ram(), 65536)`. Para la previsualización de un slot:
   `(g_preview, PREVIEW_BYTES)`.
-- Las 7 ops de la ALU (`MOV ADD SUB CMP AND OR XOR`) tienen forma `reg,src`
-  (`OP_EXT`, `0xF8+op`) y `reg,#imm` (`OP_ALUI`, `0xA0+op`); las que además
-  operan con memoria son familias 5–9. `MOV reg,#imm` es `OP_LDI` (más corto).
-  `MUL`/`DIV`/`INC`/`DEC`/`ADD`+`SUB` de 16 bits/`MOVB`/`MOVW`/`JMPV`/
-  `JMPNV`/`CALLV`/`CALLNV`/`MOV reg16,#imm16` usan las familias 27–30
-  (antes reservadas) y el hueco `cc=7` de `JMP`/`CALL` — ver
-  [`isa.md`](isa.md) §4d/§5 (`MOV reg16,#imm16` es la única instrucción de
-  más de 3 bytes de toda la ISA: LEN 4). Solo queda reservado de verdad el
-  subop 7 de la familia 30 → `DB 0xXX`.
+- La salida usa la misma sintaxis que `tools/casm.py` (ISA versión 2, ver
+  [`isa.md`](isa.md) §3–§6), así que se puede reensamblar tal cual. Las
+  familias 30–31 y las sub-operaciones reservadas salen como `DB 0xXX`.
 
 ---
 
@@ -287,18 +299,19 @@ Trabaja sobre un buffer plano, igual que `disasm.cpp`, y vive en `ui.compose`.
 Sin dependencias de hardware ni de `cpu`/`disasm` -- por eso `insertByteAt`/
 `deleteByteAt` (que sí necesitan `cpu.sp()`) viven en `main.cpp`, no aquí.
 
-- `ComposeState`: `verb, mode, reg, dst, src, cond, imm, addr16, ptr, shift,
-  step`. `mode` distingue las formas de un verbo con varias (p. ej. LDA/STA/
-  IN/OUT: `[addr16]` inmediato vs `[AX|BX|CX|DX]` indirecto por `ptr`;
-  SHR/SHL: 1 bit vs `reg,#N` con `N` en `shift`).
+- `ComposeState`: `verb, mode, reg, dst, src, cond, imm, addr16, ptr, ptr2,
+  shift, step`. Hay 30 verbos (ISA versión 2, ver [`isa.md`](isa.md) §1).
+  `mode` elige entre las formas de un verbo, sacadas de la tabla `kVerbs`
+  (p. ej. `ADD`: `reg,reg` · `reg,#imm` · `reg,[dir]` · `reg,[r16]` ·
+  `r16,reg8` · `r16,r16` · `r16,#imm8`). `ptr` es el par puntero o destino
+  de 16 bits, y `ptr2` el par fuente en las formas `r16,r16`.
 - `fieldAt(verb, mode, step)` → qué campo toca ahora (`Verb/Mode/Cond/Reg/
-  Dst/Src/Imm/Lo/Hi/Ptr/Shift/Done`); `lastStep(verb, mode)` → último paso
-  con campo real (pulsar DATA ahí avanza la dirección en vez de pasar de
-  campo).
+  Dst/Src/Imm/Lo/Hi/Ptr/Shift/Ptr2/Done`); `lastStep(verb, mode)` → último
+  paso con campo real (pulsar DATA ahí avanza la dirección en vez de pasar
+  de campo).
 - `applyDelta(st, delta)` → gira DATA: cambia el campo activo, con wrap. En
-  el campo Verb, el wrap recorre `kVerbAlpha` -- ORDEN ALFABÉTICO por nombre
-  (`verbName()`), no el orden interno del enum `Verb` (que agrupa por
-  familia de opcode). Cambiar el verbo reinicia los demás campos a 0.
+  el campo Verb recorre los verbos en ORDEN ALFABÉTICO por nombre.
+  Cambiar el verbo reinicia los demás campos a 0.
 - `verbName(verb)` → nombre corto ("NOP", "MOV"...) para la cabecera de
   `EditMem` mientras se elige el verbo (con el tamaño ya ensamblado al lado,
   ver `display.cpp`).

@@ -5,10 +5,10 @@
 namespace compi {
 
 // Las 4 vistas, derivadas de los dos interruptores:
-//   SW_MODO=EDITAR + SW_PASO=▲  -> EditMem
-//   SW_MODO=EDITAR + SW_PASO=▼  -> EditPrg
-//   SW_MODO=EJECUTAR + SW_PASO=▲ -> ExecPaso
-//   SW_MODO=EJECUTAR + SW_PASO=▼ -> ExecCont
+//   SW_MODO=EDITAR + SW_PASO=SINGLE     -> EditMem
+//   SW_MODO=EDITAR + SW_PASO=CONTINUOUS -> EditPrg
+//   SW_MODO=EJECUTAR + SW_PASO=SINGLE     -> ExecPaso
+//   SW_MODO=EJECUTAR + SW_PASO=CONTINUOUS -> ExecCont
 enum class View : uint8_t { EditMem, EditPrg, ExecPaso, ExecCont };
 
 // Nuevo: borra la RAM (todo a NOP) para empezar un programa desde cero,

@@ -47,6 +47,10 @@
 ; ============================================================================
 
     .slot 1
+
+    .name "CLOCK"
+
+    .category PROGRAM
     .org 0x0000
 
 CX = 64          ; centro de la esfera
@@ -249,15 +253,12 @@ nr_done:
 ;  div12:  AL = AL / 12  (entrada 0..59, division entera por resta repetida)
 ; ============================================================================
 div12:
-    MOV DL,#0
-d12_l:
-    CMP AL,#12
-    JMPC d12_d
-    SUB AL,#12
-    ADD DL,#1
-    JMP d12_l
-d12_d:
-    MOV AL,DL
+    ; DIV por hardware (docs/isa.md SS4d) en vez de restar 12 en bucle --
+    ; DL sigue saliendo con el cociente, como antes.
+    MOV AH,#0
+    MOV DL,#12
+    DIV DL
+    MOV DL,AL
     RET
 
 ; ============================================================================
@@ -266,9 +267,8 @@ d12_d:
 draw_hands:
     ; hora: indice = HOUR5[hh] + mm/12
     LDA CL,[hh]
-    MOV BL,#lo(HOUR5)
-    MOV BH,#hi(HOUR5)
-    CALL idx_ptr
+    MOV BX,#HOUR5
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp_idx],AL
     LDA AL,[mm]
@@ -321,9 +321,8 @@ hand_point:
     LDA AL,[hp_len]
     STA [sm_a],AL
     LDA CL,[hp_idx]
-    MOV BL,#lo(sine60)
-    MOV BH,#hi(sine60)
-    CALL idx_ptr
+    MOV BX,#sine60
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -339,9 +338,8 @@ hp_cos_ok:
     LDA AL,[hp_len]
     STA [sm_a],AL
     LDA CL,[tmp_idx]
-    MOV BL,#lo(sine60)
-    MOV BH,#hi(sine60)
-    CALL idx_ptr
+    MOV BX,#sine60
+    ADD BX,CL
     LDA AL,[BX]
     STA [sm_b],AL
     CALL smul64
@@ -366,9 +364,8 @@ draw_numerals:
 dn_l:
     ; centro del numeral = hand_point(NUM_IDX[ni], LEN_NUM)
     LDA CL,[ni]
-    MOV BL,#lo(NUM_IDX)
-    MOV BH,#hi(NUM_IDX)
-    CALL idx_ptr
+    MOV BX,#NUM_IDX
+    ADD BX,CL
     LDA AL,[BX]
     STA [hp_idx],AL
     MOV AL,#LEN_NUM
@@ -381,23 +378,20 @@ dn_l:
 
     ; cuantos segmentos tiene este numeral
     LDA CL,[ni]
-    MOV BL,#lo(NUM_CNT)
-    MOV BH,#hi(NUM_CNT)
-    CALL idx_ptr
+    MOV BX,#NUM_CNT
+    ADD BX,CL
     LDA AL,[BX]
     STA [seg_cnt],AL
 
     ; puntero al primer segmento: NUM_SEG + NUM_OFF[ni]
     LDA CL,[ni]
-    MOV BL,#lo(NUM_OFF)
-    MOV BH,#hi(NUM_OFF)
-    CALL idx_ptr
+    MOV BX,#NUM_OFF
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp_idx],AL
     LDA CL,[tmp_idx]
-    MOV BL,#lo(NUM_SEG)
-    MOV BH,#hi(NUM_SEG)
-    CALL idx_ptr
+    MOV BX,#NUM_SEG
+    ADD BX,CL
     MOV AL,BL
     STA [seg_ptr_lo],AL
     MOV AL,BH
@@ -420,8 +414,7 @@ dn_seg_l:
 
     LDA BL,[seg_ptr_lo]
     LDA BH,[seg_ptr_hi]
-    MOV CL,#1
-    CALL idx_ptr
+    INC BX
     LDA AL,[BX]              ; y0 local
     LDA CL,[anchor_y]
     ADD AL,CL
@@ -430,7 +423,7 @@ dn_seg_l:
     LDA BL,[seg_ptr_lo]
     LDA BH,[seg_ptr_hi]
     MOV CL,#2
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]              ; x1 local
     LDA CL,[anchor_x]
     ADD AL,CL
@@ -439,7 +432,7 @@ dn_seg_l:
     LDA BL,[seg_ptr_lo]
     LDA BH,[seg_ptr_hi]
     MOV CL,#3
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]              ; y1 local
     LDA CL,[anchor_y]
     ADD AL,CL
@@ -450,7 +443,7 @@ dn_seg_l:
     LDA BL,[seg_ptr_lo]
     LDA BH,[seg_ptr_hi]
     MOV CL,#4
-    CALL idx_ptr
+    ADD BX,CL
     MOV AL,BL
     STA [seg_ptr_lo],AL
     MOV AL,BH
@@ -506,34 +499,13 @@ sm_bpos:
     LDA AL,[sm_a]
     LDA BL,[sm_b]
     MUL BL
+    ; /64 de AX sin bucle: (AX >> 6) & 0xFF = (AL >> 6) | (AH << 2). Antes
+    ; eran 6 vueltas desplazando sm_hi/sm_lo bit a bit con acarreo a mano
+    ; (~80 instrucciones por llamada); ahora 3 con SHR/SHL reg,#N.
+    SHR AL,#6
+    SHL AH,#2
+    OR  AL,AH
     STA [sm_lo],AL
-    MOV AL,AH
-    STA [sm_hi],AL
-
-    MOV AL,#6
-    STA [sm_cnt],AL
-sm_shr_loop:
-    LDA AL,[sm_hi]
-    SHR AL
-    STA [sm_hi],AL
-    JMPNC sm_shr_nocarry
-    MOV AL,#0x80
-    STA [sm_carry],AL
-    JMP sm_shr_carrydone
-sm_shr_nocarry:
-    MOV AL,#0
-    STA [sm_carry],AL
-sm_shr_carrydone:
-    LDA AL,[sm_lo]
-    SHR AL
-    LDA BL,[sm_carry]
-    OR AL,BL
-    STA [sm_lo],AL
-
-    LDA AL,[sm_cnt]
-    SUB AL,#1
-    STA [sm_cnt],AL
-    JMPNZ sm_shr_loop
 
     LDA AL,[sm_neg]
     CMP AL,#0
@@ -718,8 +690,7 @@ cpx_d:
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------
 clsg:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0
 cg_l:
     OUT (BX),AL
@@ -775,8 +746,6 @@ sm_b:       .space 1
 sm_neg:     .space 1
 sm_hi:      .space 1
 sm_lo:      .space 1
-sm_carry:   .space 1
-sm_cnt:     .space 1
 
 ln_x0:      .space 1
 ln_y0:      .space 1

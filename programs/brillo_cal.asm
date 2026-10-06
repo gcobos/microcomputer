@@ -24,6 +24,10 @@
 ; ============================================================================
 
     .slot 21
+
+    .name "BRIGHTNESS CAL"
+
+    .category UTILITY
     .org 0x0000
 
 ; --- paso del brillo por detente de DATOS (unidades de PORT_CFG_BRIGHTNESS) -
@@ -49,20 +53,14 @@ start:
 
     CALL fill_white              ; pantalla entera encendida = el medidor
     CALL clst
-    MOV BL,#lo(s_title)
-    MOV BH,#hi(s_title)
-    MOV CL,#2
-    MOV CH,#0
+    MOV BX,#s_title
+    MOV CX,#0x0002
     CALL puts
-    MOV BL,#lo(s_help1)
-    MOV BH,#hi(s_help1)
-    MOV CL,#1
-    MOV CH,#5
+    MOV BX,#s_help1
+    MOV CX,#0x0501
     CALL puts
-    MOV BL,#lo(s_help2)
-    MOV BH,#hi(s_help2)
-    MOV CL,#1
-    MOV CH,#6
+    MOV BX,#s_help2
+    MOV CX,#0x0601
     CALL puts
 
     MOV AL,#255
@@ -162,60 +160,52 @@ sd_sat:
 
 ; --- show_val: escribe "VALUE nnn" en la fila 3 con el valor de [val] ------
 show_val:
-    MOV BL,#lo(s_val)
-    MOV BH,#hi(s_val)
-    MOV CL,#3
-    MOV CH,#3
+    MOV BX,#s_val
+    MOV CX,#0x0303
     CALL puts
 
     LDA AL,[val]
     STA [pv],AL
-    MOV DL,#0
-sv_h:
     LDA AL,[pv]
-    CMP AL,#100
-    JMPC sv_hd
-    SUB AL,#100
-    STA [pv],AL
-    ADD DL,#1
-    JMP sv_h
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#100
+    DIV DL                  ; DL = cociente, resto -> [pv]
+    STA [pv],AH
+    MOV DL,AL
+    POP AH
 sv_hd:
     MOV AL,DL
     ADD AL,#'0'
     MOV BL,AL
-    MOV CL,#9
-    MOV CH,#3
+    MOV CX,#0x0309
     CALL putc
 
-    MOV DL,#0
-sv_t:
     LDA AL,[pv]
-    CMP AL,#10
-    JMPC sv_td
-    SUB AL,#10
-    STA [pv],AL
-    ADD DL,#1
-    JMP sv_t
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#10
+    DIV DL                  ; DL = cociente, resto -> [pv]
+    STA [pv],AH
+    MOV DL,AL
+    POP AH
 sv_td:
     MOV AL,DL
     ADD AL,#'0'
     MOV BL,AL
-    MOV CL,#10
-    MOV CH,#3
+    MOV CX,#0x030A
     CALL putc
 
     LDA AL,[pv]
     ADD AL,#'0'
     MOV BL,AL
-    MOV CL,#11
-    MOV CH,#3
+    MOV CX,#0x030B
     CALL putc
     RET
 
 ; --- fill_white: pone a 1 los 1024 bytes del framebuffer (pantalla blanca) -
 fill_white:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0xFF
 fw_l:
     OUT (BX),AL
@@ -228,8 +218,7 @@ fw_l:
 
 ; --- clst: borra la capa de texto (0x0400..0x04FF) -------------------------
 clst:
-    MOV DL,#0
-    MOV DH,#0x04
+    MOV DX,#0x0400
     MOV AL,#0
 clst_l:
     OUT (DX),AL
@@ -259,13 +248,8 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET

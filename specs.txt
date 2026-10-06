@@ -42,7 +42,10 @@ direcciones de 16 bits (no imita a ningún micro real). Corre sobre un ESP32-C3.
 - Una flash SPI donde se guardan/cargan programas (bloques de memoria).
 
 CONTROLES: 2 encoders con pulsador (ADDR, DATA) + 2 interruptores
-(SW_MODE, SW_STEP). Nada más, sin botones sueltos -- el hardware en sí (la
+deslizantes (SW_MODE, SW_STEP), horizontales, cada uno encima de un encoder:
+"EDIT <-SW_MODE-> RUN" sobre ADDR y "SINGLE <-SW_STEP-> CONTINUOUS" sobre
+DATA (además del interruptor de encendido ON/OFF, deslizante vertical, en
+la parte de abajo de la caja; ver docs/panel.svg). Nada más, sin botones sueltos -- el hardware en sí (la
 clase PushButton, panel.h) solo distingue pulsación/nivel, sin pulsación
 larga propia; la distinción corta/larga que usan EditMem (insertar/borrar,
 ADDR) y ExecPaso (ejecutar hasta aquí/resetear, ADDR) se construye por
@@ -50,10 +53,10 @@ encima en main.cpp cronometrando ese mismo nivel, ver sección 12.
 
 CUATRO VISTAS, derivadas de los dos interruptores (ver sección 12):
 
-  SW_MODE=EDIT + SW_STEP=▲  ->  EDIT MEMORY   (teclear el programa)
-  SW_MODE=EDIT + SW_STEP=▼  ->  EDIT PROGRAMS (elegir slot, cargar/guardar)
-  SW_MODE=RUN  + SW_STEP=▲  ->  SINGLE STEP   (1 instrucción por pulsación)
-  SW_MODE=RUN  + SW_STEP=▼  ->  CONTINUOUS    (corre; pantalla = programa)
+  SW_MODE=EDIT + SW_STEP=SINGLE      ->  EDIT MEMORY   (teclear el programa)
+  SW_MODE=EDIT + SW_STEP=CONTINUOUS  ->  EDIT PROGRAMS (elegir slot, cargar/guardar)
+  SW_MODE=RUN  + SW_STEP=SINGLE      ->  SINGLE STEP   (1 instrucción por pulsación)
+  SW_MODE=RUN  + SW_STEP=CONTINUOUS  ->  CONTINUOUS    (corre; pantalla = programa)
 
 En RUN el programa manda: lee encoders y pulsadores con IN, y en CONTINUOUS
 dibuja en la pantalla (gráficos y/o texto, por puertos). Los programas SIEMPRE
@@ -148,149 +151,130 @@ REGISTROS
   son estado de la máquina en igualdad de condiciones que AX..DX y se
   visualizan en la pantalla (sección 14).
 
-CODIFICACIÓN DEL OPCODE (1 byte)
-  bits 7..3 = familia (0..31)      bits 2..0 = registro o condición
-  makeOpcode(familia, r) = (familia << 3) | (r & 7)
+CODIFICACIÓN DEL OPCODE (1 byte) — ISA versión 2
+  bits 7..3 = familia (0..31)      bits 2..0 = "bajo3"
+  makeOpcode(familia, bajo3) = (familia << 3) | (bajo3 & 7)
+  Según la familia, bajo3 es un registro de 8 bits, una condición de salto o
+  una sub-operación. Las operaciones de la ALU van en un byte de operando
+  aparte (AluOp), así las 9 caben en las 4 formas de direccionamiento sin
+  gastar una familia por operación. 0x00 = NOP (RAM a cero = programa vacío).
+  Los .bin de la ISA anterior NO son compatibles: hay que reensamblarlos.
 
 FLAGS (byte)
   bit0 C (acarreo)   bit1 Z (cero)   bit2 N (negativo, bit7)   bit3 V (overflow)
 
-FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi)
+FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi;
+                     r = reg8 en bajo3; r16 = par 0 AX 1 BX 2 CX 3 DX)
 
-  0  NOP    LEN 1   no hace nada
-  1  HALT   LEN 1   detiene la CPU (halted = true)
-  2  LDI    LEN 2   reg, imm8      reg = imm8         (forma corta de MOV reg,#imm)
-  3  LDA    LEN 3   reg, [addr16]  reg = mem[addr]    (= MOV reg <- memoria)
-  4  STA    LEN 3   [addr16], reg  mem[addr] = reg    (= MOV memoria <- reg)
-  5  ADD    LEN 3   reg, [addr16]  reg = reg + mem[addr]
-  6  SUB    LEN 3   reg, [addr16]  reg = reg - mem[addr]
-  7  AND    LEN 3   reg, [addr16]  reg = reg & mem[addr]
-  8  OR     LEN 3   reg, [addr16]  reg = reg | mem[addr]
-  9  XOR    LEN 3   reg, [addr16]  reg = reg ^ mem[addr]
-  10 NOT    LEN 1   reg            reg = ~reg              (flags lógicos)
-  11 SHR    LEN 1   reg            reg >>= 1
-                    C = bit0 saliente; V = bit7 original; Z; N
-  12 SHL    LEN 1   reg            reg <<= 1
-                    C = bit7 saliente; N = bit7 resultado; V = (C != N); Z
-  13 IN     LEN 3   reg, (port16)  reg = port_read(port16)    (ver sección 8)
-  14 OUT    LEN 3   (port16), reg  port_write(port16, reg)    (ver sección 8)
-             port16 y addr16 son little-endian (lo, hi). El espacio de puertos
-             es de 16 bits (65536), independiente de la RAM.
-  15 PUSH   LEN 1   reg            sp--; mem[sp] = reg
-  16 POP    LEN 1   reg            reg = mem[sp]; sp++
-  17 JMP    LEN 3   <cond>, addr16 si cond: pc = addr16   (SIEMPRE consume 3 B)
-  18 CALL   LEN 3   <cond>, addr16 si cond: push(pc_hi); push(pc_lo); pc = addr16
-  19 RET    LEN 1                  lo = pop; hi = pop; pc = lo | (hi<<8)
-  20 ALUI   LEN 3   <op> reg,#imm8  op en bits 2..0 del opcode (AluOp);
-                                    operando: [reg (1 byte)] [imm8 (1 byte)]
-  21 LDAR   LEN 2   reg, [reg16]   reg = mem[reg16]      (LDA indirecto; sección 4b)
-  22 STAR   LEN 2   [reg16], reg   mem[reg16] = reg      (STA indirecto)
-  23 INR    LEN 2   reg, (reg16)   reg = port_read(reg16) (IN indirecto)
-  24 OUTR   LEN 2   (reg16), reg   port_write(reg16, reg) (OUT indirecto)
-             reg16 = par de 16 bits en el byte de operando (2 bits bajos):
-             0=AX 1=BX 2=CX 3=DX (Reg16 en isa.h). El mnemónico se sigue
-             tecleando/desensamblando como LDA/STA/IN/OUT (es el modo 1 de
-             ese verbo en el selector del panel, ver sección 12); LDAR/STAR/
-             INR/OUTR son solo los nombres internos de la familia de opcode.
-  25 SHRN   LEN 2   reg, #N (1..8) reg >>= N   ; byte2 = N-1 (3 bits bajos)
-                    C = bit que sale en el ULTIMO de los N pasos
-                    V = bit7 de ANTES de esta instruccion (no de cada paso
-                        interno -- es una sola instruccion aunque desplace
-                        N bits); Z, N del resultado final
-                    Mismo resultado/flags que repetir "SHR reg" N veces.
-  26 SHLN   LEN 2   reg, #N (1..8) reg <<= N   ; byte2 = N-1 (3 bits bajos)
-                    C = bit que sale en el ULTIMO de los N pasos
-                    N = bit7 del resultado final; V = (C != N); Z
-                    Mismo resultado/flags que repetir "SHL reg" N veces.
-  27 MUL    LEN 1   reg            AX = AL * reg           (sin signo, 8x8->16)
-                    Z,N del resultado de 16 bits; C=V=1 si el producto no
-                    cupo en 8 bits (AH != 0) -- si no, C=V=0.
-  28 DIV    LEN 1   reg            AL=AX/reg  AH=AX mod reg  (sin signo)
-                    Sin interrupciones/excepciones en esta CPU: dividir
-                    entre 0, O UN COCIENTE que no quepa en 8 bits (AX/reg >
-                    255), saturan AL=AH=0xFF con C=V=1. Si no: C=V=0, Z/N
-                    del cociente (AL).
-  29 INCDEC16 LEN 1 reg16          reg16 += 1 (dir=0) / reg16 -= 1 (dir=1)
-                    opcode = 29*8 + dir*4+reg16 (reg16: 0=AX 1=BX 2=CX 3=DX).
-                    Vuelta 0xFFFF<->0. NO toca flags (aritmetica de punteros,
-                    no de programa). Mnemonicos: INC reg16 / DEC reg16.
-  30 EXT2   LEN variable -- subop en bits 2..0 del opcode (mezcla longitudes
-             a proposito, unica familia que lo hace):
-     subop 0  ADD dst16,src8  LEN 2   dst16 += src8 (sin signo, sin flags)
-     subop 1  SUB dst16,src8  LEN 2   dst16 -= src8 (sin signo, sin flags)
-             operando de 1 byte: [dst16(2) << 3 | src8(3)]. MISMO mnemonico
-             ADD/SUB de siempre -- el ensamblador detecta la forma de 16
-             bits por que el destino es un nombre de registro de 16 bits
-             (AX/BX/CX/DX), no hace falta un mnemonico aparte. Reemplazo
-             directo de "BL+=CL con acarreo a mano a BH" (idx_ptr).
-     subop 2  MOVB             LEN 1   copia CX bytes [BX]->[DX]
-     subop 3  MOVW             LEN 1   copia CX PALABRAS de 16 bits [BX]->[DX]
-             sin operando: BX=origen, DX=destino, CX=cuenta (implicitos).
-             Al terminar: BX+=copiado, DX+=copiado, CX=0. Copia siempre
-             hacia adelante (no es memmove-seguro si los rangos se
-             solapan con DX<BX). Sin flags.
-     subop 4  JMPNV addr16     LEN 3   si V=0: pc = addr16
-     subop 5  CALLNV addr16    LEN 3   si V=0: push(pc_hi); push(pc_lo); pc=addr16
-             NV no cabe en el campo de 3 bits de JMP/CALL (ya las 8
-             combinaciones usadas, ver CONDICIONES abajo) -- se codifican
-             aparte, aqui, pero el selector del panel los ofrece igual que
-             el resto: un 9o valor del campo COND bajo el verbo JMP/CALL
-             de siempre, no un verbo aparte (ver seccion 12).
-     subop 6  MOV reg16,#imm16 LEN 4  reg16 = imm16 ; operando: [reg16(2)|
-             --(6)][imm16 lo][imm16 hi]. MISMO mnemonico MOV de siempre,
-             detectado por que el destino es AX/BX/CX/DX -- reemplaza los
-             dos "MOV reg,#imm8" (uno por mitad) que hacia falta antes de
-             un MOVB/MOVW para montar BX/DX. Sin flags. UNICA instruccion
-             de toda la ISA que ocupa mas de 3 bytes -- al insertar a mano
-             en el panel, el margen de "3 NOP" que basta para cualquier
-             otra instruccion no basta para esta: hacen falta 4.
-     subop 7  reservado: se ejecuta como NOP (LEN 1)
-  31 EXT    LEN 2   <op> dst,src    op en bits 2..0 del opcode (AluOp);
-                                    operando de 1 byte:  [ -- | dst(3) | src(3) ]
+  0  SYS    LEN 1   bajo3 = sub-op:
+                      0 NOP   1 HALT   2 RET (lo=pop; hi=pop; pc=hi:lo)
+                      3 MOVB  copia CX bytes [BX]->[DX] hacia adelante
+                      4 MOVW  igual, CX palabras de 16 bits
+                      5 MOVBR copia CX bytes hacia ATRÁS: BX y DX apuntan al
+                              ÚLTIMO byte de cada bloque (seguro si DX > BX
+                              y se solapan, p. ej. abrir hueco en un texto)
+                      Al terminar CX=0 y BX/DX avanzan (o retroceden) lo
+                      copiado. 6, 7: reservados (NOP). Sin flags.
+  1  LDI    LEN 2   MOV r,#imm8          [op][imm]
+  2  LDA    LEN 3   LDA r,[addr16]       [op][lo][hi]     r = mem[addr]
+  3  STA    LEN 3   STA [addr16],r       [op][lo][hi]     mem[addr] = r
+  4  LDAR   LEN 2   LDA r,[r16]          [op][r16]        r = mem[r16]
+  5  STAR   LEN 2   STA [r16],r          [op][r16]
+  6  IN     LEN 3   IN  r,(port16)       [op][lo][hi]     (ver sección 8)
+  7  OUT    LEN 3   OUT (port16),r       [op][lo][hi]
+  8  INR    LEN 2   IN  r,(r16)          [op][r16]
+  9  OUTR   LEN 2   OUT (r16),r          [op][r16]
+             El espacio de puertos es de 16 bits, independiente de la RAM.
+             LDAR/STAR/INR/OUTR son nombres internos: en ensamblador y en el
+             panel se escriben LDA/STA/IN/OUT con un par entre corchetes.
+  10 ALURR  LEN 2   <alu> r,src          [op][alu<<3 | src]
+  11 ALUI   LEN 3   <alu> r,#imm8        [op][alu][imm]
+  12 ALUM   LEN 4   <alu> r,[addr16]     [op][alu][lo][hi]
+  13 ALUP   LEN 2   <alu> r,[r16]        [op][alu<<2 | r16]
+  14 NOT    LEN 1   NOT r                r = ~r (flags lógicos)
+  15 SHR    LEN 2   SHR r,#N (N=1..8)    [op][N-1]   r >>= N
+                    C = último bit que sale; V = bit7 de ANTES; Z, N
+  16 SHL    LEN 2   SHL r,#N             [op][N-1]   r <<= N
+                    C = último bit que sale; N = bit7 final; V = (C != N); Z
+                    ("SHR r" / "SHL r" sin #N = #1)
+  17 MUL    LEN 1   MUL r                AX = AL * r (sin signo, 8x8->16)
+                    Z,N del resultado de 16 bits; C=V=1 si AH != 0.
+  18 DIV    LEN 1   DIV r                AL = AX / r, AH = AX mod r
+                    Entre 0, o cociente > 255: AL=AH=0xFF con C=V=1.
+                    Si no: C=V=0, Z/N del cociente.
+  19 INC    LEN 1   INC r (8 bits)       Z, N, V (V si pasa de 0x7F a 0x80);
+  20 DEC    LEN 1   DEC r (8 bits)       C NO cambia (contar vueltas de un
+                                         bucle sin perder un acarreo).
+  21 PUSH   LEN 1   PUSH r               sp--; mem[sp] = r
+  22 POP    LEN 1   POP r                r = mem[sp]; sp++
+  23 JMP    LEN 3   JMP<cc> addr16       si cond: pc = addr16 (consume 3 B)
+  24 CALL   LEN 3   CALL<cc> addr16      si cond: push(pc_hi); push(pc_lo);
+                                         pc = addr16
+  25 JX     bajo3 = sub-op:
+                      0 JMPNV addr16   LEN 3   salta si V=0
+                      1 CALLNV addr16  LEN 3
+                      2 JMP r16        LEN 2   [op][r16]   pc = r16
+                      3 CALL r16       LEN 2   (tablas de saltos)
+  26 R16    LEN 2   bajo3 = sub-op, operando [dst16<<3 | src]:
+                      0 MOV r16,r16    1 ADD r16,r16    2 SUB r16,r16
+                      3 CMP r16,r16    (flags de la resta de 16 bits)
+                      4 ADD r16,r8     5 SUB r16,r8     (r8 sin signo)
+  27 R16I   bajo3 = sub-op, byte 1 = r16:
+                      0 MOV r16,#imm16 LEN 4   [op][r16][lo][hi]
+                      1 ADD r16,#imm8  LEN 3   [op][r16][imm]
+                      2 SUB r16,#imm8  LEN 3
+                      3 CMP r16,#imm16 LEN 4   (flags de 16 bits)
+  28 INCDEC16 LEN 1 bajo3 = dec<<2 | r16 : INC r16 / DEC r16 (vuelta
+                    0xFFFF<->0)
+  29 PUSHPOP16 LEN 1 bajo3 = pop<<2 | r16 : PUSH r16 (primero el byte alto)
+                    / POP r16
+  30, 31  libres: se ejecutan como NOP de 1 byte.
 
-CONDICIONES (bits 2..0 de JMP / CALL)
+  El ensamblador elige la familia por la forma de los operandos: el mismo
+  mnemónico ADD sirve para ADD AL,BL / ADD AL,#5 / ADD AL,[x] / ADD AL,[BX]
+  / ADD BX,CL / ADD BX,DX / ADD BX,#5. Las únicas instrucciones de 4 bytes
+  son ALUM, MOV r16,#imm16 y CMP r16,#imm16.
+
+CONDICIONES (bajo3 de JMP / CALL)
   0 ALWAYS   1 Z    2 NZ    3 C    4 NC    5 N    6 NN   7 V
-  V = 1 (overflow con signo, ver MUL/DIV arriba). NV (salta si V=0) NO
-  cabe en este campo (las 8 combinaciones ya llenas) -- ver family 30
-  subop 4/5 arriba.
+  NV (salta si V=0) no cabe en 3 bits: va en la familia 25 (JX).
 
-OPERACIONES DE LA ALU (AluOp, bits 2..0 del opcode en EXT y ALUI)
+OPERACIONES DE LA ALU (AluOp, en el byte de operando de las familias 10..13)
   0 MOV   dst = src               (NO toca flags)
-  1 ADD   dst = dst + src         (flags aritméticos)
-  2 SUB   dst = dst - src         (flags aritméticos)
-  3 CMP   solo flags de dst-src; dst NO cambia
-  4 AND   dst = dst & src         (flags lógicos: Z,N; C=V=0)
-  5 OR    dst = dst | src
-  6 XOR   dst = dst ^ src
+  1 ADD   dst = dst + src
+  2 ADC   dst = dst + src + C     (sumas de varios bytes)
+  3 SUB   dst = dst - src
+  4 SBC   dst = dst - src - C     (restas de varios bytes; C = préstamo)
+  5 CMP   solo flags de dst-src; dst NO cambia
+  6 AND   dst = dst & src         (flags lógicos: Z,N; C=V=0)
+  7 OR    dst = dst | src
+  8 XOR   dst = dst ^ src
+  Cada operación acepta las 4 formas: reg,src | reg,#imm | reg,[addr] |
+  reg,[r16].
 
-  EXT   0xF8+op:  <op> dst,src    (registro-registro, LEN 2)
-  ALUI  0xA0+op:  <op> reg,#imm8  (LEN 3)  -- op 0 (MOV) redundante con LDI
-  Además, ADD/SUB/AND/OR/XOR tienen la forma con memoria (familias 5..9).
-  Así cada operación acepta: reg,src | reg,#imm | reg,[addr]  (CMP: reg,src y
-  reg,#imm; MOV: reg,src, reg,#imm y a/desde memoria vía LDA/STA).
+  ADD frente a ADC: ADD ignora el acarreo anterior; ADC le suma C. Para
+  sumar dos números de 16 bits guardados en dos bytes cada uno:
+      ADD AL,CL      ; bytes bajos; si se pasa de 255 deja C=1
+      ADC AH,CH      ; bytes altos + ese acarreo
+  SUB/SBC igual con el préstamo. Con un solo byte basta ADD/SUB.
 
-CÁLCULO DE FLAGS  (iguales en cualquier forma: reg,src / reg,#imm / reg,[addr])
-  Aritmética (ADD, SUB, CMP) sobre a = dst y b = fuente, resultado de 8 bits:
-    Z = (resultado == 0)
-    N = (resultado & 0x80) != 0
-    SUB / CMP:  C = (a < b)
-                V = ((a ^ b) & (a ^ resultado) & 0x80) != 0
-    ADD:        C = (a + b > 0xFF)
-                V = (~(a ^ b) & (a ^ resultado) & 0x80) != 0
-  Lógica (AND, OR, XOR, NOT):
-    Z y N según el resultado; C = 0; V = 0.
-  MUL/DIV (ver family 27/28 arriba): Z/N del resultado (AX para MUL, AL
-    -cociente- para DIV); C=V=1 si el producto de MUL no cupo en 8 bits, o
-    si la division no dio un resultado valido de 8 bits (entre 0 o
-    cociente > 255); si no, C=V=0.
+CÁLCULO DE FLAGS  (iguales en cualquiera de las 4 formas)
+  Aritmética sobre a = dst, b = fuente, cin = C (solo ADC/SBC; 0 si no):
+    Z = (resultado == 0)        N = (resultado & 0x80) != 0
+    SUB/SBC/CMP: C = (a - b - cin < 0)
+                 V = ((a ^ b) & (a ^ resultado) & 0x80) != 0
+    ADD/ADC:     C = (a + b + cin > 0xFF)
+                 V = (~(a ^ b) & (a ^ resultado) & 0x80) != 0
+  Lógica (AND, OR, XOR, NOT): Z y N según el resultado; C = 0; V = 0.
+  CMP de 16 bits: igual que CMP con valores de 16 bits (N = bit 15).
+  INC/DEC de 8 bits: Z, N, V; C se conserva.
   reset(): FLAGS = 0.
 
-  REGLA GENERAL: si la instruccion calcula un valor de 8 bits que el
-  programa puede querer comparar (ADD SUB AND OR XOR NOT CMP SHR SHL MUL
-  DIV), toca flags. Las de movimiento de datos o de aritmetica de
-  PUNTEROS de 16 bits (MOV LDA STA IN OUT PUSH POP JMP CALL RET NOP, y las
-  nuevas MOVB MOVW INC/DEC de 16 bits y ADD/SUB en su forma de 16 bits) NO
-  tocan los flags.
+  REGLA GENERAL: tocan flags las que calculan un valor de 8 bits que el
+  programa puede querer comparar (ADD ADC SUB SBC CMP AND OR XOR NOT SHR SHL
+  MUL DIV INC8 DEC8) y los CMP de 16 bits. Las de movimiento de datos y de
+  aritmética de punteros (MOV LDA STA IN OUT PUSH POP JMP CALL RET NOP MOVB
+  MOVW MOVBR, INC/DEC/ADD/SUB de 16 bits) NO tocan los flags.
 
 
 --------------------------------------------------------------------------------
@@ -390,7 +374,10 @@ PROVISIONING POR USB-CDC (meter o sacar un slot del PC, sin teclear)
   "COMPI DUMP " se ignoran (se puede seguir usando el monitor). Dos
   protocolos, LOAD (grabar, host -> aparato) y DUMP (sacar, aparato -> host):
 
-    LOAD  host -> aparato:  "COMPI LOAD <slot> <len>\n"  slot 0..59, len 0..65536
+    LOAD  host -> aparato:  "COMPI LOAD <slot> <len> [<cat> <nombre>]\n"
+                            slot 0..59, len 0..65536; cat (decimal) y
+                            nombre (hasta fin de línea, máx. 14) opcionales:
+                            metadatos del slot (sección 8, 0x0642)
                             <len> bytes crudos, en bloques de COMPI_CHUNK
                             (1024) bytes; el host espera el eco de cada
                             bloque antes de mandar el siguiente. El resto de
@@ -472,6 +459,7 @@ MAPA DE PUERTOS
   0x0602            PORT_DAT_POS   encoder DATA: posición       (IN)
   0x0603            PORT_DAT_BTN   encoder DATA: bit0 = pulsado (IN)
   0x0610            PORT_LED       LED azul de a bordo (GPIO8)   (OUT bit0; IN lee eco)
+  0x0611            PORT_RANDOM    byte aleatorio nuevo en cada lectura (esp_random) (IN)
   0x0620 .. 0x0629  PORT_TIMER_BASE+i   10 temporizadores descendentes  (OUT arma; IN lee)
   0x0630            PORT_SND_FREQ_LO   sonido: byte bajo de la frecuencia  (OUT engancha)
   0x0631            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
@@ -479,8 +467,13 @@ MAPA DE PUERTOS
   0x0633            PORT_SND_DUR       sonido: duración auto = valor * 10 ms (0 = sostenida)
   0x0640            PORT_PROG_LOAD     carga un slot de flash en la RAM y reinicia la CPU (OUT slot; IN = 1 si el ultimo intento fallo)
   0x0641            PORT_PROG_SAVE     graba la RAM actual en un slot de flash (OUT slot; IN = 1 si la ultima grabacion salio bien)
-  0x0650            PORT_CFG_BRIGHTNESS  brillo de pantalla 0..255 (OUT fija; IN eco)
-  0x0651            PORT_CFG_SOUND_EN    activa/desactiva el sonido, igual que BOOT (OUT 0/!=0; IN 1=activado)
+  0x0642            PORT_SLOT_QUERY    OUT slot: lee nombre/categoría a 0x0660..; IN = 1 si ese slot tiene programa
+  0x0643            PORT_CUR_SLOT      slot del que se cargó el programa en curso (IN)
+  0x0650            PORT_CFG_BRIGHTNESS  brillo de pantalla 0..255 (OUT solo desde el slot 0; IN eco)
+  0x0651            PORT_CFG_SOUND_EN    activa/desactiva el sonido, igual que BOOT (OUT solo desde el slot 0; IN 1=activado)
+  0x0652            PORT_CFG_SAVE        OUT: graba brillo y sonido en la flash si cambiaron (solo slot 0)
+  0x0660 .. 0x066E  PORT_SLOT_INFO_BASE  categoría + nombre (14 B) del slot consultado (IN)
+  0x0700 .. 0x07FF  EEPROM            búfer de 256 B por slot (E/S); 0x0800 OUT carga / 0x0801 OUT graba
   resto            IN -> 0 ; OUT -> nada
 
 FRAMEBUFFER · gráficos (puertos 0x0000..0x03FF)
@@ -686,12 +679,29 @@ CARGA Y GRABADO DE PROGRAMAS (puertos 0x0640 / 0x0641)
                              iba a leerlo ya no es el programa que sigue
                              corriendo).
     0x0641  PORT_PROG_SAVE  OUT: numero de slot -> flash.saveProgram(slot,
-                             cpu.ram()) (equivale a "Guardar" del panel).
+                             cpu.ram(), g_currentMeta) (equivale a "Guardar"
+                             del panel; conserva nombre y categoría).
                              El programa sigue ejecutándose después -- esto
                              es un volcado, no un salto. Tarda unos ms
                              (borra flash antes de escribir), igual que al
                              grabar desde el panel.
                              IN: 1 si la ÚLTIMA grabación salió bien.
+    0x0642  PORT_SLOT_QUERY OUT: número de slot -> lee de la flash su
+                             cabecera (categoría + nombre) a g_slotInfo, que
+                             se ve en 0x0660..0x066E. IN: 1 si ese slot tiene
+                             programa. Es lo que usa sisop para montar los
+                             menús solo.
+    0x0643  PORT_CUR_SLOT   IN: slot del que se cargó el programa en curso
+                             (para que un programa se grabe a sí mismo, p. ej.
+                             play.asm con sus canciones).
+    0x0660  categoría (0xFF ninguna, 1 SYSTEM, 2 GAME, 3 PROGRAM, 4 UTILITY,
+            5 DEMO, 6 DOCS); 0x0661..0x066E nombre ASCII, relleno con 0.
+
+  METADATOS DEL SLOT: los bytes 1..15 de la cabecera de cada slot en la flash
+  (SLOT_META_SIZE = 15): [0] categoría, [1..14] nombre. Los pone casm con
+  las directivas .category y .name, viajan en el protocolo como
+  "COMPI LOAD <slot> <len> [<cat> <name>]" y se conservan al grabar desde el
+  panel o desde 0x0641. Al leerlos, los bytes no imprimibles pasan a 0.
 
   Arranque automático del slot 0: setup() intenta flash.loadProgram(0,
   cpu.ram()) antes del primer cpu.reset(); si el slot 0 está vacío, arranca
@@ -699,7 +709,12 @@ CARGA Y GRABADO DE PROGRAMAS (puertos 0x0640 / 0x0641)
   grabado en el slot 0 (ver programs/sisop.asm) aparece nada más encender el
   aparato, sin esperar a que el usuario entre en EDITAR y pulse Cargar.
 
-CONFIGURACIÓN DEL APARATO (puertos 0x0650 / 0x0651)
+CONFIGURACIÓN DEL APARATO (puertos 0x0650 / 0x0651 / 0x0652)
+  Son ajustes globales: solo el slot 0 (SETTINGS de sisop) puede escribirlos;
+  desde cualquier otro programa el OUT se ignora. 0x0652 los graba en la
+  flash (sector propio en 0x3FFC00, solo si cambiaron); sisop lo hace al
+  salir de SETTINGS con ADDR, no a cada cambio, para no gastar la flash.
+  Se leen al arrancar (loadSettings).
   Ajustes que antes solo se tocaban desde fuera del programa (el ahorro de
   energía automático para el brillo, el botón BOOT para el sonido): aquí se
   exponen para que el propio programa en ejecución los pueda pedir.
@@ -885,16 +900,18 @@ MAPA DE ENTRADAS  (pin del 74HC165 -> señal -> bit del byte)
   D4  pin 3    DATA_B    bit 3    Encoder DATA, señal B
   D5  pin 4    DATA_SW   bit 2    Encoder DATA, pulsador
   D6  pin 5    SW_MODE   bit 1    Interruptor: EDIT / RUN
-  D7  pin 6    SW_STEP   bit 0    Interruptor: ▲ / ▼  (significado según SW_MODE)
+  D7  pin 6    SW_STEP   bit 0    Interruptor: SINGLE / CONTINUOUS
 
 ENCODERS: incrementales tipo EC11, con pulsador.
   A y B -> entradas del 74HC165 (con pull-up).  Común (C) -> GND.
   Pulsador: una pata -> entrada con pull-up, otra -> GND.
 
-INTERRUPTORES SW_MODE y SW_STEP: SPST.
+INTERRUPTORES SW_MODE y SW_STEP: deslizantes, montados en horizontal encima
+  de cada encoder ("EDIT <-SW_MODE-> RUN" sobre ADDR, "SINGLE <-SW_STEP->
+  CONTINUOUS" sobre DATA). Eléctricamente, un contacto SPST:
   Una pata -> entrada del 74HC165 (con pull-up).  Otra -> GND.
-  ABIERTO (alto, ▲)  = SW_MODE: EDIT   · SW_STEP: (editando) MEMORIA / (ejecutando) STEP
-  CERRADO (bajo, ▼)  = SW_MODE: RUN · SW_STEP: (editando) PROGRAMAS / (ejecutando) CONTINUOUS
+  ABIERTO (alto)  = SW_MODE: EDIT · SW_STEP: SINGLE (editando: MEMORIA)
+  CERRADO (bajo)  = SW_MODE: RUN  · SW_STEP: CONTINUOUS (editando: PROGRAMAS)
 
 
 --------------------------------------------------------------------------------
@@ -947,7 +964,7 @@ cursor, slot: eso vive en main.cpp / UiState).
 
   API:
     ejecutar()  = swModo_.on()      (false = EDIT)
-    swAbajo()   = swPaso_.on()      (false = ▲, true = ▼)
+    swAbajo()   = swPaso_.on()      (false = SINGLE, true = CONTINUOUS)
     takeDirDelta(), takeDatDelta()  -> detentes (se consumen; bajo mux_)
     takeDirPress(), takeDatPress()  -> pulsación corta (evento; bajo mux_)
     dirPos(), datPos(), dirDown(), datDown()   -> para los puertos IN
@@ -967,10 +984,10 @@ cursor, slot: eso vive en main.cpp / UiState).
 La VISTA es función de los dos interruptores (nada oculto):
 
   SW_MODE   SW_STEP   Vista        Pantalla
-  EDIT    ▲         EditMem      listado desensamblado + registros
-  EDIT    ▼         EditPrg      selector de slot + previsualización
-  RUN  ▲         ExecPaso     listado + registros, * en el PC, # en el objetivo de ADDR
-  RUN  ▼         ExecCont     pantalla del programa (gráficos + texto)
+  EDIT    SINGLE    EditMem      listado desensamblado + registros
+  EDIT    CONT.     EditPrg      selector de slot + previsualización
+  RUN     SINGLE    ExecPaso     listado + registros, * en el PC, # en el objetivo de ADDR
+  RUN     CONT.     ExecCont     pantalla del programa (gráficos + texto)
 
 Estado en main.cpp (UiState + globales): view, cursor + compose (EditMem) /
 cursor + pasoFollowCursor (ExecPaso, mismo campo cursor que EditMem), slot y
@@ -986,7 +1003,7 @@ BUCLE
        - entrar en RUN (exec && !prevExec)
      acción: cpu.reset() (PC=0, SP=0xFFFF, regs=0) ; panel.resetPositions() ;
              memset(g_fb, 0) ; running = abajo
-     Dentro de RUN, cambiar entre ▲ (STEP) y ▼ (CONTINUOUS) NO resetea:
+     Dentro de RUN, cambiar entre SINGLE y CONTINUOUS NO resetea:
      solo running = abajo (STEP congela donde quedó, CONTINUOUS sigue desde
      ahí) -- para poder parar un programa, depurarlo paso a paso y dejarlo
      seguir.
@@ -994,18 +1011,16 @@ BUCLE
 
   EditMem — SELECTOR DE MNEMÓNICO (include/editor.h, src/editor.cpp)
      En vez de ciclar el byte crudo (0..255), se compone la instrucción CAMPO
-     A CAMPO: verbo (uno de 21: ADD AND CALL CMP HALT IN JMP LDA MOV NOP NOT
-     OR OUT POP PUSH RET SHL SHR STA SUB XOR -- ORDEN ALFABÉTICO por nombre,
-     ver kVerbAlpha/verbName en editor.cpp; el enum Verb interno sigue
-     agrupado por familia de opcode, pero eso ya no importa a quien teclea)
-     -> mode, si el verbo tiene varios (MOV/CMP: reg,reg | reg,#imm ;
-     ADD/SUB/AND/OR/XOR: + reg,[dir] ; LDA/STA/IN/OUT: [dir] con
-     addr16/port16 inmediato | [reg16] indirecto por AX/BX/CX/DX ; SHR/SHL:
-     desplaza 1 bit | reg,#N con N=1..8) -> operandos (condición,
-     registro(s), inmediato, dirección/puerto bajo y alto por separado, el
-     registro de 16 bits puntero, o la cuenta de desplazamiento).
-     ComposeState (verb, mode, reg, dst, src, cond, imm, addr16, ptr, shift,
-     step) vive en ui.compose.
+     A CAMPO: verbo (uno de 30, ORDEN ALFABÉTICO: ADC ADD AND CALL CMP DEC
+     DIV HALT IN INC JMP LDA MOV MOVB MOVBR MOVW MUL NOP NOT OR OUT POP PUSH
+     RET SBC SHL SHR STA SUB XOR) -> mode, si el verbo tiene varias formas
+     (tabla kVerbs de editor.cpp; p. ej. ADD: reg,reg | reg,#imm |
+     reg,[dir] | reg,[r16] | r16,reg8 | r16,r16 | r16,#imm8 ; ver
+     docs/isa.md §1) -> operandos (condición, registro(s), inmediato,
+     dirección/puerto bajo y alto por separado, el par puntero PTR, el
+     segundo par SRC16, o la cuenta de desplazamiento).
+     ComposeState (verb, mode, reg, dst, src, cond, imm, addr16, ptr, ptr2,
+     shift, step) vive en ui.compose.
 
      Mientras se está eligiendo el verbo (fieldAt(...) == EField::Verb), la
      cabecera de la pantalla (display.cpp) muestra el nombre y el tamaño ya
@@ -1014,7 +1029,7 @@ BUCLE
      por defecto de ese verbo (mode 0); así se puede comparar el tamaño de
      cada opción sin tener que confirmarla y mirar el listado de abajo. En
      cualquier otro campo, la cabecera sigue mostrando la etiqueta corta del
-     campo (editFieldLabel: MODE/COND/REG/DST/SRC/IMM/LO/HI/PTR/N), como
+     campo (editFieldLabel: MODE/COND/REG/DST/SRC/IMM/LO/HI/PTR/SRC16/N), como
      antes.
 
      DATA  girar   -> cambia el valor del campo activo (fieldAt(verb,mode,step)),
@@ -1188,13 +1203,8 @@ REGLAS
 
   regName8(r)                       "AL".."DH"
   regName16(p)                      "AX".."DX" (p = 0..3, Reg16 en isa.h)
-  instrLen(mem, memLen, addr)       longitud (1..3):
-                                      LDI, EXT,
-                                      LDAR,STAR,INR,OUTR (§4b),
-                                      SHRN,SHLN (§4c)                   -> 2
-                                      LDA,STA,ADD,SUB,AND,OR,XOR,
-                                      IN,OUT,JMP,CALL,ALUI              -> 3
-                                      resto                             -> 1
+  instrLen(mem, memLen, addr)       longitud (1..4) según familia y sub-op
+                                    (tabla LEN de la sección 4).
   disassemble(mem, memLen, addr, out, n)  escribe el mnemónico, devuelve la longitud.
   listBase(mem, memLen, anchor)     recorre instrucciones desde 0 sumando
                                     instrLen; devuelve el inicio de la
@@ -1202,19 +1212,10 @@ REGLAS
                                     `anchor` (una línea de contexto).
 
 MNEMÓNICOS
-  NOP    HALT    RET
-  MOV reg,#0xNN     (OP_LDI)       LDA reg,[0xNNNN]     STA [0xNNNN],reg
-  <op> reg,[0xNNNN]                op = ADD SUB AND OR XOR   (familias 5..9)
-  <op> dst,src                     op = MOV ADD SUB CMP AND OR XOR   (OP_EXT)
-  <op> reg,#0xNN                   op = MOV ADD SUB CMP AND OR XOR   (OP_ALUI)
-  NOT reg   SHR reg   SHL reg   PUSH reg   POP reg
-  SHR reg,#N   SHL reg,#N        (N = 1..8; familias 25/26, sección 4c)
-  IN reg,(0xNNNN)   OUT (0xNNNN),reg          (0xNNNN = puerto de 16 bits)
-  LDA reg,[AX|BX|CX|DX]   STA [AX|BX|CX|DX],reg      (indirecto; sección 4b)
-  IN reg,(AX|BX|CX|DX)    OUT (AX|BX|CX|DX),reg      (idem, puerto indirecto)
-  JMP<cc> 0xNNNN    CALL<cc> 0xNNNN
-       sufijo <cc>:  ALWAYS -> ""   Z / NZ / C / NC / N / NN -> ese texto
-  DB 0xNN                           (familias 27..30, reservadas)
+  La misma sintaxis que acepta casm (sección 4), de modo que el texto
+  desensamblado se puede volver a ensamblar tal cual. Un byte que no es una
+  instrucción válida (familias 30/31, sub-ops reservadas) sale como
+  "DB 0xNN". Sufijo <cc> de JMP/CALL: ALWAYS -> "", Z NZ C NC N NN V NV.
 
 FORMATOS: registros por nombre; inmediato "#0x%02X"; dirección de dato
 "[0x%04X]" o "[reg16]"; PUERTO "(0x%04X)" o "(reg16)"; destino de salto
@@ -1482,16 +1483,16 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   vista (navegar, insertar/borrar, elegir+ejecutar destino, resetear) --
   ya no es un simple "retroceder" simétrico a DATA.
 - LAS 5 RUTINAS COMUNES:
-  1) Cargar y ejecutar: SW_STEP ▼ (EditPrg), girar ADDR al slot, con
+  1) Cargar y ejecutar: SW_STEP CONTINUOUS (EditPrg), girar ADDR al slot, con
      prgAction en LOAD pulsar DATA o ADDR (los dos hacen lo mismo).
-     SW_MODE RUN, SW_STEP ▼ (CONTINUOUS).
-  2) Programa nuevo: SW_MODE EDIT, SW_STEP ▲. Girar DATA (se ve el
+     SW_MODE RUN, SW_STEP CONTINUOUS.
+  2) Programa nuevo: SW_MODE EDIT, SW_STEP SINGLE. Girar DATA (se ve el
      mnemónico), pulsar DATA para avanzar. Repetir.
-  3) A ejecución: SW_MODE RUN (▲ paso / ▼ continuo).
-  4) Grabar: SW_STEP ▼, girar al slot, girar DATA hasta SAVE, pulsar DATA o
+  3) A ejecución: SW_MODE RUN (SW_STEP: SINGLE paso a paso / CONTINUOUS).
+  4) Grabar: SW_STEP CONTINUOUS, girar al slot, girar DATA hasta SAVE, pulsar DATA o
      ADDR (los dos guardan igual estando en SAVE).
   5) Paso a paso de un programa cargado: cargar (rutina 1), SW_MODE RUN,
-     SW_STEP ▲, pulsar DATA repetidamente.
+     SW_STEP SINGLE, pulsar DATA repetidamente.
 - Encoders leídos por sondeo (no hay interrupción de flanco posible: las señales
   van por el 74HC165, no por GPIOs). El '165 se muestrea desde un esp_timer
   independiente de loop() a 2/4/8 ms según la actividad (§16), así que un
@@ -1544,10 +1545,9 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   de sector); se muestra "SAVING slot NN". Cargar es rápido (~70 ms).
 - 60 slots: un slot de 64 KiB ocupa 17 sectores; caben 60 en 4 MiB.
 - No hay borrado de slots desde el panel (IProgramStorage tiene deleteProgram).
-- Las 7 operaciones de la ALU (MOV ADD SUB CMP AND OR XOR) aceptan reg,src
-  (OP_EXT) y reg,#imm (OP_ALUI); ADD/SUB/AND/OR/XOR además reg,[addr]. `MOV
-  reg,#imm` se codifica como LDI (2 B) en vez de ALUI (3 B); el desensamblador
-  las muestra igual.
+- Las 9 operaciones de la ALU (MOV ADD ADC SUB SBC CMP AND OR XOR) aceptan
+  reg,src / reg,#imm / reg,[addr] / reg,[r16]. `MOV reg,#imm` se codifica
+  como LDI (2 B) en vez de ALUI (3 B).
 - En el ESP32-C3 SuperMini el USB nativo ocupa IO18/IO19; el I2C va en IO20/21.
 - SONIDO: zumbador piezo PASIVO en GPIO3 (el último pin que quedaba libre),
   atacado directo (el piezo es capacitivo, corriente media despreciable). El

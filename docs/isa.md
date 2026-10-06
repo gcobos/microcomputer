@@ -2,22 +2,24 @@
 
 Chuleta para teclear programas en el panel. La especificación formal está en
 [`../specs.txt`](../specs.txt) §4 (instrucciones) y §8 (puertos); esto es lo
-mismo en versión práctica. Todos los bytes están comprobados en el emulador.
+mismo en versión práctica. Todos los bytes están comprobados con el
+ensamblador y el emulador (ISA versión 2, ver sección 3).
 
 ---
 
 ## 1. Cómo se teclea un programa
 
-1. `SW_MODE` = **EDIT**, `SW_STEP` = **▲** (vista EDIT MEMORY).
+1. `SW_MODE` = **EDIT**, `SW_STEP` = **SINGLE** (vista EDIT MEMORY).
 2. El cursor empieza en `0x0000`. La fila 0 dice qué **campo** estás rellenando
    ahora mismo (`OP`, `MODE`, `COND`, `REG`, `DST`, `SRC`, `IMM`, `LO`, `HI`,
-   `PTR`, `N` — abreviaturas en inglés, como los mnemónicos y los registros).
+   `PTR`, `SRC16`, `N` — abreviaturas en inglés, como los mnemónicos y los
+   registros).
    Mientras el campo es `OP` (eligiendo el verbo), la cabecera muestra
    además el tamaño ya ensamblado, p. ej. `NOP (size 1)`, para comparar
    opciones sin confirmar cada una.
    **Giras DATA** para cambiar el valor de ese campo — el listado de abajo
    muestra la instrucción formándose en directo; en el campo `OP` el giro
-   recorre los 21 verbos en **orden alfabético** (no por familia de opcode).
+   recorre los 30 verbos en **orden alfabético** (no por familia de opcode).
    **Pulsas DATA** para confirmar el campo y pasar al siguiente; en el
    último campo, esa misma pulsación ya te deja en la dirección siguiente,
    lista para la próxima instrucción.
@@ -28,24 +30,31 @@ mismo en versión práctica. Todos los bytes están comprobados en el emulador.
    **larga** (~medio segundo) borra el byte del cursor en su lugar
    (desplazando el resto un byte atrás). Ninguna de las dos toca la pila.
 3. Cada instrucción se compone así:
-   - **OP** (verbo): uno de 21, ofrecidos en orden alfabético (`ADD AND CALL
-     CMP HALT IN JMP LDA MOV NOP NOT OR OUT POP PUSH RET SHL SHR STA SUB
-     XOR`).
-   - **MODE** (forma; solo `MOV`/`CMP`/`ADD`/`SUB`/`AND`/`OR`/`XOR`/`LDA`/`STA`/
-     `IN`/`OUT`): `reg,reg` / `reg,#imm` / `reg,[dir]` (las dos primeras no
-     existen para `LDA`/`STA`/`IN`/`OUT`; la memoria/puerto no existe para
-     `MOV` ni `CMP`) — y para `LDA`/`STA`/`IN`/`OUT` además un segundo modo,
-     **`[reg16]`**: dirección/puerto indirecto a través de `AX`/`BX`/`CX`/`DX`
-     en vez de un valor de 16 bits inmediato (`PTR`, sección 4b).
+   - **OP** (verbo): uno de 30, en orden alfabético (`ADC ADD AND CALL CMP
+     DEC DIV HALT IN INC JMP LDA MOV MOVB MOVBR MOVW MUL NOP NOT OR OUT POP
+     PUSH RET SBC SHL SHR STA SUB XOR`).
+   - **MODE** (forma), solo en los verbos que tienen varias:
+     - `MOV`: `reg,reg` · `reg,#imm` · `r16,r16` · `r16,#imm16`.
+     - `ADD`/`SUB`: `reg,reg` · `reg,#imm` · `reg,[dir]` · `reg,[r16]` ·
+       `r16,reg8` · `r16,r16` · `r16,#imm8`.
+     - `CMP`: `reg,reg` · `reg,#imm` · `reg,[dir]` · `reg,[r16]` · `r16,r16` ·
+       `r16,#imm16`.
+     - `ADC`/`SBC`/`AND`/`OR`/`XOR`: `reg,reg` · `reg,#imm` · `reg,[dir]` ·
+       `reg,[r16]`.
+     - `LDA`/`STA`/`IN`/`OUT`: `[dir]` · `[r16]` (indirecto a través de
+       `AX`/`BX`/`CX`/`DX`, campo `PTR`).
+     - `INC`/`DEC`: `r16` · `reg` (8 bits). `PUSH`/`POP`: `reg` · `r16`.
+     - `JMP`/`CALL`: `cond,dir` · `r16` (salto a la dirección del registro).
    - Luego los operandos que le toquen: condición (`JMP`/`CALL`), registro(s),
      inmediato, o dirección/puerto de 16 bits — éste último se teclea en dos
      campos separados, **byte bajo (`LO`) y luego byte alto (`HI`)** (p. ej.
      `0x1234` son los campos `34` y luego `12`), salvo en el modo `[reg16]`,
-     que es un único campo **`PTR`** (gira entre `AX`/`BX`/`CX`/`DX`).
+     que es un único campo **`PTR`** (gira entre `AX`/`BX`/`CX`/`DX`; en
+     las formas `r16,r16` el segundo par es el campo `SRC16`).
    - Al aterrizar en una dirección con algo ya escrito, el selector arranca
      en lo que ya haya: si solo quieres cambiar un campo, ve pulsando DATA
      sin girar por los demás.
-4. Para ejecutar: `SW_MODE` = **RUN** (▲ paso a paso, ▼ continuo). Siempre
+4. Para ejecutar: `SW_MODE` = **RUN** (`SW_STEP` en SINGLE = paso a paso, en CONTINUOUS = continuo). Siempre
    arranca en `PC = 0` al entrar en RUN desde EDIT. Dentro de RUN, cambiar
    entre paso a paso y continuo **no** reinicia: el programa sigue desde
    donde estaba (sirve para parar uno en marcha, mirarlo paso a paso y
@@ -83,302 +92,206 @@ Los registros **no se editan a mano**: se cargan ejecutando `MOV reg,#valor`.
 
 ---
 
-## 3. El byte de opcode
+## 3. El byte de opcode (ISA versión 2)
 
-    opcode = familia × 8 + registro       (o + condición, en JMP/CALL)
+    opcode = familia × 8 + bajo3
 
-Ejemplo: `ADD BL,[dir]` → familia 5, registro BL = 2 → `5×8 + 2 = 0x2A`.
+5 bits de **familia** (32 posibles, 30 usadas) y 3 bits **bajos** que, según
+la familia, son un **registro de 8 bits** (AL…DH = 0…7), una **condición**
+(saltos), un **par de 16 bits** o una **sub-operación**. Las operaciones de
+la ALU no gastan familias: van en un byte de operando aparte (sección 6), así
+que las 9 operaciones tienen las 4 formas de direccionamiento.
+
+Ejemplo: `ADD BL,#5` → familia 11 (ALU con inmediato), registro BL = 2 →
+opcode `11×8 + 2 = 0x5A`, luego la operación (`ADD` = 1) y el inmediato:
+`5A 01 05`.
+
+`0x00` es `NOP`: una RAM a cero es un programa vacío. Las familias 30 y 31
+están libres (se ejecutan como `NOP` de 1 byte).
+
+> **Versión 2 de la codificación (octubre 2026).** Se reordenó entera para
+> que sea regular (antes había una familia "de extensión" que mezclaba
+> instrucciones sin relación, y huecos sin forma, como `CMP` con memoria). Los
+> mnemónicos no cambian: un programa en ensamblador solo hay que volver a
+> ensamblarlo. Los `.bin` antiguos NO funcionan con el firmware nuevo.
 
 ---
 
 ## 4. Instrucciones
 
-`LEN` = bytes totales. `imm8` = 1 byte. `addr16` / `port16` = 2 bytes (bajo, alto).
+`LEN` = bytes totales. `imm8` = 1 byte. `addr16` / `port16` / `imm16` = 2
+bytes (bajo, alto). `r` = registro de 8 bits del opcode; `r16` = par
+`AX`/`BX`/`CX`/`DX` (0–3).
 
-Las **7 operaciones de la ALU** (`MOV ADD SUB CMP AND OR XOR`) tienen tres
-formas — ver secciones 6 y 6b. El resto:
-
-| Mnemónico | LEN | Familia | Opcode (AL … DH) | Qué hace | Flags |
+| Fam. | Opcode | Mnemónico | LEN | Bytes | Qué hace |
 |---|---|---|---|---|---|
-| `NOP`              | 1 | 0  | `00` | nada | — |
-| `HALT`             | 1 | 1  | `08` | detiene la CPU | — |
-| `MOV reg,#imm8`    | 2 | 2  | `10 11 12 13 14 15 16 17` | `reg = imm8` | — |
-| `LDA reg,[addr16]` | 3 | 3  | `18 … 1F` | `reg = mem[addr]` (MOV desde memoria) | — |
-| `STA [addr16],reg` | 3 | 4  | `20 … 27` | `mem[addr] = reg` (MOV a memoria) | — |
-| `ADD reg,[addr16]` | 3 | 5  | `28 … 2F` | `reg = reg + mem[addr]` | N V Z C |
-| `SUB reg,[addr16]` | 3 | 6  | `30 … 37` | `reg = reg - mem[addr]` | N V Z C |
-| `AND reg,[addr16]` | 3 | 7  | `38 … 3F` | `reg = reg & mem[addr]` | N Z (C=V=0) |
-| `OR  reg,[addr16]` | 3 | 8  | `40 … 47` | `reg = reg \| mem[addr]` | N Z (C=V=0) |
-| `XOR reg,[addr16]` | 3 | 9  | `48 … 4F` | `reg = reg ^ mem[addr]` | N Z (C=V=0) |
-| `NOT reg`          | 1 | 10 | `50 … 57` | `reg = ~reg` | N Z (C=V=0) |
-| `SHR reg`          | 1 | 11 | `58 … 5F` | `reg >>= 1` | C = bit que sale · V = bit 7 previo · N Z |
-| `SHL reg`          | 1 | 12 | `60 … 67` | `reg <<= 1` | C = bit que sale · N = bit 7 · V = (C≠N) · Z |
-| `IN  reg,(port16)` | 3 | 13 | `68 … 6F` | `reg = puerto` (sección 8) | — |
-| `OUT (port16),reg` | 3 | 14 | `70 … 77` | `puerto = reg` | — |
-| `<op> reg,#imm8`   | 3 | 20 | `A0` + op | ALU con inmediato (sección 6b) | según op |
-| `LDA reg,[reg16]`  | 2 | 21 | `A8 … AF` | `reg = mem[reg16]` (sección 4b) | — |
-| `STA [reg16],reg`  | 2 | 22 | `B0 … B7` | `mem[reg16] = reg` (sección 4b) | — |
-| `IN  reg,(reg16)`  | 2 | 23 | `B8 … BF` | `reg = puerto[reg16]` (sección 4b) | — |
-| `OUT (reg16),reg`  | 2 | 24 | `C0 … C7` | `puerto[reg16] = reg` (sección 4b) | — |
-| `PUSH reg`         | 1 | 15 | `78 … 7F` | `--SP; mem[SP] = reg` | — |
-| `POP reg`          | 1 | 16 | `80 … 87` | `reg = mem[SP]; ++SP` | — |
-| `JMP<cc> addr16`   | 3 | 17 | `88` + cc | si se cumple `cc`: `PC = addr` | — |
-| `CALL<cc> addr16`  | 3 | 18 | `90` + cc | si `cc`: apila PC, `PC = addr` | — |
-| `RET`              | 1 | 19 | `98` | `PC = ` dirección apilada | — |
-| `SHR reg,#N`       | 2 | 25 | `C8 … CF` | `reg >>= N` (N=1..8; sección 4c) | C = bit que sale en el último paso · V = bit 7 previo · N Z |
-| `SHL reg,#N`       | 2 | 26 | `D0 … D7` | `reg <<= N` (N=1..8; sección 4c) | C = bit que sale en el último paso · N = bit 7 · V = (C≠N) · Z |
-| `MUL reg`          | 1 | 27 | `D8 … DF` | `AX = AL × reg` (sin signo; sección 4d) | N Z · C=V=(AH≠0) |
-| `DIV reg`          | 1 | 28 | `E0 … E7` | `AL=AX÷reg AH=AX mod reg` (sin signo; sección 4d) | N Z · C=V=1 si entre 0 o no cupo |
-| `INC reg16` / `DEC reg16` | 1 | 29 | `E8 … EF` | `reg16 ± 1` (sección 4d) | — |
-| `ADD dst16,src8` / `SUB dst16,src8` | 2 | 30 | `F0`/`F1` | `dst16 ±= src8` sin signo (sección 4d) | — |
-| `MOVB` / `MOVW`    | 1 | 30 | `F2`/`F3` | copia de bloque `[BX]→[DX]` (sección 4d) | — |
-| `JMPNV`/`CALLNV addr16` | 3 | 30 | `F4`/`F5` | salta/llama si `V=0` (sección 4d/5) | — |
-| `MOV reg16,#imm16` | 4 | 30 | `F6` | `reg16 = imm16` (sección 4d) — única LEN 4 de la ISA | — |
-| *(reservada)*     | 1 | 30 | `F7` | se ejecuta como `NOP` | — |
-| `<op> dst,src`     | 2 | 31 | `F8` + op | ALU registro-registro (sección 6) | según op |
+| 0 | `00`–`05` | `NOP` `HALT` `RET` `MOVB` `MOVW` `MOVBR` | 1 | `op` | ver sección 4a |
+| 1 | `08`+r | `MOV r,#imm8` | 2 | `op imm` | `r = imm` |
+| 2 | `10`+r | `LDA r,[addr16]` | 3 | `op lo hi` | `r = mem[addr]` (también se escribe `MOV r,[addr]`) |
+| 3 | `18`+r | `STA [addr16],r` | 3 | `op lo hi` | `mem[addr] = r` |
+| 4 | `20`+r | `LDA r,[r16]` | 2 | `op r16` | `r = mem[r16]` (también `MOV r,[BX]`) |
+| 5 | `28`+r | `STA [r16],r` | 2 | `op r16` | `mem[r16] = r` |
+| 6 | `30`+r | `IN r,(port16)` | 3 | `op lo hi` | `r = puerto` (sección 8) |
+| 7 | `38`+r | `OUT (port16),r` | 3 | `op lo hi` | `puerto = r` |
+| 8 | `40`+r | `IN r,(r16)` | 2 | `op r16` | `r = puerto[r16]` |
+| 9 | `48`+r | `OUT (r16),r` | 2 | `op r16` | `puerto[r16] = r` |
+| 10 | `50`+r | `<alu> r,src` | 2 | `op alu<<3\|src` | ALU registro-registro (sección 6) |
+| 11 | `58`+r | `<alu> r,#imm8` | 3 | `op alu imm` | ALU con inmediato |
+| 12 | `60`+r | `<alu> r,[addr16]` | 4 | `op alu lo hi` | ALU con memoria |
+| 13 | `68`+r | `<alu> r,[r16]` | 2 | `op alu<<2\|r16` | ALU con memoria por puntero |
+| 14 | `70`+r | `NOT r` | 1 | `op` | `r = ~r` |
+| 15 | `78`+r | `SHR r,#N` | 2 | `op N-1` | `r >>= N` (N = 1…8; `SHR r` = `#1`) |
+| 16 | `80`+r | `SHL r,#N` | 2 | `op N-1` | `r <<= N` |
+| 17 | `88`+r | `MUL r` | 1 | `op` | `AX = AL × r` (sin signo) |
+| 18 | `90`+r | `DIV r` | 1 | `op` | `AL = AX ÷ r`, `AH = AX mod r` (sin signo) |
+| 19 | `98`+r | `INC r` | 1 | `op` | `r = r + 1` (8 bits; C no cambia) |
+| 20 | `A0`+r | `DEC r` | 1 | `op` | `r = r − 1` (8 bits; C no cambia) |
+| 21 | `A8`+r | `PUSH r` | 1 | `op` | `--SP; mem[SP] = r` |
+| 22 | `B0`+r | `POP r` | 1 | `op` | `r = mem[SP]; ++SP` |
+| 23 | `B8`+cc | `JMP<cc> addr16` | 3 | `op lo hi` | si se cumple `cc`: `PC = addr` (sección 5) |
+| 24 | `C0`+cc | `CALL<cc> addr16` | 3 | `op lo hi` | si `cc`: apila PC, `PC = addr` |
+| 25 | `C8` `C9` | `JMPNV` / `CALLNV addr16` | 3 | `op lo hi` | igual, si V = 0 |
+| 25 | `CA` `CB` | `JMP r16` / `CALL r16` | 2 | `op r16` | salta/llama a la dirección que hay en el par |
+| 26 | `D0`–`D3` | `MOV`/`ADD`/`SUB`/`CMP r16,r16` | 2 | `op d16<<3\|s16` | 16 bits (sección 4b) |
+| 26 | `D4` `D5` | `ADD`/`SUB r16,r8` | 2 | `op d16<<3\|r8` | `r16 ±= r8` sin signo |
+| 27 | `D8` `DB` | `MOV`/`CMP r16,#imm16` | 4 | `op r16 lo hi` | |
+| 27 | `D9` `DA` | `ADD`/`SUB r16,#imm8` | 3 | `op r16 imm` | `r16 ±= imm` sin signo |
+| 28 | `E0`+r16 / `E4`+r16 | `INC r16` / `DEC r16` | 1 | `op` | `r16 ± 1` |
+| 29 | `E8`+r16 / `EC`+r16 | `PUSH r16` / `POP r16` | 1 | `op` | apila alto y luego bajo / desapila bajo y luego alto |
 
-Columna "Opcode (AL … DH)": el primer valor es con el registro AL; cada
-registro siguiente suma 1 (AL 0, AH 1, BL 2, BH 3, CL 4, CH 5, DL 6, DH 7).
+### 4a. Familia 0: instrucciones sin operandos
 
----
+| Opcode | Mnemónico | Qué hace |
+|---|---|---|
+| `00` | `NOP` | nada |
+| `01` | `HALT` | detiene la CPU |
+| `02` | `RET` | `PC =` dirección apilada |
+| `03` | `MOVB` | copia `CX` bytes de `[BX]` a `[DX]` hacia adelante |
+| `04` | `MOVW` | igual, `CX` palabras de 16 bits (2·`CX` bytes) |
+| `05` | `MOVBR` | copia `CX` bytes **hacia atrás**: `BX`/`DX` apuntan al **último** byte de origen/destino y bajan |
 
-## 4b. `LDA`/`STA`/`IN`/`OUT` indirecto por registro: `reg,[reg16]`
+Las tres copias usan registros implícitos (`BX` origen, `DX` destino, `CX`
+cuenta) y dejan `CX = 0` con `BX`/`DX` justo después (o antes, en `MOVBR`)
+de lo copiado, para poder encadenarlas. `MOVB` copia hacia adelante, así que
+con origen y destino solapados y el destino detrás no hace un `memmove`; para
+eso está `MOVBR` (abrir hueco en un búfer). Un truco con `MOVB`: escribir un
+byte y copiarlo sobre sí mismo desplazado 1 rellena un búfer entero de un
+tirón. Ninguna toca flags.
 
-Segunda forma de `LDA`/`STA`/`IN`/`OUT` (familias 21-24): la dirección o
-puerto de 16 bits sale de un registro (`AX`/`BX`/`CX`/`DX`) en vez de venir
-como inmediato en la propia instrucción — **LEN 2** en vez de 3 (opcode +
-1 byte, no opcode + addr16). Útil para recorrer un buffer con un bucle
-(cargar el puntero una vez en, p. ej., `DX`, e ir incrementándolo) sin tener
-que parchear los bytes de operando de la instrucción como hace el código
-automodificable (`programs/README.md`).
+### 4b. Aritmética de 16 bits
 
-    opcode  = familia×8 + reg        (igual que la forma con addr16)
-    byte 2  = par de 16 bits         0=AX  1=BX  2=CX  3=DX  (bits altos sin usar)
+Mismos mnemónicos `MOV`/`ADD`/`SUB`/`CMP`: el ensamblador elige la forma de
+16 bits porque el destino se llama `AX`/`BX`/`CX`/`DX`. `MOV`, `ADD` y `SUB` de
+16 bits **no tocan flags** (son aritmética de punteros); `CMP` de 16 bits sí:
+`Z` si son iguales, `C` si el primero es menor (sin signo), `N` = bit 15 de
+la resta, `V` = desbordamiento con signo. `ADD`/`SUB r16,r8` y `r16,#imm8`
+suman o restan un byte sin signo (para avanzar un puntero).
 
-| Mnemónico | Familia | Opcode (AL … DH) | Byte 2 | Qué hace |
-|---|---|---|---|---|
-| `LDA reg,[reg16]` | 21 | `A8 … AF` | 0-3 = AX/BX/CX/DX | `reg = mem[reg16]` |
-| `STA [reg16],reg` | 22 | `B0 … B7` | 0-3 = AX/BX/CX/DX | `mem[reg16] = reg` |
-| `IN  reg,(reg16)`  | 23 | `B8 … BF` | 0-3 = AX/BX/CX/DX | `reg = puerto[reg16]` |
-| `OUT (reg16),reg`  | 24 | `C0 … C7` | 0-3 = AX/BX/CX/DX | `puerto[reg16] = reg` |
+    MOV BX,#tabla        ; D8 01 lo hi: puntero a una tabla
+    ADD BX,CL            ; BX += CL (con acarreo a BH)
+    CMP BX,#tabla+64     ; ¿se ha pasado del final?
+    JMPC sigue           ; C = 1 si BX < tabla+64
 
-Ejemplo: `LDA AL,[DX]` con `DX = 0x1234` equivale a `LDA AL,[0x1234]`, pero en
-2 bytes (`A8 03`) en vez de 3 (`18 34 12`), y con la dirección real fijada en
-tiempo de ejecución por lo que valga `DX` en ese momento.
+### 4c. Multiplicación y división
 
-En el selector de mnemónico del panel (sección 1): al elegir `LDA`/`STA`/
-`IN`/`OUT`, el campo `MODE` alterna entre `[dir]` (addr16 inmediato) y
-`[reg16]` (este modo); en `[reg16]` el operando de dirección/puerto es un
-único campo **`PTR`** que gira entre `AX`/`BX`/`CX`/`DX`, en vez de los dos
-campos `LO`/`HI`.
+**`MUL r`**: `AX = AL × r`, sin signo (8×8 → 16 bits, nunca desborda).
+Flags: `Z`/`N` del resultado de 16 bits; **`C = V = 1` si el producto no cupo
+en 8 bits** (`AH ≠ 0`).
 
----
+**`DIV r`**: `AL = AX ÷ r` (cociente), `AH = AX mod r` (resto), sin signo.
+Dividir entre 0, o un cociente que no quepa en 8 bits, satura `AL = AH = 0xFF`
+con `C = V = 1`. Con resultado válido: `C = V = 0`, `Z`/`N` del cociente.
 
-## 4c. Desplazamiento de varios bits de una vez: `SHR`/`SHL reg,#N`
+### 4d. `INC`/`DEC` de 8 bits
 
-Segunda forma de `SHR`/`SHL` (familias 25/26, antes reservadas): desplaza
-`N` bits (1 a 8) en una sola instrucción, en vez de repetir `SHR`/`SHL reg`
-N veces. Pensada para las divisiones/multiplicaciones por una potencia de 2
-conocida en tiempo de ensamblado (convertir una posición en "baldosa",
-calcular una dirección de pantalla, etc.), donde antes hacían falta N
-instrucciones de 1 bit para exactamente el mismo resultado.
-
-    opcode = familia×8 + reg     (igual que la forma de 1 bit)
-    byte 2 = N - 1               (3 bits bajos; 0 = 1 bit .. 7 = 8 bits)
-
-| Mnemónico | Familia | Opcode (AL … DH) | Byte 2 |
-|---|---|---|---|
-| `SHR reg,#N` | 25 | `C8 … CF` | `N - 1` |
-| `SHL reg,#N` | 26 | `D0 … D7` | `N - 1` |
-
-El resultado y las flags son **exactamente los mismos** que repetir
-`SHR reg` / `SHL reg` (la forma de 1 bit) N veces seguidas: `C` es el bit
-que sale en el ÚLTIMO de los N pasos, y el resultado es el valor
-desplazado N bits, con `Z`/`N` calculadas sobre ese resultado final. La
-única flag que no sale de "repetir el bucle" es la `V` de `SHR`: como aquí
-se trata de una sola instrucción (aunque desplace N bits), "bit 7 previo"
-significa el bit 7 de ANTES de esta instrucción, no de antes de cada paso
-interno (que a partir del segundo paso siempre seria 0, porque `SHR` mete
-un 0 arriba en cada desplazamiento).
-
-`SHR reg` / `SHL reg` sin `,#N` **se mantienen tal cual** (familias 11/12,
-LEN 1, desplazan 1 bit): son la forma corta, no una versión distinta con
-otro comportamiento. `casm.py` elige automáticamente la forma de 1 byte
-cuando no se da ningún operando `,#N`, y la de 2 bytes en cuanto se da uno
-(incluido `,#1`, aunque para ese caso concreto sea equivalente y más largo).
-
-Ejemplo: `SHR BL,#4` → `CA 03` (familia 25, reg BL=2 → 25×8+2=202=0xCA;
-byte2 = 4-1 = 3) — antes hacían falta 4 bytes (`SHR BL` × 4) para lo mismo.
-
-En el selector de mnemónico del panel (sección 1): al elegir `SHR`/`SHL`,
-el campo `MODE` alterna entre desplazar 1 bit y `reg,#N`; en este último,
-tras `REG` aparece un campo **`N`** que gira entre 1 y 8 (con envoltura,
-igual que `PTR` envuelve entre `AX`/`BX`/`CX`/`DX`).
-
----
-
-## 4d. Multiplicación, división, aritmética de 16 bits y copia de bloques
-
-Reemplazan rutinas de software que antes costaban decenas de instrucciones
-(`smul64` en `cubo.asm`, la división de `calc.asm`, el patrón de
-incremento de puntero con acarreo manual repetido en cada fichero). Regla
-general de flags: estas son instrucciones de *aritmética de punteros /
-movimiento de datos*, no de *programa* — **ninguna toca los flags salvo
-`MUL`/`DIV`** (que sí son aritmética de verdad, igual que `ADD`/`SUB`).
-
-**`MUL reg`** (familia 27): `AX = AL × reg`, sin signo (8×8→16, nunca
-desborda: máximo 255×255=65025). Flags: `Z`/`N` del resultado de 16 bits
-completo; **`C=V=1` si el producto no cupo en 8 bits** (`AH≠0`) — así
-`JMPV`/`JMPC` justo después de un `MUL` es literalmente "hizo falta el
-byte alto", sin tener que comprobar `AH` a mano.
-
-**`DIV reg`** (familia 28): `AL = AX ÷ reg` (cociente), `AH = AX mod reg`
-(resto), sin signo. Esta CPU no tiene interrupciones/excepciones, así que
-tanto **dividir entre 0 como un cociente que no quepa en 8 bits** (`AX÷reg
-> 255`) saturan `AL=AH=0xFF` con **`C=V=1`** — un solo camino de
-saturación para los dos casos, así `JMPV`/`JMPC` tras un `DIV` es "esto no
-dio un resultado válido de 8 bits". Con resultado válido: `C=V=0`, `Z`/`N`
-del cociente (`AL`).
-
-**`INC reg16` / `DEC reg16`** (familia 29, `reg16` = `AX`/`BX`/`CX`/`DX`):
-`reg16 ± 1` con vuelta (`0xFFFF↔0x0000`). Sin flags. El paso más común de
-todos: avanzar un puntero de 16 bits una unidad.
-
-**`ADD dst16,src8` / `SUB dst16,src8`** (familia 30, opcode `F0`/`F1` +
-1 byte de operando `[dst16:2][src8:3]`): **mismo mnemónico `ADD`/`SUB` de
-siempre** — el ensamblador detecta la forma de 16 bits por el nombre del
-registro destino (`AX/BX/CX/DX` en vez de `AL/AH/...`), sin palabra clave
-aparte. `dst16 ±= extender_a_cero(src8)`: el reemplazo directo de
-`idx_ptr` (`BL+=CL` con acarreo a mano a `BH`) — `src8` puede ser
-cualquiera de los 8 registros de 8 bits, no solo `CL`. Sin flags.
-`AND`/`OR`/`XOR`/`CMP` NO tienen forma de 16 bits (ni falta que hace,
-operar a nivel de bits sobre un puntero no tiene mucho sentido); si se
-escribe un `ADD`/`SUB` con un operando de 16 bits y el otro también de 16
-bits (o al revés, destino de 8 con origen de 16), `casm.py` lo rechaza con
-un error claro.
-
-**`MOVB` / `MOVW`** (familia 30, opcode `F2`/`F3`, sin operando): copia un
-bloque de memoria con registros implícitos — **`BX` = origen, `DX` =
-destino, `CX` = cuenta** — avanzando `BX`/`DX` a la vez y dejando `CX` a 0
-al terminar (para poder encadenar). `MOVB` cuenta bytes sueltos; `MOVW`
-cuenta PARES de bytes (palabras de 16 bits), para no tener que doblar `CX`
-a mano cuando el tamaño ya se piensa en palabras (tablas `.dw`, o mover el
-framebuffer 2 bytes a la vez). Copia siempre hacia adelante (como `REP
-MOVSB` de x86 o `LDIR` del Z80): si `[BX..)` y `[DX..)` se solapan con
-`DX<BX`, el resultado puede no ser el de un `memmove` seguro — limitación
-deliberada, pensada para blits/descompresión/tablas, no para solapar
-rangos a propósito. Sin flags.
-
-**`JMPNV` / `CALLNV addr16`** (familia 30, opcode `F4`/`F5`): saltan/llaman
-si `V=0`. Ver la sección 5 para por qué viven en una familia aparte de
-`JMPV`/`CALLV` en vez de compartir el campo `cc` de `JMP`/`CALL`.
-
-**`MOV reg16,#imm16`** (familia 30, opcode `F6`, mismo mnemónico `MOV` de
-siempre — detectado por que el destino es `AX`/`BX`/`CX`/`DX`): `reg16 =
-imm16`, en una sola instrucción en vez de los dos `MOV reg,#imm8` (uno por
-mitad) que hacía falta antes. Pensada sobre todo para montar `BX`/`DX`
-antes de un `MOVB`/`MOVW`. Sin flags. **Es la única instrucción de toda la
-ISA que ocupa 4 bytes** (opcode + 1 byte de registro + `imm16` lo/hi) — si
-tecleas a mano en el panel y sueles dejar 3 `NOP` de margen antes de
-insertar una instrucción nueva (suficiente para cualquier otra, que como
-mucho llegan a 3 bytes), para esta hacen falta **4**.
+`INC r` / `DEC r` (1 byte) actualizan `Z`, `N` y `V` pero **no `C`**, igual que
+en el Z80: se pueden usar como contador de un bucle sin perder un acarreo
+pendiente de una suma de varios bytes. `V` = 1 si se pasó de 127 a −128 (`INC
+0x7F`) o al revés (`DEC 0x80`).
 
 ---
 
 ## 5. Condiciones de `JMP` / `CALL`
 
-El opcode base es `88` (JMP) o `90` (CALL); se le suma el número de condición:
+El opcode es `B8` (JMP) o `C0` (CALL) más el número de condición:
 
 | cc | +n | JMP | CALL | salta si… |
 |---|---|---|---|---|
-| ALWAYS (siempre) | 0 | `88` | `90` | siempre |
-| Z   | 1 | `89` | `91` | Z = 1 (resultado cero) |
-| NZ  | 2 | `8A` | `92` | Z = 0 |
-| C   | 3 | `8B` | `93` | C = 1 (hubo acarreo) |
-| NC  | 4 | `8C` | `94` | C = 0 |
-| N   | 5 | `8D` | `95` | N = 1 (resultado negativo) |
-| NN  | 6 | `8E` | `96` | N = 0 |
-| V   | 7 | `8F` | `97` | V = 1 (overflow con signo — ver sección 4d) |
+| (siempre) | 0 | `B8` | `C0` | siempre |
+| Z   | 1 | `B9` | `C1` | Z = 1 (resultado cero) |
+| NZ  | 2 | `BA` | `C2` | Z = 0 |
+| C   | 3 | `BB` | `C3` | C = 1 (hubo acarreo / préstamo) |
+| NC  | 4 | `BC` | `C4` | C = 0 |
+| N   | 5 | `BD` | `C5` | N = 1 (resultado negativo) |
+| NN  | 6 | `BE` | `C6` | N = 0 |
+| V   | 7 | `BF` | `C7` | V = 1 (desbordamiento con signo) |
+| NV  | — | `C8` | `C9` | V = 0 (no cabe en los 3 bits: va en la familia 25) |
 
-`JMP` y `CALL` **siempre ocupan 3 bytes**, aunque la condición no se cumpla.
-
-**`JMPNV`/`CALLNV` (salta si V=0) NO tienen hueco en `cc`**: el campo son 3
-bits (0-7) y las 8 combinaciones ya están usadas con lo de arriba. Se
-codifican aparte, en la familia 30 (`F4`/`F5`, ver sección 4d) — mismos 3
-bytes (opcode + `addr16`), pero el selector de mnemónico del panel los
-ofrece igual que el resto: son un 9º valor del campo `COND` bajo el verbo
-`JMP`/`CALL` de siempre, no un verbo aparte.
+`JMP r16` / `CALL r16` (`CA`/`CB` + byte con el par) saltan a la dirección
+que contiene el registro, sin condición: sirven para tablas de saltos
+(cargar en `BL`/`BH` la dirección `tabla[i]` con dos `LDA` y luego `JMP BX`).
 
 ---
 
-## 6. ALU registro-registro:  `<op> dst,src`   (familia 31)
+## 6. La ALU: operaciones y formas
 
-Las 7 operaciones de la ALU. El **opcode** lleva la operación; sigue **1 byte
-de operando** con los dos registros:
+Nueve operaciones, cada una en cuatro formas (familias 10–13):
 
-    opcode  = 0xF8 + op         op = 0 MOV · 1 ADD · 2 SUB · 3 CMP · 4 AND · 5 OR · 6 XOR
-    operando = dst×8 + src      dst, src = índices de registro (0–7)
-
-| op | opcode | efecto | flags |
+| op | Mnemónico | Efecto | Flags |
 |---|---|---|---|
-| MOV | `F8` | `dst = src` | — |
-| ADD | `F9` | `dst = dst + src` | N V Z C |
-| SUB | `FA` | `dst = dst - src` | N V Z C |
-| CMP | `FB` | flags de `dst - src` (dst no cambia) | N V Z C |
-| AND | `FC` | `dst = dst & src` | N Z (C=V=0) |
-| OR  | `FD` | `dst = dst \| src` | N Z |
-| XOR | `FE` | `dst = dst ^ src` | N Z |
+| 0 | `MOV` | `dst = src` | — |
+| 1 | `ADD` | `dst = dst + src` | N V Z C |
+| 2 | `ADC` | `dst = dst + src + C` | N V Z C |
+| 3 | `SUB` | `dst = dst − src` | N V Z C |
+| 4 | `SBC` | `dst = dst − src − C` | N V Z C |
+| 5 | `CMP` | flags de `dst − src`; `dst` no cambia | N V Z C |
+| 6 | `AND` | `dst = dst & src` | N Z (C = V = 0) |
+| 7 | `OR`  | `dst = dst \| src` | N Z (C = V = 0) |
+| 8 | `XOR` | `dst = dst ^ src` | N Z (C = V = 0) |
 
-Ejemplos: `MOV CL,AL` → `F8` `20` (dst CL=4 → 4×8=32=0x20, src AL=0) ·
-`ADD AL,BL` → `F9` `02` · `XOR AL,BL` → `FE` `02`.
+| Forma | Bytes | Ejemplo | Bytes del ejemplo |
+|---|---|---|---|
+| `r,r` | `50+dst` `op<<3\|src` | `ADD AL,BL` | `50 0A` |
+| `r,#imm8` | `58+r` `op` `imm` | `CMP CL,#0x0A` | `5C 05 0A` |
+| `r,[addr16]` | `60+r` `op` `lo` `hi` | `SUB AL,[0x1234]` | `60 03 34 12` |
+| `r,[r16]` | `68+r` `op<<2\|r16` | `ADD AL,[BX]` | `68 05` |
 
----
+`MOV r,#imm8`, `MOV r,[addr16]` y `MOV r,[r16]` tienen su forma propia más
+corta (familias 1, 2 y 4); el ensamblador las usa siempre.
 
-## 6b. ALU con inmediato:  `<op> reg,#imm8`   (familia 20)
+**`ADC` y `SBC`** sirven para sumar y restar números de más de 8 bits a
+trozos: la primera operación con `ADD`/`SUB` sobre los bytes bajos, y las
+siguientes con `ADC`/`SBC`, que añaden (o restan) el acarreo que dejó la
+anterior:
 
-Igual pero la fuente es una constante. **Opcode + registro + valor**:
-
-    opcode = 0xA0 + op         (mismo op que arriba)
-    byte 2 = reg               (0–7)
-    byte 3 = imm8
-
-| op | opcode | efecto |
-|---|---|---|
-| ADD | `A1` | `reg = reg + imm` |
-| SUB | `A2` | `reg = reg - imm` |
-| CMP | `A3` | flags de `reg - imm` |
-| AND | `A4` | `reg = reg & imm` |
-| OR  | `A5` | `reg = reg \| imm` |
-| XOR | `A6` | `reg = reg ^ imm` |
-
-(`MOV reg,#imm` no se usa por aquí: es `LDI` — familia 2, más corto.)
-
-Ejemplos: `ADD AL,#0x05` → `A1` `00` `05` · `OR BL,#0x80` → `A5` `02` `80` ·
-`CMP CL,#0x0A` → `A3` `04` `0A`.
-
-Flags: iguales que en la sección 6 (aritméticos para ADD/SUB/CMP, lógicos para AND/OR/XOR).
+    ; 16 bits: [x_hi:x_lo] += [y_hi:y_lo]
+    LDA AL,[x_lo]
+    ADD AL,[y_lo]        ; C = 1 si se pasó de 255
+    STA [x_lo],AL
+    LDA AL,[x_hi]
+    ADC AL,[y_hi]        ; suma también ese 1 que "me llevo"
+    STA [x_hi],AL
 
 ---
 
 ## 7. Cómo quedan los flags
 
-- **Aritmética** (`ADD`, `SUB`, `EXT ADD/SUB/CMP`): `Z` si el resultado es 0,
+- **Aritmética** (`ADD`, `ADC`, `SUB`, `SBC`, `CMP`): `Z` si el resultado es 0,
   `N` = bit 7 del resultado.
-  - `SUB`/`CMP`: `C` = 1 si `a < b` (préstamo). `V` = desbordamiento con signo.
-  - `ADD`: `C` = 1 si la suma pasa de 255. `V` = desbordamiento con signo.
-- **Lógica** (`AND`, `OR`, `XOR`, `NOT`): `Z` y `N` según el resultado; `C = 0`, `V = 0`.
-- **Desplazamientos**: ver la tabla de la sección 4 (`SHR`/`SHL reg`, 1 bit)
-  y la sección 4c (`SHR`/`SHL reg,#N`, N bits de una vez).
-- **`MUL`/`DIV`** (sección 4d): `Z`/`N` del resultado; `C=V=1` si el
-  producto no cupo en 8 bits (`MUL`) o si la división no dio un resultado
-  válido de 8 bits, por entre 0 o por cociente demasiado grande (`DIV`).
-- `MOV`, `LDA`, `STA`, `IN`, `OUT`, `PUSH`, `POP`, `JMP`, `CALL`, `RET`, `NOP`:
-  **no tocan los flags** — tampoco `MOVB`, `MOVW`, `INC`/`DEC` de 16 bits ni
-  `ADD`/`SUB` en su forma de 16 bits (sección 4d): son aritmética de
-  *punteros*, no de programa. **Regla general**: si la instrucción calcula
-  un valor de 8 bits que el programa puede querer comparar (`ADD` `SUB`
-  `AND` `OR` `XOR` `NOT` `CMP` `SHR` `SHL` `MUL` `DIV`), toca flags; si
-  mueve datos o punteros de 16 bits sin más, no los toca.
+  - `SUB`/`SBC`/`CMP`: `C` = 1 si hubo préstamo (`a < b`, o `a < b + C` en
+    `SBC`). `V` = desbordamiento con signo.
+  - `ADD`/`ADC`: `C` = 1 si la suma pasa de 255. `V` = desbordamiento con signo.
+- **Lógica** (`AND`, `OR`, `XOR`, `NOT`): `Z` y `N` según el resultado; `C = V = 0`.
+- **Desplazamientos** (`SHR`/`SHL r,#N`): resultado y flags iguales que
+  desplazar N veces de 1 en 1. `C` = último bit que sale. `SHR`: `V` = bit 7
+  de antes de la instrucción. `SHL`: `N` = bit 7, `V` = (C ≠ N).
+- **`INC`/`DEC r`** (8 bits): `Z`, `N`, `V`; `C` no cambia (sección 4d).
+- **`MUL`/`DIV`**: sección 4c.
+- **`CMP r16`**: sección 4b.
+- `MOV`, `LDA`, `STA`, `IN`, `OUT`, `PUSH`, `POP`, `JMP`, `CALL`, `RET`, `NOP`,
+  `MOVB`/`MOVW`/`MOVBR`, `INC`/`DEC r16` y `MOV`/`ADD`/`SUB` de 16 bits **no
+  tocan los flags**. Regla general: lo que calcula un valor de 8 bits que el
+  programa puede querer comparar toca flags; mover datos o punteros no.
 - `reset` (arranque de ejecución): todos los flags a 0.
 
 ---
@@ -389,7 +302,7 @@ Espacio de 65536 puertos, **aparte de la memoria**. `IN` de un puerto no
 mapeado devuelve 0; `OUT` a uno no mapeado no hace nada.
 
 La pantalla (gráficos + texto + atributos) va en `0x0000`–`0x05FF`; el resto
-de periféricos en `0x06xx`.
+de periféricos en `0x0600`–`0x0801`.
 
 | Puerto | Dir. | Qué es |
 |---|---|---|
@@ -401,13 +314,23 @@ de periféricos en `0x06xx`.
 | `0x0602` | IN | Encoder **DATA**: posición. |
 | `0x0603` | IN | Encoder DATA: bit 0 = pulsado. |
 | `0x0610` | E/S | **LED** azul de a bordo: `OUT` bit 0 = 1 lo enciende. `IN` = eco. |
+| `0x0611` | IN | **Número aleatorio**: un byte nuevo en cada lectura (generador por hardware del ESP32). |
 | `0x0620` … `0x0629` | E/S | **Temporizadores** t0…t9. `OUT` arma con 0–255; decrece solo hasta 0. `IN` lee el valor actual. |
 | `0x0630` | E/S | **Sonido** – frecuencia, byte bajo (solo se engancha). |
 | `0x0631` | E/S | **Sonido** – frecuencia, byte alto; al escribirlo suena `Hz = alto·256 + bajo` (0 = silencio). |
 | `0x0632` | E/S | **Sonido** – nota MIDI 0–127 (0 = silencio). 69 = LA4 = 440 Hz, +12 = octava. La forma fácil. |
 | `0x0633` | E/S | **Sonido** – duración automática = valor × 10 ms (0 = sostenida). "Pegajosa": cada nota la re-arma. |
 | `0x0640` | E/S | **Cargar programa**: `OUT` con un número de slot (0–59) carga esa imagen entera en la RAM de la CPU y la reinicia (PC=0, SP=0xFFFF); también deja pantalla, LED y sonido apagados y los encoders a 0, igual que al entrar en una ejecución nueva por el panel — un salto a otro programa, sin vuelta atrás. Slot vacío o fuera de rango: no hace nada. `IN` = 1 si el último intento falló (solo tiene sentido leerlo tras un fallo: si la carga sale bien, quien iba a leerlo ya no es el programa que sigue corriendo). |
-| `0x0641` | E/S | **Grabar programa**: `OUT` con un número de slot (0–59) graba ahí la RAM actual entera (equivale a "Guardar" del panel). El programa sigue corriendo después. `IN` = 1 si la última grabación salió bien. |
+| `0x0641` | E/S | **Grabar programa**: `OUT` con un número de slot (0–59) graba ahí la RAM actual entera (equivale a "Guardar" del panel), con el nombre y la categoría del programa cargado. El programa sigue corriendo después. `IN` = 1 si la última grabación salió bien. |
+| `0x0642` | E/S | **Consultar slot**: `OUT` con un número de slot lee su nombre y categoría a `0x0660`–`0x066E`. `IN` = 1 si ese slot tiene programa. |
+| `0x0643` | IN | **Slot en curso**: el slot del que se cargó el programa que corre (para grabarse a sí mismo). |
+| `0x0650` | E/S | **Brillo** de la pantalla, 0–255. `OUT` solo desde el slot 0 (SETTINGS de sisop); `IN` = valor actual. |
+| `0x0651` | E/S | **Sonido** activado (≠0) / silenciado (0). `OUT` solo desde el slot 0; `IN` = 1 si está activado. |
+| `0x0652` | OUT | **Grabar ajustes** (brillo y sonido) en la flash, si han cambiado. Solo desde el slot 0. |
+| `0x0660` … `0x066E` | IN | **Metadatos del slot consultado**: `0x0660` = categoría (2 juego, 3 programa, 4 utilidad, 5 demo, 6 documentación, 1 sistema; `0xFF` = ninguna), `0x0661`… = nombre ASCII (hasta 14, relleno con 0). Los pone el ensamblador (`.name`, `.category`). |
+| `0x0700` … `0x07FF` | E/S | **EEPROM** del slot en curso: búfer de 256 bytes en RAM (instantáneo). |
+| `0x0800` | E/S | **EEPROM**: `OUT` carga el búfer desde la flash. `IN` = 1 si falló. |
+| `0x0801` | E/S | **EEPROM**: `OUT` graba el búfer en la flash. `IN` = 1 si salió bien. |
 
 Gráficos, texto, atributos de texto, encoders, LED, temporizadores y sonido
 se ponen a 0 cada vez que arranca una ejecución. En CONTINUOUS la pantalla es
@@ -487,90 +410,90 @@ ejecutado y el siguiente (nada mientras no se pulsa nada) — ver sección 1.
 
 Teclea los bytes desde `0x0000`. Para ejecutar: `SW_MODE` = RUN.
 
-### El LED sigue al pulsador DATA  *(RUN ▼ continuo)*
+### El LED sigue al pulsador DATA  *(RUN + CONTINUOUS)*
 ```
 Dir  Bytes        Instrucción
-0000 68 03 06     IN  AL,(0x0603)     ; lee el pulsador del encoder DATA
-0003 70 10 06     OUT (0x0610),AL     ; lo manda al LED
-0006 88 00 00     JMP 0x0000          ; repetir para siempre
+0000 30 03 06     IN  AL,(0x0603)     ; lee el pulsador del encoder DATA
+0003 38 10 06     OUT (0x0610),AL     ; lo manda al LED
+0006 B8 00 00     JMP 0x0000          ; repetir para siempre
 ```
 Pulsa el eje del encoder DATA → el LED se enciende. (Vuelve a EDIT para parar.)
 
-### Escribir "HOLA" arriba a la izquierda  *(RUN ▼ continuo)*
+### Escribir "HOLA" arriba a la izquierda  *(RUN + CONTINUOUS)*
 ```
 Dir  Bytes        Instrucción
-0000 10 48        MOV AL,#0x48        ; 'H'
-0002 70 00 04     OUT (0x0400),AL     ; celda (col 0, fila 0)
-0005 10 4F        MOV AL,#0x4F        ; 'O'
-0007 70 01 04     OUT (0x0401),AL
-000A 10 4C        MOV AL,#0x4C        ; 'L'
-000C 70 02 04     OUT (0x0402),AL
-000F 10 41        MOV AL,#0x41        ; 'A'
-0011 70 03 04     OUT (0x0403),AL
-0014 08           HALT
+0000 08 48        MOV AL,#0x48        ; 'H'
+0002 38 00 04     OUT (0x0400),AL     ; celda (col 0, fila 0)
+0005 08 4F        MOV AL,#0x4F        ; 'O'
+0007 38 01 04     OUT (0x0401),AL
+000A 08 4C        MOV AL,#0x4C        ; 'L'
+000C 38 02 04     OUT (0x0402),AL
+000F 08 41        MOV AL,#0x41        ; 'A'
+0011 38 03 04     OUT (0x0403),AL
+0014 01           HALT
 ```
 La fila siguiente empieza en `0x0420` (`0x0400 + 1×32`).
 
-### Suma 5 + 3  *(RUN ▲ paso a paso, para verlo)*
+### Suma 5 + 3  *(RUN + SINGLE, paso a paso, para verlo)*
 ```
 Dir  Bytes     Instrucción
-0000 10 05     MOV AL,#0x05
-0002 12 03     MOV BL,#0x03
-0004 F9 02     ADD AL,BL           ; AL = 8   (F9 = ADD reg,reg ; 02 = dst AL, src BL)
-0006 08        HALT
+0000 08 05     MOV AL,#0x05
+0002 0A 03     MOV BL,#0x03
+0004 50 0A     ADD AL,BL           ; AL = 8   (50 = ALU reg,reg con dst AL ; 0A = ADD(1)<<3 | src BL(2))
+0006 01        HALT
 ```
-O más corto, con inmediato: `10 05` `A1 00 03` `08` (`MOV AL,#5` · `ADD AL,#3` · `HALT`).
+O más corto, con inmediato: `08 05` `58 01 03` `01` (`MOV AL,#5` · `ADD AL,#3` · `HALT`).
 
-### Tres puntos en el borde izquierdo de la pantalla  *(RUN ▼ continuo)*
+### Tres puntos en el borde izquierdo de la pantalla  *(RUN + CONTINUOUS)*
 ```
 Dir  Bytes        Instrucción
-0000 10 80        MOV AL,#0x80        ; 0x80 = píxel más a la izquierda
-0002 70 00 00     OUT (0x0000),AL     ; fila 0
-0005 70 10 00     OUT (0x0010),AL     ; fila 1
-0008 70 20 00     OUT (0x0020),AL     ; fila 2
-000B 08           HALT
+0000 08 80        MOV AL,#0x80        ; 0x80 = píxel más a la izquierda
+0002 38 00 00     OUT (0x0000),AL     ; fila 0
+0005 38 10 00     OUT (0x0010),AL     ; fila 1
+0008 38 20 00     OUT (0x0020),AL     ; fila 2
+000B 01           HALT
 ```
 
 ### Cuenta atrás desde 3 y para  *(bucle con `SUB` y `JMPNZ`)*
 ```
 Dir  Bytes        Instrucción
-0000 10 03        MOV AL,#0x03
-0002 A2 00 01     SUB AL,#0x01        ; AL = AL - 1
-0005 8A 02 00     JMPNZ 0x0002        ; repite mientras AL != 0
-0008 08           HALT
+0000 08 03        MOV AL,#0x03
+0002 58 03 01     SUB AL,#0x01        ; AL = AL - 1
+0005 BA 02 00     JMPNZ 0x0002        ; repite mientras AL != 0
+0008 01           HALT
 ```
-Míralo en **paso a paso** (`SW_STEP ▲`): AL va 3 → 2 → 1 → 0 y para.
+Míralo en **paso a paso** (`SW_STEP` en SINGLE): AL va 3 → 2 → 1 → 0 y para.
 
-### Espera con temporizador y enciende el LED  *(RUN ▼ continuo)*
+### Espera con temporizador y enciende el LED  *(RUN + CONTINUOUS)*
 ```
 Dir  Bytes        Instrucción
-0000 10 0A        MOV AL,#0x0A        ; 10 pasos de t5 (32 ms) ≈ 320 ms
-0002 70 25 06     OUT (0x0625),AL     ; arma el temporizador 5
-0005 68 25 06     IN  AL,(0x0625)     ; lee el temporizador
-0008 A3 00 00     CMP AL,#0x00        ; IN no toca flags: hay que comparar
-000B 8A 05 00     JMPNZ 0x0005        ; sigue esperando mientras != 0
-000E 10 01        MOV AL,#0x01
-0010 70 10 06     OUT (0x0610),AL     ; enciende el LED
-0013 08           HALT
+0000 08 0A        MOV AL,#0x0A        ; 10 pasos de t5 (32 ms) ≈ 320 ms
+0002 38 25 06     OUT (0x0625),AL     ; arma el temporizador 5
+0005 30 25 06     IN  AL,(0x0625)     ; lee el temporizador
+0008 58 05 00     CMP AL,#0x00        ; IN no toca flags: hay que comparar
+000B BA 05 00     JMPNZ 0x0005        ; sigue esperando mientras != 0
+000E 08 01        MOV AL,#0x01
+0010 38 10 06     OUT (0x0610),AL     ; enciende el LED
+0013 01           HALT
 ```
 Cambia el temporizador (`0x0620`–`0x0629`) o el valor inicial para ajustar el
 retardo. Recuerda: en paso a paso los temporizadores no avanzan.
 
-### Dos notas: DO4 y luego SOL4  *(RUN ▼ continuo)*
+### Dos notas: DO4 y luego SOL4  *(RUN + CONTINUOUS)*
 ```
 Dir  Bytes        Instrucción
-0000 10 0F        MOV AL,#0x0F        ; 15 × 10 ms = 150 ms por nota
-0002 70 33 06     OUT (0x0633),AL     ; PORT_SND_DUR (se queda armado)
-0005 10 3C        MOV AL,#0x3C        ; 60 = DO4 (~262 Hz)
-0007 70 32 06     OUT (0x0632),AL     ; suena; se calla sola a los 150 ms
-000A 10 14        MOV AL,#0x14        ; espera con t3 (8 ms): 20 pasos ≈ 160 ms
-000C 70 23 06     OUT (0x0623),AL
-000F 68 23 06     IN  AL,(0x0623)     ; ← espera
-0012 A3 00 00     CMP AL,#0x00
-0015 8A 0F 00     JMPNZ 0x000F
-0018 10 43        MOV AL,#0x43        ; 67 = SOL4 (~392 Hz)
-001A 70 32 06     OUT (0x0632),AL
-001D 08           HALT
+0000 08 0F        MOV AL,#0x0F        ; 15 × 10 ms = 150 ms por nota
+0002 38 33 06     OUT (0x0633),AL     ; PORT_SND_DUR (se queda armado)
+0005 08 3C        MOV AL,#0x3C        ; 60 = DO4 (~262 Hz)
+0007 38 32 06     OUT (0x0632),AL     ; suena; se calla sola a los 150 ms
+000A 08 14        MOV AL,#0x14        ; espera con t3 (8 ms): 20 pasos ≈ 160 ms
+000C 38 23 06     OUT (0x0623),AL
+000F 30 23 06     IN  AL,(0x0623)     ; ← espera
+0012 58 05 00     CMP AL,#0x00
+0015 BA 0F 00     JMPNZ 0x000F
+0018 08 43        MOV AL,#0x43        ; 67 = SOL4 (~392 Hz)
+001A 38 32 06     OUT (0x0632),AL
+001D 01           HALT
 ```
 Nota MIDI: 60 = DO4, 62 = RE, 64 = MI, 65 = FA, 67 = SOL, 69 = LA (440 Hz),
 71 = SI, 72 = DO5. Sube/baja 12 para cambiar de octava.

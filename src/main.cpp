@@ -13,6 +13,8 @@
 #include "display.h"
 #include "spi_flash_storage.h"
 #include "iomap.h"
+#include "hal/usb_serial_jtag_ll.h"   // usbTxRecover(): reactivar la interrupcion de salida
+#include "esp_random.h"
 #include "ui.h"
 
 using namespace compi;
@@ -156,6 +158,22 @@ unsigned long g_sndOffAt = 0;               // millis() en que callar; 0 = soste
 // tone() -- el programa en curso sigue escribiendo en los puertos de
 // sonido con total normalidad, solo se corta la salida física.
 bool g_soundMuted = false;
+
+// --- Ajustes globales persistentes (brillo + mute) ----------------------
+// g_screenContrast y g_soundMuted son del APARATO, no del programa: solo
+// los cambian SETTINGS de sisop (slot 0, puertos PORT_CFG_*) y el boton
+// BOOT. Se guardan en la flash (storage.h SETTINGS_SIZE) para sobrevivir a
+// un reset o a apagarlo, y se cargan en setup(). Para no gastar la flash
+// con cada detente del dial de brillo, un cambio solo marca "pendiente"
+// (g_settingsDirty) y se graba de una vez cuando sisop sale de SETTINGS
+// (OUT a PORT_CFG_SAVE), o, para el boton BOOT, al acabar su jingle
+// (g_bootSavePending, ver tickSettingsSave).
+// Formato: [0] = SETTINGS_MAGIC, [1] = brillo, [2] = 1 si muteado.
+constexpr uint8_t SETTINGS_MAGIC = 0x5E;
+bool g_settingsDirty    = false;
+bool g_bootSavePending  = false;
+
+void markSettingsDirty() { g_settingsDirty = true; }
 bool g_bootBtnRawPrev = HIGH;               // ultima lectura CRUDA (para detectar el cambio)
 bool g_bootBtnStable = HIGH;                // estado ya anti-rebotado
 unsigned long g_bootBtnLastChangeMs = 0;
@@ -185,6 +203,13 @@ uint8_t g_lastSaveOk = 0;
 // siempre operan sobre ESTE slot, para que un programa no tenga que conocer
 // ni pasar su propio numero.
 uint8_t g_currentSlot = 0;
+// Metadatos (categoria + nombre, storage.h SLOT_META_SIZE) del programa
+// cargado ahora: se leen de la flash al cargarlo y se graban con el al
+// guardarlo en un slot (panel, PORT_PROG_SAVE) -- el nombre "viaja" con el
+// programa. g_slotInfo: los del ultimo slot consultado (PORT_SLOT_QUERY).
+uint8_t g_currentMeta[SLOT_META_SIZE] = {SLOT_CAT_NONE};
+uint8_t g_slotInfo[SLOT_META_SIZE]    = {SLOT_CAT_NONE};
+uint8_t g_slotInfoUsed = 0;
 
 // EEPROM por slot (puertos 0x0700-0x07FF/0x0800/0x0801, iomap.h): bufer de
 // trabajo en RAM -- LDA/OUT sobre 0x0700+i lo leen/escriben al instante, sin
@@ -303,6 +328,8 @@ void toggleMute() {
         g_soundMuted = true;
         if (g_sndHz) noTone(PIN_BUZZER);
     }
+    markSettingsDirty();
+    g_bootSavePending = true;   // se graba al acabar el jingle (tickSettingsSave)
 }
 
 // Llamada la PRIMERA en cada vuelta de loop(), antes de mirar el modo del
@@ -392,6 +419,8 @@ uint8_t portRead(uint16_t port) {
     }
     if (port >= PORT_EEPROM_BASE && port < PORT_EEPROM_BASE + EEPROM_SLOT_SIZE)
         return g_eeprom[port - PORT_EEPROM_BASE];
+    if (port >= PORT_SLOT_INFO_BASE && port < PORT_SLOT_INFO_BASE + SLOT_META_SIZE)
+        return g_slotInfo[port - PORT_SLOT_INFO_BASE];
     switch (port) {
         case PORT_DIR_POS: return panel.dirPos();
         case PORT_DIR_BTN: return panel.dirDown() ? 1 : 0;
@@ -400,6 +429,9 @@ uint8_t portRead(uint16_t port) {
         case PORT_LED:     return g_led;
         case PORT_PROG_LOAD: return g_lastLoadOk;
         case PORT_PROG_SAVE: return g_lastSaveOk;
+        case PORT_SLOT_QUERY: return g_slotInfoUsed;
+        case PORT_CUR_SLOT:   return g_currentSlot;
+        case PORT_RANDOM:     return (uint8_t)(esp_random() & 0xFF);
         case PORT_CFG_BRIGHTNESS: return g_screenContrast;
         case PORT_CFG_SOUND_EN:   return g_soundMuted ? 0 : 1;
         case PORT_EEPROM_LOAD:    return g_lastEepromLoadOk;
@@ -407,6 +439,7 @@ uint8_t portRead(uint16_t port) {
         default:           return 0;
     }
 }
+void saveSettings();   // mas abajo, junto a loadSettings()
 void portWrite(uint16_t port, uint8_t value) {
     if (port < FB_BYTES) { g_fb[port] = value; return; }
     { int ti = textIndex(port); if (ti >= 0) { g_text[ti] = value; return; } }
@@ -440,6 +473,7 @@ void portWrite(uint16_t port, uint8_t value) {
         g_lastLoadOk = loadOk ? 0 : 1;   // IN 0x0640 = 1 si FALLO (ver iomap.h)
         if (loadOk) {
             g_currentSlot = value;   // ver g_currentSlot arriba
+            flash.readSlotMeta((int)value, g_currentMeta);
             cpu.reset();
             // el programa que arranca no debe heredar la pantalla, el LED
             // ni un tono en marcha de quien lo cargo (p.ej. un "sistema
@@ -450,11 +484,15 @@ void portWrite(uint16_t port, uint8_t value) {
         }
         return;
     }
+    if (port == PORT_SLOT_QUERY) {
+        g_slotInfoUsed = flash.readSlotMeta((int)value, g_slotInfo) ? 1 : 0;
+        return;
+    }
     if (port == PORT_PROG_SAVE) {
         // volcado sin panel ni cable: graba la RAM actual entera en el slot
         // pedido y sigue ejecutandose el mismo programa (a diferencia de
         // PORT_PROG_LOAD, esto no es un salto).
-        g_lastSaveOk = flash.saveProgram((int)value, cpu.ram()) ? 1 : 0;
+        g_lastSaveOk = flash.saveProgram((int)value, cpu.ram(), g_currentMeta) ? 1 : 0;
         if (g_lastSaveOk) g_currentSlot = value;   // ver g_currentSlot arriba
         return;
     }
@@ -480,16 +518,28 @@ void portWrite(uint16_t port, uint8_t value) {
         // contrastFromSettings() == contrast(): solo SET_CONTRAST. Los dos
         // intentos de escalar más (PRE-CHARGE/VCOMH, tramado) se descartaron
         // en el panel real; ver display.cpp.
+        // Solo SETTINGS de sisop (slot 0) puede cambiarlo: es un ajuste del
+        // aparato, no del programa en curso -- cualquier otro programa que
+        // escriba aqui se ignora (puede seguir LEYENDOLO con IN).
+        if (g_currentSlot != 0) return;
+        if (value != g_screenContrast) markSettingsDirty();
         g_screenContrast = value;
         oled.contrastFromSettings(g_screenContrast);
         return;
     }
+    if (port == PORT_CFG_SAVE) {
+        // sisop sale de SETTINGS: graba en la flash lo que haya cambiado
+        if (g_currentSlot == 0) saveSettings();
+        return;
+    }
     if (port == PORT_CFG_SOUND_EN) {
+        if (g_currentSlot != 0) return;   // igual que el brillo (ver arriba)
         // Mismo interruptor general que el boton BOOT (g_soundMuted), pero
         // sin su "jingle" de reactivacion -- eso es una cortesia pensada
         // para que la note un humano, no para dispararla desde código. Ver
         // toggleMute() mas arriba para el equivalente con jingle.
         bool enable = (value != 0);
+        if (enable == g_soundMuted) markSettingsDirty();   // cambia de verdad
         if (!enable) {
             if (!g_soundMuted && g_sndHz) noTone(PIN_BUZZER);
             g_soundMuted = true;
@@ -499,6 +549,36 @@ void portWrite(uint16_t port, uint8_t value) {
         }
         return;
     }
+}
+
+// --- carga/grabado de los ajustes globales (ver g_settingsDirty) --------
+void loadSettings() {
+    uint8_t buf[SETTINGS_SIZE];
+    flash.readSettings(buf);
+    if (buf[0] != SETTINGS_MAGIC) return;   // nunca grabados: los de fabrica
+    g_screenContrast = buf[1];
+    g_soundMuted = (buf[2] != 0);
+}
+
+// Graba los ajustes si cambiaron desde la ultima vez (una pulsacion de
+// salir de SETTINGS sin tocar nada no escribe la flash).
+void saveSettings() {
+    if (!g_settingsDirty) return;
+    g_settingsDirty = false;
+    uint8_t buf[SETTINGS_SIZE];
+    memset(buf, 0xFF, sizeof(buf));
+    buf[0] = SETTINGS_MAGIC;
+    buf[1] = g_screenContrast;
+    buf[2] = g_soundMuted ? 1 : 0;
+    flash.writeSettings(buf);
+}
+
+// Boton BOOT: graba una vez por pulsacion, cuando el jingle de reactivar
+// ya ha terminado (antes g_soundMuted aun no tiene su valor final).
+void tickSettingsSave() {
+    if (!g_bootSavePending || g_muteJingleActive) return;
+    g_bootSavePending = false;
+    saveSettings();
 }
 
 void failBlink(int delayMs) {
@@ -590,6 +670,7 @@ void forceRedraw() {
 void loadSlot(uint8_t s) {
     if (flash.loadProgram((int)s, cpu.ram())) {
         g_currentSlot = s;   // ver g_currentSlot arriba (EEPROM por slot)
+        flash.readSlotMeta((int)s, g_currentMeta);
         cpu.reset();
         ui.cursor = 0;
         ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // resincroniza el editor
@@ -600,7 +681,7 @@ void saveSlot(uint8_t s) {
     char m[24];
     snprintf(m, sizeof(m), "SAVING slot %02u", (unsigned)s);
     oled.message(m);
-    if (flash.saveProgram((int)s, cpu.ram())) g_currentSlot = s;
+    if (flash.saveProgram((int)s, cpu.ram(), g_currentMeta)) g_currentSlot = s;
 }
 
 // Borra la RAM (todo a 0x00 = NOP, ver isa.h) para empezar a teclear un
@@ -609,6 +690,8 @@ void saveSlot(uint8_t s) {
 // igual que con cualquier otro cambio hecho a mano en la RAM.
 void newSlot() {
     cpu.clearMemory();
+    memset(g_currentMeta, 0, sizeof(g_currentMeta));   // programa nuevo: sin nombre
+    g_currentMeta[0] = SLOT_CAT_NONE;
     cpu.reset();
     ui.cursor = 0;
     ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // resincroniza el editor
@@ -672,7 +755,11 @@ void ensureRoomFor(uint16_t cursor, const ComposeState& st, uint8_t origLen) {
 // la flash, sin tener que teclearla byte a byte en el panel.
 //
 // Protocolo LOAD (host -> aparato, provisionLoad()):
-//     "COMPI LOAD <slot> <len>\n"     cabecera ASCII (slot 0..59, len 0..65536)
+//     "COMPI LOAD <slot> <len> [<cat> <nombre>]\n"
+//                                     cabecera ASCII (slot 0..59, len 0..65536);
+//                                     <cat>/<nombre> opcionales: metadatos del
+//                                     slot (storage.h SLOT_META_SIZE, hasta 14
+//                                     caracteres de nombre, puede llevar espacios)
 //     <len> bytes crudos, EN BLOQUES DE COMPI_CHUNK bytes (el ultimo puede
 //     ser mas corto); el host espera el "COMPI CHUNK <total>" de cada bloque
 //     antes de mandar el siguiente. El resto de los 64 KiB (hasta 65536) va
@@ -702,7 +789,8 @@ void ensureRoomFor(uint16_t cursor, const ComposeState& st, uint8_t origLen) {
 //                                     solo imagenes completas de 64 KiB)
 //     "COMPI READY <len>\n"           cabecera aceptada; <len> = el pedido,
 //                                     o PROGRAM_SIZE si no se pidio ninguno
-//     <len> bytes crudos, de un tiron (sin trocear)
+//     <len> bytes crudos, de un tiron (sin eco; usbWriteAll los manda a
+//                                     trozos y corta si el host deja de leer)
 //     "COMPI OK <sum>\n"              enviado; <sum> = checksum de esos <len>
 //                                     bytes (mismo cálculo que LOAD, pero
 //                                     solo sobre el trozo mandado)
@@ -713,7 +801,47 @@ void ensureRoomFor(uint16_t cursor, const ComposeState& st, uint8_t origLen) {
 // monitor serie).
 constexpr size_t COMPI_CHUNK = 1024;
 
-void provisionLoad(int slot, long len) {
+// --- Salud del canal USB (HWCDC, core de Arduino) ------------------------
+// Fallo real: si el host deja de leer a mitad de un envio largo (p.ej. otro
+// proceso del PC -- ModemManager -- abre el puerto, o el host corta), el
+// driver marca "desconectado" y deja DESACTIVADA la interrupcion que vacia
+// su cola de salida hacia el USB. La cola se queda llena para siempre y
+// desde entonces cada Serial.write() la ve llena, cree que no hay nadie y
+// tira los datos: el aparato sigue RECIBIENDO ordenes pero sus respuestas no
+// salen nunca (ni reconectando el cable, solo con reset). usbTxRecover() se
+// llama antes de contestar cada orden: reactiva esa interrupcion y, si aun
+// asi la cola sigue llena, reinicia el puerto serie entero.
+void usbTxRecover() {
+    usb_serial_jtag_ll_ena_intr_mask(USB_SERIAL_JTAG_INTR_SERIAL_IN_EMPTY);
+    unsigned long t0 = millis();
+    while (Serial.availableForWrite() == 0 && millis() - t0 < 50) delay(1);
+    if (Serial.availableForWrite() == 0) {
+        Serial.end();
+        Serial.setRxBufferSize(8192);
+        Serial.begin(115200);
+    }
+}
+
+// Envia 'len' bytes en trozos, comprobando cada escritura: si el host deja
+// de leer, corta en vez de quedarse a medias sin saberlo. false si no salio
+// todo.
+bool usbWriteAll(const uint8_t* data, size_t len) {
+    constexpr size_t PIECE = 256;
+    size_t sent = 0;
+    while (sent < len) {
+        size_t want = len - sent;
+        if (want > PIECE) want = PIECE;
+        size_t n = Serial.write(data + sent, want);
+        sent += n;
+        if (n != want) {
+            usb_serial_jtag_ll_ena_intr_mask(USB_SERIAL_JTAG_INTR_SERIAL_IN_EMPTY);
+            return false;
+        }
+    }
+    return true;
+}
+
+void provisionLoad(int slot, long len, const uint8_t* meta) {
     if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS ||
         len < 0 || len > (long)PROGRAM_SIZE) {
         Serial.println("COMPI ERR header");
@@ -752,7 +880,7 @@ void provisionLoad(int slot, long len) {
     char m[24];
     snprintf(m, sizeof(m), "WRITING slot %02d", slot);
     oled.message(m);
-    bool ok = flash.saveProgram(slot, g_provisionBuf);
+    bool ok = flash.saveProgram(slot, g_provisionBuf, meta);
 
     // Ya NO se toca cpu/ui/running: grabar un slot por USB no debe alterar
     // nada de lo que estuviera corriendo o mostrandose (ver g_provisionBuf
@@ -801,7 +929,11 @@ void provisionDump(int slot, long len) {
     // RECEPCION del USB-CDC del C3 es de solo 256 bytes y descarta en
     // silencio si se llena (ver arriba). Para ENVIAR no hay ese problema --
     // Serial.write() ya bloquea lo que haga falta hasta que cabe.
-    Serial.write(g_provisionBuf, (size_t)len);
+    if (!usbWriteAll(g_provisionBuf, (size_t)len)) {
+        noteActivity();
+        forceRedraw();
+        return;                             // el host dejo de leer: no sigue
+    }
     Serial.print("COMPI OK ");
     Serial.println((unsigned long)sum);
 
@@ -814,7 +946,7 @@ void provisionDump(int slot, long len) {
 void provisionPoll() {
     if (!Serial.available()) return;
 
-    char line[48];
+    char line[96];
     size_t n = 0;
     unsigned long t0 = millis();
     while (millis() - t0 < 1000) {
@@ -829,8 +961,19 @@ void provisionPoll() {
 
     int slot = -1;
     long len = -1;
-    if (sscanf(line, "COMPI LOAD %d %ld", &slot, &len) == 2) {
-        provisionLoad(slot, len);
+    int cat = -1;
+    int nameAt = -1;
+    if (strncmp(line, "COMPI ", 6) == 0) usbTxRecover();   // ver usbTxRecover()
+    if (sscanf(line, "COMPI LOAD %d %ld %d %n", &slot, &len, &cat, &nameAt) >= 2) {
+        // metadatos opcionales: "COMPI LOAD <slot> <len> <categoria> <nombre>"
+        uint8_t meta[SLOT_META_SIZE];
+        memset(meta, 0, sizeof(meta));
+        meta[0] = (cat >= 0 && cat <= 255) ? (uint8_t)cat : SLOT_CAT_NONE;
+        if (cat >= 0 && nameAt > 0) {
+            const char* nm = line + nameAt;
+            for (size_t i = 1; i < SLOT_META_SIZE && *nm; ++i, ++nm) meta[i] = (uint8_t)*nm;
+        }
+        provisionLoad(slot, len, meta);
         return;
     }
     if (sscanf(line, "COMPI DUMP %d %ld", &slot, &len) == 2) {
@@ -880,6 +1023,7 @@ void setup() {
 
     if (!oled.begin())  failBlink(200); // parpadeo lento = falla la OLED
     if (!flash.init())  failBlink(80);  // parpadeo rápido = falla la flash
+    loadSettings();                     // brillo y mute guardados (antes de aplicar el contraste)
 
     // Arranque automatico: si el slot 0 tiene algo grabado (pensado para un
     // "sistema operativo" que arranque otros programas, ver PORT_PROG_LOAD
@@ -889,6 +1033,7 @@ void setup() {
     if (!flash.loadProgram(0, cpu.ram())) {
         cpu.clearMemory();
     }
+    flash.readSlotMeta(0, g_currentMeta);
     g_currentSlot = 0;   // ver g_currentSlot arriba (EEPROM por slot)
     cpu.reset();
     ui.compose = decodeAt(cpu.ram(), 65536u, ui.cursor);   // arranca el editor en lo que haya
@@ -927,6 +1072,7 @@ void loop() {
     // interruptor de modo, en cualquiera de las 4 vistas.
     tickBootButton();
     tickMuteJingle();
+    tickSettingsSave();
 
     provisionPoll();
     // panel.update() lo hace el esp_timer (samplerCb), no loop().

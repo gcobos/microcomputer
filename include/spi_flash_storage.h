@@ -11,7 +11,7 @@ namespace compi {
 //
 // Cada slot = 17 sectores de 4 KiB (69632 bytes):
 //   byte 0            marca de uso (0xA5 = usado)
-//   bytes 1..15       reservados
+//   bytes 1..15       metadatos (storage.h SLOT_META_SIZE: categoria + nombre)
 //   bytes 16..65551   imagen de 64 KiB (PROGRAM_SIZE)
 class SpiFlashStorage : public IProgramStorage {
 public:
@@ -21,10 +21,13 @@ public:
     bool slotUsed(int slot) override;
     bool loadProgram(int slot, uint8_t* dest) override;
     bool previewProgram(int slot, uint8_t* dest, uint32_t len) override;
-    bool saveProgram(int slot, const uint8_t* src) override;
+    bool saveProgram(int slot, const uint8_t* src, const uint8_t* meta) override;
+    bool readSlotMeta(int slot, uint8_t* meta) override;
     bool deleteProgram(int slot) override;
     bool readEeprom(int slot, uint8_t* dest) override;
     bool writeEeprom(int slot, const uint8_t* src) override;
+    bool readSettings(uint8_t* dest) override;
+    bool writeSettings(const uint8_t* src) override;
 
     // Diagnóstico: JEDEC ID. Para el 25Q32FVSIG: 0xEF, 0x40, 0x16.
     void readJedecId(uint8_t* manufacturer, uint8_t* memType, uint8_t* capacity);
@@ -55,6 +58,11 @@ private:
     // comparten sector con el que se esta escribiendo.
     static constexpr uint32_t EEPROM_BASE_ADDR    = MAX_PROGRAM_SLOTS * SLOT_STRIDE; // 0x3FC000
     static constexpr uint32_t EEPROM_SLOTS_PER_SECTOR = SECTOR_SIZE / EEPROM_SLOT_SIZE; // 16
+    // Ajustes globales (storage.h SETTINGS_SIZE): justo tras la EEPROM del
+    // ultimo slot, en el KiB libre del final del chip (0x3FFC00). Comparte
+    // sector de borrado con la EEPROM de los slots 48-59 -- se graba con el
+    // mismo leer-parchear-borrar-reescribir del sector que writeEeprom.
+    static constexpr uint32_t SETTINGS_ADDR = EEPROM_BASE_ADDR + MAX_PROGRAM_SLOTS * EEPROM_SLOT_SIZE; // 0x3FFC00
 
     uint8_t csPin_;
 
@@ -66,6 +74,7 @@ private:
     void writeBytes(uint32_t addr, const uint8_t* data, uint32_t len);
     void readBytes(uint32_t addr, uint8_t* buffer, uint32_t len);
     void sendAddress24(uint32_t addr);
+    void patchSector(uint32_t addr, const uint8_t* src, uint32_t len);
 
     uint32_t slotAddr(int slot) const { return (uint32_t)slot * SLOT_STRIDE; }
     bool validSlot(int slot) const { return slot >= 0 && (size_t)slot < MAX_PROGRAM_SLOTS; }

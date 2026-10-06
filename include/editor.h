@@ -20,54 +20,42 @@ namespace compi {
 // edición de byte crudo. Ver la explicación de qué pasa con los bytes
 // siguientes al cambiar de tamaño en la conversación de diseño / specs.txt §12.
 
-// Los ~21 "verbos" que se pueden teclear (agrupa las familias del opcode +
-// las variantes de ALU/condición en un único mnemónico legible).
+// Los "verbos" que se pueden teclear: cada uno agrupa todas sus formas
+// (familias de opcode, operaciones de la ALU, condiciones) en un unico
+// mnemonico legible, y el campo `mode` elige la forma (ver modeCount en
+// editor.cpp y la tabla de docs/isa.md).
 enum Verb : uint8_t {
-    V_NOP = 0, V_HALT, V_MOV, V_LDA, V_STA, V_ADD, V_SUB, V_AND, V_OR, V_XOR,
-    V_NOT, V_SHR, V_SHL, V_IN, V_OUT, V_PUSH, V_POP, V_JMP, V_CALL, V_RET, V_CMP,
-    // Multiplicacion/division (acumulador implicito AX), INC/DEC de un par
-    // de 16 bits, y copia de bloque MOVB/MOVW -- ver isa.h OP_MUL/OP_DIV/
-    // OP_INCDEC16/OP_EXT2. ADD/SUB de 16 bits NO son verbos nuevos: son un
-    // `mode` mas de los verbos ADD/SUB de siempre (ver ComposeState.mode).
-    V_MUL, V_DIV, V_INC, V_DEC, V_MOVB, V_MOVW,
+    V_NOP = 0, V_HALT, V_RET, V_MOVB, V_MOVW, V_MOVBR,
+    V_MOV, V_LDA, V_STA, V_IN, V_OUT,
+    V_ADD, V_ADC, V_SUB, V_SBC, V_CMP, V_AND, V_OR, V_XOR,
+    V_NOT, V_SHR, V_SHL, V_MUL, V_DIV, V_INC, V_DEC,
+    V_PUSH, V_POP, V_JMP, V_CALL,
 };
-constexpr uint8_t VERB_COUNT = 27;
-constexpr uint8_t COND_COUNT = 9;   // JC_ALWAYS..JC_NN, V (isa.h), y un 9o
-                                      // valor logico "NV" que el editor
-                                      // ofrece bajo JMP/CALL pero que por
-                                      // debajo codifica distinto (isa.h
-                                      // OP_EXT2 subop 4/5, no cabe en el
-                                      // campo de 3 bits de JMP/CALL) -- ver
-                                      // assemble()/decodeAt() en editor.cpp
+constexpr uint8_t VERB_COUNT = 30;
+constexpr uint8_t COND_COUNT = 9;   // JC_ALWAYS..JC_V (isa.h) y un 9o valor
+                                      // "NV" que se codifica en OP_JX
 
 // Campo que se está editando ahora mismo dentro de la instrucción.
-enum class EField : uint8_t { Verb, Mode, Cond, Reg, Dst, Src, Imm, Lo, Hi, Ptr, Shift, Done };
+enum class EField : uint8_t { Verb, Mode, Cond, Reg, Dst, Src, Imm, Lo, Hi, Ptr, Shift, Ptr2, Done };
 
 // Estado de una instrucción en construcción en el cursor actual.
 struct ComposeState {
     uint8_t  verb   = V_NOP;
-    uint8_t  mode  = 0;      // 0..3; solo válido si el verbo tiene varias formas
-                               //   (MOV: 0=reg,reg 1=reg,#imm8
-                               //      2=reg16,#imm16 (ver `ptr`/`addr16` abajo) ;
-                               //    CMP: 0=reg,reg 1=reg,#imm ;
-                               //    AND/OR/XOR: + 2=reg,[dir] ;
-                               //    ADD/SUB: + 2=reg,[dir] + 3=reg16,reg8
-                               //      (dst de 16 bits -- ver `ptr`/`reg` abajo) ;
-                               //    LDA/STA/IN/OUT: 0=[addr16] 1=[AX|BX|CX|DX] ;
-                               //    SHR/SHL: 0=desplaza 1 bit  1=reg,#N (1..8))
-    uint8_t  reg    = 0;      // registro único: LDA/STA/IN/OUT/NOT/SHR/SHL/PUSH/POP
-                               //   y el "reg" de las formas reg,#imm / reg,[dir] ;
-                               //   también MUL/DIV, y el src8 de ADD/SUB mode 3
-    uint8_t  dst    = 0;      // mode reg,reg
-    uint8_t  src    = 0;      // mode reg,reg
-    uint8_t  cond   = 0;      // JMP/CALL (0..6 = condiciones normales, 7 = V,
-                               //   8 = "NV" -- ver COND_COUNT arriba)
-    uint8_t  imm    = 0;      // mode reg,#imm
-    uint16_t addr16 = 0;      // LDA/STA/IN/OUT/JMP/CALL/mode reg,[dir] ;
-                               //   también el imm16 de MOV mode 2 (reg16,#imm16)
-    uint8_t  ptr    = 0;      // LDA/STA/IN/OUT mode 1: par de 16 bits (isa.h Reg16) ;
-                               //   también INC/DEC, y el dst16 de ADD/SUB mode 3
-    uint8_t  shift  = 1;      // SHR/SHL mode 1: cuenta de desplazamiento (1..8)
+    uint8_t  mode   = 0;      // forma del verbo (ver modeCount/operandFields
+                               //   en editor.cpp): p.ej. ADD 0=reg,reg
+                               //   1=reg,#imm 2=reg,[dir] 3=reg,[r16]
+                               //   4=r16,reg8 5=r16,r16 6=r16,#imm8
+    uint8_t  reg    = 0;      // registro de 8 bits de una forma de un solo
+                               //   registro (o el de reg,#imm / reg,[...])
+    uint8_t  dst    = 0;      // forma reg,reg
+    uint8_t  src    = 0;      // forma reg,reg
+    uint8_t  cond   = 0;      // JMP/CALL: 0..7 = JumpCond, 8 = NV
+    uint8_t  imm    = 0;      // inmediato de 8 bits
+    uint16_t addr16 = 0;      // direccion/puerto de 16 bits, o inmediato de 16
+    uint8_t  ptr    = 0;      // par de 16 bits (AX/BX/CX/DX): puntero, o
+                               //   destino de una forma de 16 bits
+    uint8_t  ptr2   = 0;      // par de 16 bits de origen (formas r16,r16)
+    uint8_t  shift  = 1;      // SHR/SHL: cuenta (1..8)
     uint8_t  step   = 0;      // paso actual (0 = eligiendo verbo)
 };
 

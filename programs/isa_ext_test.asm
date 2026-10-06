@@ -1,6 +1,9 @@
 ; ============================================================================
 ;  isa_ext_test.asm  -  prueba de MUL, DIV, INC/DEC, ADD/SUB de 16 bits,
-;  MOVB/MOVW, JMPV/JMPNV/CALLV/CALLNV y MOV reg16,#imm16 (compi)
+;  MOVB/MOVW, JMPV/JMPNV/CALLV/CALLNV y MOV reg16,#imm16, y de lo nuevo de
+;  la ISA 2: ADC/SBC, CMP con memoria, ALU con [reg16], INC/DEC de 8 bits,
+;  MOV/ADD/SUB/CMP de 16 bits, PUSH/POP reg16, MOVBR y JMP/CALL por
+;  registro (compi)
 ;
 ;  Ejercita cada instruccion nueva del ISA con los mismos casos limite ya
 ;  verificados aparte contra el nucleo de cpu.cpp (g++ standalone) y contra
@@ -18,6 +21,10 @@
 ; ============================================================================
 
     .slot 17
+
+    .name "ISA TEST"
+
+    .category UTILITY
     .org 0x0000
 
 P_TEXT = 0x0400
@@ -238,9 +245,143 @@ after_cv:
     MOV BL,#1
     CALL check8                  ; caso 24: MOV reg16,#imm16 no toca flags
 
+    ; ======================================================================
+    ;  ISA 2: ADC/SBC, CMP con memoria, ALU con [reg16], INC/DEC de 8 bits,
+    ;  16 bits reg16,reg16 y reg16,#imm, PUSH/POP reg16, MOVBR, saltos por
+    ;  registro
+    ; ======================================================================
+    ; --- ADC: suma de 16 bits a trozos 0x01F0 + 0x0020 = 0x0210 -----------
+    MOV AL,#0xF0
+    ADD AL,#0x20             ; AL=0x10, C=1
+    MOV BL,#0x01
+    ADC BL,#0x00             ; BL = 1 + 0 + C = 2
+    STA [got_lo],AL
+    MOV AL,BL
+    STA [got_hi],AL
+    MOV AL,#0x10
+    MOV BL,#0x02
+    CALL check16                 ; caso 25: ADC recoge el acarreo
+
+    ; --- SBC: resta de 16 bits 0x0200 - 0x0001 = 0x01FF ---------------------
+    MOV AL,#0x00
+    SUB AL,#0x01             ; AL=0xFF, C=1 (prestamo)
+    MOV BL,#0x02
+    SBC BL,#0x00             ; BL = 2 - 0 - C = 1
+    STA [got_lo],AL
+    MOV AL,BL
+    STA [got_hi],AL
+    MOV AL,#0xFF
+    MOV BL,#0x01
+    CALL check16                 ; caso 26: SBC paga el prestamo
+
+    ; --- CMP reg,[dir] (antes no existia) -----------------------------------
+    MOV AL,#7
+    STA [tmp_v],AL
+    MOV AL,#7
+    CMP AL,[tmp_v]
+    MOV AL,#0
+    JMPNZ t27
+    MOV AL,#1
+t27:
+    MOV BL,#1
+    CALL check8                  ; caso 27: CMP AL,[dir] da Z=1
+
+    ; --- ALU con [reg16]: ADD AL,[BX] ---------------------------------------
+    MOV BX,#tmp_v                ; tmp_v = 7
+    MOV AL,#5
+    ADD AL,[BX]
+    MOV BL,#12
+    CALL check8                  ; caso 28: ADD AL,[BX] = 12
+
+    ; --- INC/DEC de 8 bits: no tocan C ---------------------------------------
+    MOV AL,#0xFF
+    ADD AL,#1                    ; C=1
+    MOV AL,#0xFF
+    INC AL                       ; AL=0, Z=1, C sigue a 1
+    CALL cflag_to_al
+    MOV BL,#1
+    CALL check8                  ; caso 29: INC AL no toca C
+    MOV CL,#1
+    DEC CL
+    MOV AL,#0
+    JMPNZ t30
+    MOV AL,#1
+t30:
+    MOV BL,#1
+    CALL check8                  ; caso 30: DEC CL deja Z=1
+
+    ; --- 16 bits reg16,reg16 / reg16,#imm8 / CMP reg16 -----------------------
+    MOV BX,#0x1234
+    MOV DX,#0x0FFF
+    ADD BX,DX                    ; 0x2233
+    SUB BX,#0x33                 ; 0x2200
+    ADD BX,#0x10                 ; 0x2210
+    MOV CX,BX
+    MOV AL,CL
+    STA [got_lo],AL
+    MOV AL,CH
+    STA [got_hi],AL
+    MOV AL,#0x10
+    MOV BL,#0x22
+    CALL check16                 ; caso 31: ADD/SUB/MOV de 16 bits
+    MOV BX,#0x0100
+    CMP BX,#0x00FF               ; 0x100 > 0xFF: C=0, Z=0
+    CALL cflag_to_al
+    MOV BL,#0
+    CALL check8                  ; caso 32: CMP BX,#imm16 sin prestamo
+    MOV BX,#0x00FF
+    MOV DX,#0x0100
+    CMP BX,DX                    ; 0xFF < 0x100: C=1
+    CALL cflag_to_al
+    MOV BL,#1
+    CALL check8                  ; caso 33: CMP BX,DX con prestamo
+
+    ; --- PUSH/POP reg16 -------------------------------------------------------
+    MOV BX,#0xBEEF
+    PUSH BX
+    MOV BX,#0
+    POP DX
+    MOV AL,DL
+    STA [got_lo],AL
+    MOV AL,DH
+    STA [got_hi],AL
+    MOV AL,#0xEF
+    MOV BL,#0xBE
+    CALL check16                 ; caso 34: PUSH BX / POP DX
+
+    ; --- MOVBR: abre hueco de 1 byte en "ABC" (copia solapada hacia atras) --
+    MOV BX,#mvb_buf+2            ; ultimo byte de origen ('C')
+    MOV DX,#mvb_buf+3            ; ultimo byte de destino
+    MOV CX,#3
+    MOVBR                        ; "AABC"
+    LDA AL,[mvb_buf+3]
+    MOV BL,#'C'
+    CALL check8                  ; caso 35: MOVBR movio el ultimo
+    LDA AL,[mvb_buf+1]
+    MOV BL,#'A'
+    CALL check8                  ; caso 36: MOVBR sin pisarse (memmove)
+
+    ; --- JMP/CALL por registro ------------------------------------------------
+    MOV AL,#0
+    MOV BX,#t37_dst
+    JMP BX
+    MOV AL,#9                    ; no debe ejecutarse
+t37_dst:
+    MOV BL,#0
+    CALL check8                  ; caso 37: JMP BX salto
+    MOV AL,#0
+    MOV DX,#t38_sub
+    CALL DX                      ; t38_sub pone AL=1 y vuelve
+    MOV BL,#1
+    CALL check8                  ; caso 38: CALL DX llamo y volvio
+
     ; --- resumen: PASS n/N, y FAIL #k si hubo algun fallo ------------------
     CALL show_summary
     HALT
+
+t38_sub:
+    MOV AL,#1
+    RET
 
 ; --- check8: AL=valor obtenido, BL=valor esperado -- suma 1 a [test_cnt];
 ; si no coinciden, suma 1 a [fail_cnt] y, si es el primer fallo, guarda el
@@ -447,3 +588,6 @@ exp_hi_tmp:  .space 1
 c_result:    .space 1
 v_result:    .space 1
 dec_buf:     .space 2
+tmp_v:      .space 1
+mvb_buf:    .ascii "ABC"
+            .db 0

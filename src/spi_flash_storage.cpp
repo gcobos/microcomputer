@@ -179,7 +179,7 @@ bool SpiFlashStorage::previewProgram(int slot, uint8_t* dest, uint32_t len) {
     return ok;
 }
 
-bool SpiFlashStorage::saveProgram(int slot, const uint8_t* src) {
+bool SpiFlashStorage::saveProgram(int slot, const uint8_t* src, const uint8_t* meta) {
     if (!validSlot(slot)) return false;
     wake();
 
@@ -187,11 +187,33 @@ bool SpiFlashStorage::saveProgram(int slot, const uint8_t* src) {
     for (uint32_t i = 0; i < SECTORS_PER_SLOT; ++i) {
         eraseSector(base + i * SECTOR_SIZE);
     }
-    uint8_t mark = USED_MARK;
-    writeBytes(base, &mark, 1);
+    uint8_t header[IMAGE_OFFSET];
+    memset(header, 0xFF, sizeof(header));
+    header[0] = USED_MARK;
+    if (meta) memcpy(header + 1, meta, SLOT_META_SIZE);
+    writeBytes(base, header, IMAGE_OFFSET);
     writeBytes(base + IMAGE_OFFSET, src, (uint32_t)PROGRAM_SIZE);
 
     sleep();
+    return true;
+}
+
+bool SpiFlashStorage::readSlotMeta(int slot, uint8_t* meta) {
+    memset(meta, 0, SLOT_META_SIZE);
+    meta[0] = SLOT_CAT_NONE;
+    if (!validSlot(slot)) return false;
+    wake();
+    uint8_t header[IMAGE_OFFSET];
+    readBytes(slotAddr(slot), header, IMAGE_OFFSET);
+    sleep();
+    if (header[0] != USED_MARK) return false;
+    meta[0] = header[1];
+    // nombre: un slot grabado antes de que existieran los metadatos tiene
+    // 0xFF ahi (flash borrada) -- se trata como "sin nombre"
+    for (size_t i = 1; i < SLOT_META_SIZE; ++i) {
+        uint8_t c = header[1 + i];
+        meta[i] = (c >= 0x20 && c < 0x7F) ? c : 0;
+    }
     return true;
 }
 
@@ -217,26 +239,41 @@ bool SpiFlashStorage::readEeprom(int slot, uint8_t* dest) {
 bool SpiFlashStorage::writeEeprom(int slot, const uint8_t* src) {
     if (!validSlot(slot)) return false;
     wake();
+    patchSector(eepromAddr(slot), src, (uint32_t)EEPROM_SLOT_SIZE);
+    sleep();
+    return true;
+}
 
-    // Unico modo de tocar un solo byte en NOR flash sin perder el resto:
-    // leer el sector ENTERO que contiene este slot (hasta 16 slots viven
-    // ahi, ver EEPROM_SLOTS_PER_SECTOR), parchear solo los EEPROM_SLOT_SIZE
-    // bytes de este slot, borrar ese sector y reescribirlo entero. `sector`
-    // static (no en la pila): 4096 bytes es demasiado para arriesgarse en
-    // una pila de tarea de Arduino, y esta funcion nunca se reentra (single
-    // task, ver el resto del driver).
+bool SpiFlashStorage::readSettings(uint8_t* dest) {
+    wake();
+    readBytes(SETTINGS_ADDR, dest, (uint32_t)SETTINGS_SIZE);
+    sleep();
+    return true;
+}
+
+bool SpiFlashStorage::writeSettings(const uint8_t* src) {
+    wake();
+    patchSector(SETTINGS_ADDR, src, (uint32_t)SETTINGS_SIZE);
+    sleep();
+    return true;
+}
+
+// Unico modo de tocar unos pocos bytes en NOR flash sin perder el resto:
+// leer el sector ENTERO que los contiene (ahi viven tambien otras EEPROM de
+// slot, o los ajustes globales), parchear solo [addr, addr+len), borrar ese
+// sector y reescribirlo entero. `sector` static (no en la pila): 4096 bytes
+// es demasiado para arriesgarse en una pila de tarea de Arduino, y esta
+// funcion nunca se reentra (single task, ver el resto del driver). Quien
+// llama ya tiene el chip despierto (wake()).
+void SpiFlashStorage::patchSector(uint32_t addr, const uint8_t* src, uint32_t len) {
     static uint8_t sector[SECTOR_SIZE];
-    uint32_t addr = eepromAddr(slot);
     uint32_t sectorAddr = addr - (addr % SECTOR_SIZE);
     uint32_t offsetInSector = addr - sectorAddr;
 
     readBytes(sectorAddr, sector, SECTOR_SIZE);
-    memcpy(sector + offsetInSector, src, EEPROM_SLOT_SIZE);
+    memcpy(sector + offsetInSector, src, len);
     eraseSector(sectorAddr);
     writeBytes(sectorAddr, sector, SECTOR_SIZE);
-
-    sleep();
-    return true;
 }
 
 } // namespace compi

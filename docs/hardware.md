@@ -135,7 +135,7 @@ Definido en [`src/panel.cpp`](../src/panel.cpp).
 | 3 · D4  | 3 | DATA_B  | Encoder DATA, señal B |
 | 4 · D5  | 2 | DATA_SW | Encoder DATA, pulsador |
 | 5 · D6  | 1 | SW_MODE | Interruptor EDIT / RUN |
-| 6 · D7  | 0 | SW_STEP | Interruptor ▲ / ▼ (significado según SW_MODE) |
+| 6 · D7  | 0 | SW_STEP | Interruptor SINGLE / CONTINUOUS |
 
 **Nivel bajo = activo** (contacto a GND). Cada entrada usada lleva un
 pull-up de 10 kΩ a 3V3 (el 74HC165 no tiene pull-ups internos).
@@ -149,14 +149,26 @@ pull-up de 10 kΩ a 3V3 (el 74HC165 no tiene pull-ups internos).
 Decodificación por cuadratura, por sondeo (sin interrupciones). `ENC_DIVISOR`
 en [`panel.h`](../include/panel.h) = transiciones por detente (4 para EC11).
 
-### Interruptores SW_MODE y SW_STEP (SPST)
+### Interruptores SW_MODE y SW_STEP (deslizantes, SPST)
+
+Los dos van en horizontal, cada uno encima de su encoder:
+`EDIT <-SW_MODE-> RUN` sobre ADDR y `SINGLE <-SW_STEP-> CONTINUOUS` sobre
+DATA. El tercer interruptor deslizante, el de encendido ON/OFF, va en
+vertical en la parte de abajo, bajo la rejilla del zumbador (ver
+[`panel.svg`](panel.svg), dibujado según la caja real).
+
+Bajo la rejilla del zumbador, la tapa tiene tres cortes que dejan dos
+lengüetas flexibles con un círculo en la punta. Cada lengüeta cae encima de
+un botón de la ESP32-C3 SuperMini (RESET y BOOT), que así se pulsan sin abrir
+la caja. En compi son RESET (reinicia el aparato) y MUTE/UNMUTE (el botón
+BOOT, GPIO9, ver arriba). El USB-C
+de la SuperMini queda accesible por el lado frontal de la caja.
 
 - Una pata → D6 / D7 con pull-up de 10 kΩ a 3V3.
 - Otra pata → GND.
-- **SW_MODE**: abierto (▲) = `EDIT` · cerrado (▼) = `RUN`.
-- **SW_STEP**: abierto (▲) / cerrado (▼); su significado depende de SW_MODE:
-  - editando: ▲ = memoria (teclear) · ▼ = programas (cargar/guardar)
-  - ejecutando: ▲ = paso a paso · ▼ = continuo
+- **SW_MODE**: abierto = `EDIT` · cerrado = `RUN`.
+- **SW_STEP**: abierto = `SINGLE` · cerrado = `CONTINUOUS`. Al editar,
+  SINGLE = memoria (teclear) y CONTINUOUS = programas (cargar/guardar).
 - Ver el detalle de cada vista en `specs.txt` §12 y en `docs/panel.svg`.
 
 ---
@@ -245,7 +257,7 @@ Fuera del arranque, el LED lo controla el programa emulado con `OUT (0x0610),reg
 | 1 | ESP32-C3 SuperMini |
 | 1 | 74HC165 (DIP-16 o SOIC-16) — **HC**, no HCT |
 | 2 | encoder rotativo incremental con pulsador (EC11 o similar) |
-| 2 | interruptores SPST panel (SW_MODE, SW_STEP) |
+| 2 | interruptores deslizantes panel (SW_MODE, SW_STEP) |
 | 1 | módulo OLED SH1106 128×64 I2C |
 | 1 | módulo flash SPI W25Q32 / 25Q32FVSIG (Winbond, 4 MiB) |
 | 10 | resistencias 10 kΩ, 1/4 W (8 pull-ups de entrada + /CS y MISO de la flash) |

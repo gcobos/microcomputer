@@ -1,8 +1,8 @@
 ; ============================================================================
-;  docs.asm  -  Documentacion del hardware/firmware de compi, navegable desde
-;  el propio panel: temas (FIRMWARE, HARDWARE, PORTS, ISA, PANEL) con varias
-;  paginas de texto cada uno, condensadas de docs/firmware.md, docs/hardware.md,
-;  docs/isa.md y specs.txt.
+;  docs.asm  -  Documentacion de compi para programar, navegable desde el
+;  propio panel: temas (PORTS, ISA, PANEL) con varias paginas de texto cada
+;  uno, condensadas de docs/isa.md, include/iomap.h y specs.txt. (FIRMWARE y
+;  HARDWARE se quitaron: no hacen falta para usar el aparato.)
 ;
 ;  Mismo esquema de navegacion que sisop.asm (menu de carpetas), pero con dos
 ;  niveles fijos -- tema y pagina -- en vez de carpeta y programa:
@@ -27,6 +27,10 @@
 ; ============================================================================
 
     .slot 16
+
+    .name "DOCUMENTATION"
+
+    .category DOCS
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -181,10 +185,9 @@ on_select:
     STA [view],AL
     MOV AL,#0
     STA [cur_page],AL
-    MOV BL,#lo(TOPIC_PAGE_COUNTS)
-    MOV BH,#hi(TOPIC_PAGE_COUNTS)
+    MOV BX,#TOPIC_PAGE_COUNTS
     LDA CL,[cur_topic]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [cur_topic_pages],AL
     CALL redraw
@@ -222,10 +225,8 @@ rd_page:
 
 redraw_topics:
     CALL clst
-    MOV BL,#lo(s_title)
-    MOV BH,#hi(s_title)
-    MOV CL,#0
-    MOV CH,#0
+    MOV BX,#s_title
+    MOV CX,#0x0000
     CALL puts
 
     MOV AL,#0
@@ -235,12 +236,10 @@ rdt_l:
     LDA BL,[cur_topic]
     CMP AL,BL
     JMPNZ rdt_nomark
-    MOV BL,#lo(s_mark)
-    MOV BH,#hi(s_mark)
+    MOV BX,#s_mark
     JMP rdt_domark
 rdt_nomark:
-    MOV BL,#lo(s_nomark)
-    MOV BH,#hi(s_nomark)
+    MOV BX,#s_nomark
 rdt_domark:
     MOV CL,#2
     LDA AL,[i]
@@ -248,8 +247,7 @@ rdt_domark:
     MOV CH,AL
     CALL puts
 
-    MOV BL,#lo(TOPIC_NAMES)
-    MOV BH,#hi(TOPIC_NAMES)
+    MOV BX,#TOPIC_NAMES
     LDA AL,[i]
     SHL AL,#1
     MOV CL,AL
@@ -272,16 +270,14 @@ rdt_domark:
 ; linea del contenido).
 draw_page:
     CALL clst
-    MOV BL,#lo(TOPIC_NAMES)
-    MOV BH,#hi(TOPIC_NAMES)
+    MOV BX,#TOPIC_NAMES
     LDA AL,[cur_topic]
     SHL AL,#1
     MOV CL,AL
     CALL read_ptr16          ; BX = puntero al nombre del tema
     CALL draw_header
 
-    MOV BL,#lo(TOPIC_PAGE_TABLES)
-    MOV BH,#hi(TOPIC_PAGE_TABLES)
+    MOV BX,#TOPIC_PAGE_TABLES
     LDA AL,[cur_topic]
     SHL AL,#1
     MOV CL,AL
@@ -299,17 +295,13 @@ draw_page:
 ; comentario, ningun tema por encima de 9 paginas se comia ya la segunda
 ; cifra, "PORTS" fue el primero en llegar a 10).
 draw_header:
-    MOV DL,#0
-    MOV DH,#0x04
+    MOV DX,#0x0400
 dh_l:
     LDA AL,[BX]
     CMP AL,#0
     JMPZ dh_name_done
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC dh_nb
-    ADD BH,#1
-dh_nb:
+    INC BX
     ADD DL,#1
     JMP dh_l
 dh_name_done:
@@ -392,9 +384,7 @@ dc_newline:
     STA [content_col],AL
 
 dc_adv:
-    ADD BL,#1
-    JMPNC dc_l
-    ADD BH,#1
+    INC BX
     JMP dc_l
 dc_done:
     RET
@@ -412,13 +402,8 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
@@ -434,13 +419,10 @@ idx_ptr:
 ; ya multiplicado x2 por quien llama; sale BX = el puntero de 16 bits leido
 ; de tabla[CL].
 read_ptr16:
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[BX]
     STA [rp_lo],AL
-    ADD BL,#1
-    JMPNC rp_c1
-    ADD BH,#1
-rp_c1:
+    INC BX
     LDA AL,[BX]
     STA [rp_hi],AL
     LDA BL,[rp_lo]
@@ -458,8 +440,7 @@ fw_l:
 
 ; --- clst: limpia la rejilla de texto entera (0x0400-0x04FF, DL envuelve) ---
 clst:
-    MOV DL,#0
-    MOV DH,#0x04
+    MOV DX,#0x0400
     MOV AL,#0
 clst_l:
     OUT (DX),AL
@@ -477,71 +458,57 @@ s_nomark: .asciiz "  "
 ; ==== auto-generado por gen_docs_content.py -- no editar a mano lo de abajo ====
 
 ; --- nombres de los temas ----------------------------------------------------
-tn0_name: .asciiz "FIRMWARE"
-tn1_name: .asciiz "HARDWARE"
 tn2_name: .asciiz "PORTS"
 tn3_name: .asciiz "ISA"
 tn4_name: .asciiz "PANEL"
 
 ; --- contenido de cada pagina (un asciiz por pagina, "\n" entre lineas) ------
-t0p0: .asciiz "FILE LAYOUT\nmain.cpp: setup(),\nloop(), UI states\ncpu.cpp/.h: CPU core\npanel.cpp: reads HW\ndisplay.cpp: OLED\ndisasm/editor.cpp"
-t0p1: .asciiz "CPU MEMORY MODEL\nRAM = 64KiB, full\n16-bit addr space\nPC,SP are 16 bit\nreset: PC=0\nSP=0xFFFF, regs=0\nreset keeps RAM"
-t0p2: .asciiz "PANEL READING\nFrontPanel: HW-only,\nno UI state kept\none 74HC165 read\nper poll (esp_timer\ntask, not loop())\n2-8ms adaptive rate"
-t0p3: .asciiz "VIEW STATE MACHINE\nSW_MODE+SW_STEP ->\nEDIT+up: EditMem\nEDIT+dn: EditPrg\nRUN+up: ExecPaso\nRUN+dn: ExecCont\npure fn of switches"
-t0p4: .asciiz "RUN/RESET RULES\nEntering RUN or\nADDR-long in STEP:\ncpu.reset, clears\nscreen/led/sound.\nSTEP<->CONT and\nEDIT keep the PC"
-t0p5: .asciiz "PROGRAM SLOTS\n1 program = full\n64KiB RAM image.\n60 slots in 4MiB\nflash. Save ~1s\n(17 sector erases),\nload ~70ms"
-t0p6: .asciiz "PORT 0640/0641\nOUT 0640,slot loads\nit + resets CPU +\nclears screen/led/\nsound/timers/encs.\nOUT 0641,slot saves\nRAM, keeps running"
-t0p7: .asciiz "USB PROVISIONING\ncompi_send.py LOAD,\ncompi_recv.py DUMP,\n115200 baud, chunks\nof 1KiB w/ echo.\nOwn buffer: doesn't\ndisturb running prg"
-t0p8: .asciiz "BUILD & FLASH\npio run -t upload\nvia native USB-C\n(SuperMini board)\nRepo pio broken;\nuse ~/.platformio/\npenv/bin/pio"
-t1p0: .asciiz "THE BOARD\nESP32-C3 SuperMini.\nNeeds ~320KiB SRAM\nfor the 64KiB emu-\nlated RAM array.\n13 usable GPIO:\n0-10,20,21"
-t1p1: .asciiz "FORBIDDEN PINS\n18,19: native USB\n2: strapping\n8: strap+onboard\nLED (used anyway)\n9: strap+BOOT btn\n11-17: internal SPI"
-t1p2: .asciiz "GPIO9 DOUBLE USE\nBOOT button.\nBoot-mode check runs\nin ROM before setup()\nso firmware reuses it\nas a live MUTE/\nUNMUTE toggle button"
-t1p3: .asciiz "74HC165 SHIFT REG\nMultiplexes 8 panel\ninputs (2 encoders\nx2 signals + 2 btns\n+ 2 switches) using\nonly 3 MCU pins:\nPL,CLK,Q7"
-t1p4: .asciiz "ENCODERS & SWITCHES\nEC11 encoders, 10k\npull-ups (chip has\nnone). SW_MODE:\nopen=EDIT closed=RUN\nSW_STEP: meaning\ndepends on SW_MODE"
-t1p5: .asciiz "FLASH MEMORY\nW25Q32, 4MiB SPI\nflash (Winbond).\n8MHz clock. 60\nprogram slots of\n64KiB each. /WP,\n/HOLD tied to 3V3"
-t1p6: .asciiz "OLED DISPLAY\nSH1106 controller\n(not SSD1306!),\n128x64 px, I2C bus.\nAddress 0x3C, or\n0x3D if no reply.\nSDA=GPIO20 SCL=21"
-t1p7: .asciiz "LED & SOUND\nLED: SuperMini blue\nonboard, GPIO8, low-\nactive. boot-fail\nblink + PORT_LED.\nSound: passive piezo\nGPIO3, LEDC tone()"
-t1p8: .asciiz "BATTERY (OPTIONAL)\n1S LiPo + TP4056\ncharger w/ DW01A\nprotection, feeds\n5V/VBUS pin (never\n3V3) thru a power\nswitch. See specs"
-t2p0: .asciiz "PORT MAP OVERVIEW\n65536 ports, apart\nfrom RAM. Screen\n(gfx+text+attrs) at\n0000-05FF; other\nperipherals at\n06xx"
+t2p0: .asciiz "PORT MAP OVERVIEW\n65536 ports, apart\nfrom RAM. Screen\n(gfx+text+attrs) at\n0000-05FF; other\nperipherals at\n0600-08FF"
 t2p1: .asciiz "GRAPHICS 0000-03FF\nFramebuffer, 128x64.\n1 port = 8 h.pixels.\nbit7=leftmost px,\n1=lit. port(x,y) =\ny*16 + xbyte\n(xbyte 0-15)"
 t2p2: .asciiz "TEXT 0400-04FF\n21 cols x 8 rows,\n6x8 font. port =\n0400 + row*32 + col.\nbyte=ASCII code.\n0=transparent cell,\n0x20=blank cell"
 t2p3: .asciiz "ATTRS 0500-05FF\nSame layout as text,\n1 byte/cell. bit0\ninverse, 1 blink,\n2 underline, 3\nstrike, 4/5 sub/\nsuperscript, 6-7 rot"
 t2p4: .asciiz "ENCODERS 0600-0603\n0600 IN: ADDR pos\n(0-255, wraps)\n0601 IN: ADDR button\n0602 IN: DATA pos\n0603 IN: DATA button\nbit0 = pressed"
-t2p5: .asciiz "LED & TIMERS\n0610 IN/OUT: onboard\nLED, bit0=on.\n0620-0629 IN/OUT:\n10 countdown timers,\nt_i: -1 every 1<<i\nms. IN doesn't set Z"
+t2p5: .asciiz "LED & RANDOM\n0610 IO: onboard LED\nbit0=1 lights it,\nIN reads it back.\n0611 IN: a new\nrandom byte on each\nread (hardware RNG)"
+t2pg: .asciiz "TIMERS 0620-0629\n10 countdown timers\nOUT sets 0-255.\nt_i: -1 every 1<<i\nms, stops at 0.\nIN reads the value\n(doesn't set Z)"
 t2p6: .asciiz "SOUND 0630-0633\n0630/31: freq lo/hi\n(16-bit, hi triggers)\n0632: MIDI note\n0-127 (69=440Hz)\n0633: auto-off in\n10ms steps, sticky"
 t2p7: .asciiz "SOUND ORDER WARNING\nAlways write 0633\n(duration) BEFORE\n0632/0631 (note or\nfreq): duration is\nsticky but not\nretroactive"
-t2p8: .asciiz "PROGRAM LOAD/SAVE\n0640 OUT slot: load\ninto RAM, reset CPU\n+screen+snd+led+enc\n0641 OUT slot: save\nRAM, keep running\nIN=1 if last failed"
-t2p9: .asciiz "CONFIG 0650-0651\n0650 brightness\nOUT 0-255 (IN=echo)\nresets on new run\n0651 sound on/off\nOUT !0=on 0=off\n(IN=state) persists"
+t2p8: .asciiz "PROGRAM LOAD/SAVE\n0640 OUT slot: load\n+reset CPU & outputs\nIN=1: last load fail\n0641 OUT slot: save\nRAM, keep running\nIN=1: last save ok"
+t2p9: .asciiz "CONFIG 0650-0652\n0650 bright. 0-255\n0651 sound: !0=on\n0652 OUT: save both\nto flash. OUT only\nfrom slot 0 (sisop\nSETTINGS). IN=value"
+t2pa: .asciiz "PORT TABLE (1/2)\n0000-03FF graphics\n0400-04FF text\n0500-05FF text attrs\n0600-0603 encoders\n0610/11 LED, random\n0620-0629 timers"
+t2pb: .asciiz "PORT TABLE (2/2)\n0630-0633 sound\n0640-0643 programs\n0650-0652 config\n0660-066E slot info\n0700-0801 EEPROM\nothers: IN=0, OUT -"
+t2pc: .asciiz "EEPROM 0700-07FF\n256 bytes per slot\nthat survive power\noff. 0700+i: byte i\nof a RAM buffer,\ninstant. Never-saved\nbytes read as 0xFF"
+t2pd: .asciiz "EEPROM 0800/0801\n0800 OUT: buffer <-\nflash (this slot)\n0801 OUT: buffer ->\nflash (ms, erases)\nIN 0800=1: failed\nIN 0801=1: saved ok"
+t2pe: .asciiz "SLOT INFO 0642-066E\n0642 OUT slot: read\nits name+category\nIN=1: slot is used\n0643 IN: own slot\n0660 IN: category\n0661-066E IN: name"
+t2pf: .asciiz "CATEGORIES (0660)\n1 SYSTEM  2 GAME\n3 PROGRAM 4 UTILITY\n5 DEMO    6 DOCS\nFF: none. Set with\n.category & .name\nin the .asm source"
 t3p0: .asciiz "REGISTERS\nAX BX CX DX, each\n16 bit, split into\n8-bit halves: AL/AH\nBL/BH CL/CH DL/DH.\nPlus PC, SP (starts\n0xFFFF), FLAGS:NVZC"
-t3p1: .asciiz "OPCODE BYTE\nopcode = family*8\n+ register (or +\ncondition for JMP/\nCALL). Now includes\nMUL/DIV/INC/DEC/\nMOVB/MOVW families"
-t3p2: .asciiz "CORE INSTRUCTIONS 1\nNOP(1) HALT(1)\nMOV reg,#imm8(2)\nLDA reg,[addr16](3)\n  reg = mem[addr]\nSTA [addr16],reg(3)\n  mem[addr] = reg"
-t3p3: .asciiz "ALU w/ MEMORY (3B)\nADD/SUB/AND/OR/XOR\nreg,[addr16]\nreg = reg <op> mem\nFlags: N V Z C for\nADD/SUB; N Z only\n(C=V=0) for logic"
-t3p4: .asciiz "NOT/SHR/SHL/EXT\nNOT reg(1):~reg\nSHR/SHL reg(1):1bit\nIN/OUT (port)(3B) or\n(AX|BX|CX|DX)(2B)\nSHR/SHL reg,#N(2B):\nshift N=1..8 at once"
-t3p5: .asciiz "MUL/DIV & 16-BIT\nMUL:AX=AL*reg\nDIV:AL=AX/r,AH=rem\nINC/DEC/ADD/SUB\nreg16. MOVB/MOVW\nblock copy. MOV\nreg16,#imm16: LEN 4!"
-t3p6: .asciiz "STACK & JUMPS\nPUSH/POP reg (1B).\nJMP<cc>/CALL<cc>\naddr16: always 3B\nRET(1) pops PC.\ncc:ALWAYS Z NZ C NC\nN NN V(overflow)"
-t3p7: .asciiz "ALU reg,reg / #imm\nF8+op dst,src (2B):\nMOV ADD SUB CMP AND\nOR XOR, op 0-6.\nA0+op reg,#imm8(3B):\nop=reg field, then\nimm8. Same flags"
-t3p8: .asciiz "FLAGS SUMMARY\nArithmetic: Z=res 0,\nN=bit7 of result.\nSUB/CMP: C=borrow\n(a<b). ADD: C=carry\npast 255. Logic ops:\nC=V=0 always"
-t4p0: .asciiz "TWO SWITCHES\nSW_MODE: EDIT or\nRUN. SW_STEP means:\nediting: up=memory,\ndown=programs.\nrunning: up=step,\ndown=continuous"
-t4p1: .asciiz "THE FOUR VIEWS\nEDIT+up: EditMem\n(disasm + edit)\nEDIT+dn: EditPrg\n(slot browser)\nRUN+up: ExecPaso\nRUN+dn: ExecCont"
+t3p1: .asciiz "OPCODE BYTE (ISA 2)\nopcode=family*8+low3\nlow3 = reg8, jump\ncondition, reg16 or\nsub-op. ALU op goes\nin a 2nd byte: MOV\nADD ADC SUB SBC CMP"
+t3p2: .asciiz "CORE INSTRUCTIONS 1\nNOP HALT RET (1B)\nMOV reg,#imm8 (2B)\nLDA reg,[addr16](3)\nSTA [addr16],reg(3)\nLDA/STA via [AX..DX]\n(2B): mem[pair]"
+t3p3: .asciiz "ALU: 4 FORMS\nop reg,reg     (2B)\nop reg,#imm8   (3B)\nop reg,[addr16](4B)\nop reg,[r16]   (2B)\nop: MOV ADD ADC SUB\nSBC CMP AND OR XOR"
+t3p4: .asciiz "ADC / SBC\nADC: a=a+b+C\nSBC: a=a-b-C\nCarry/borrow from\nthe previous op, to\nadd/sub numbers of\nseveral bytes"
+t3p5: .asciiz "NOT/SHIFT/MUL/DIV\nNOT reg (1B)\nSHR/SHL reg,#N (2B)\nN=1..8. MUL reg:\nAX=AL*reg. DIV reg:\nAL=AX/r AH=rem\nINC/DEC reg8: C kept"
+t3p6: .asciiz "16-BIT (AX..DX)\nMOV/ADD/SUB/CMP\nr16,r16 (2B); ADD/\nSUB r16,reg8 or #8\nCMP/MOV r16,#16(4B)\nINC/DEC/PUSH/POP r16\n(1B). CMP16: flags"
+t3p7: .asciiz "STACK, JUMPS, COPY\nPUSH/POP reg (1B)\nJMP/CALL<cc> addr(3)\nJMP/CALL r16 (2B)\ncc:Z NZ C NC N NN V\nNV. MOVB/MOVW/MOVBR\ncopy CX: BX -> DX"
+t3p8: .asciiz "FLAGS SUMMARY\nZ=result 0, N=bit7\nADD/ADC: C=carry\nSUB/SBC/CMP: C =\nborrow. Logic: C=V=0\nINC/DEC 8-bit keep C\n16-bit: only CMP"
+t3p9: .asciiz "ASSEMBLER (casm)\n.org .db .dw .space\n.asciiz .equ .slot\n.name \"TEXT\" (<=14)\n.category GAME etc.\n.include \"text.asm\"\n(from programs/lib)"
+t4p0: .asciiz "TWO SLIDE SWITCHES\nEDIT<-SW_MODE->RUN\nabove ADDR. SINGLE\n<-SW_STEP->CONT.\nabove DATA. EDIT:\nSINGLE=memory,\nCONT.=programs"
+t4p1: .asciiz "THE FOUR VIEWS\nEDIT+SINGLE: memory\n(disasm + edit)\nEDIT+CONT: programs\n(slot browser)\nRUN+SINGLE: step\nRUN+CONT: continuous"
 t4p2: .asciiz "EditMem CONTROLS\nADDR turn: move by\nwhole instruction.\nADDR short: insert\nNOP. ADDR long:\ndelete byte. DATA\nturn: change field"
-t4p3: .asciiz "EditMem FIELDS\nDATA press confirms\nfield, advances.\nOn last field, also\nmoves to next addr.\nVerb field cycles\n27 verbs A-Z order"
+t4p3: .asciiz "EditMem FIELDS\nDATA press confirms\nfield, advances.\nOn last field, also\nmoves to next addr.\nVerb field cycles\n30 verbs A-Z order"
 t4p4: .asciiz "EditPrg CONTROLS\nADDR turn: pick\nslot 0-59. DATA\nturn: cycle action\nLOAD/SAVE/NEW.\nEither button press\nruns chosen action"
 t4p5: .asciiz "ExecPaso CONTROLS\nADDR turn: pick a\ntarget addr (no\nrun yet). ADDR short\npress: run to there.\nADDR long: reset.\nDATA: step 1 instr"
 t4p6: .asciiz "ExecCont\nBoth encoders and\nboth buttons pass\nstraight through to\nthe running program\nvia IN on their\nports (0600-0603)"
 t4p7: .asciiz "RUN/RESET RULES\nStart of RUN or\nADDR-long in STEP:\nfull reset (PC,SP,\nscreen,snd,timers).\nSTEP<->CONT and\nEDIT keep the PC"
 
 ; --- tablas de paginas por tema ----------------------------------------------
-T0_PAGES: .dw t0p0, t0p1, t0p2, t0p3, t0p4, t0p5, t0p6, t0p7, t0p8
-T1_PAGES: .dw t1p0, t1p1, t1p2, t1p3, t1p4, t1p5, t1p6, t1p7, t1p8
-T2_PAGES: .dw t2p0, t2p1, t2p2, t2p3, t2p4, t2p5, t2p6, t2p7, t2p8, t2p9
-T3_PAGES: .dw t3p0, t3p1, t3p2, t3p3, t3p4, t3p5, t3p6, t3p7, t3p8
+T2_PAGES: .dw t2p0, t2pa, t2pb, t2p1, t2p2, t2p3, t2p4, t2p5, t2pg, t2p6, t2p7, t2p8, t2pe, t2pf, t2p9, t2pc, t2pd
+T3_PAGES: .dw t3p0, t3p1, t3p2, t3p3, t3p4, t3p5, t3p6, t3p7, t3p8, t3p9
 T4_PAGES: .dw t4p0, t4p1, t4p2, t4p3, t4p4, t4p5, t4p6, t4p7
 
 ; --- tablas de nivel superior (indexadas por numero de tema 0..NUM_TOPICS-1) -
-NUM_TOPICS = 5
-TOPIC_NAMES:       .dw tn0_name, tn1_name, tn2_name, tn3_name, tn4_name
-TOPIC_PAGE_COUNTS: .db 9, 9, 10, 9, 8
-TOPIC_PAGE_TABLES: .dw T0_PAGES, T1_PAGES, T2_PAGES, T3_PAGES, T4_PAGES
+NUM_TOPICS = 3
+TOPIC_NAMES:       .dw tn2_name, tn3_name, tn4_name
+TOPIC_PAGE_COUNTS: .db 17, 10, 8
+TOPIC_PAGE_TABLES: .dw T2_PAGES, T3_PAGES, T4_PAGES
 
 ; ============================================================================
 ;  VARIABLES

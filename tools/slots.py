@@ -37,26 +37,41 @@ def slot_path(slots_dir, slot):
     return os.path.join(slots_dir, f"{slot:02d}.bin")
 
 
+def meta_path(slots_dir, slot):
+    """Metadatos del slot (categoria + nombre, 15 bytes -- storage.h
+    SLOT_META_SIZE), al lado de su .bin: el equivalente a la cabecera del
+    slot en la flash real."""
+    return os.path.join(slots_dir, f"{slot:02d}.meta")
+
+
+def meta_bytes(category, name):
+    m = bytearray(15)
+    m[0] = 0xFF if category is None else category & 0xFF
+    nm = (name or "").encode()[:14]
+    m[1:1 + len(nm)] = nm
+    return bytes(m)
+
+
 def build_if_needed(path):
     """Igual que build_if_needed en compi_send.py: devuelve (bytes_usados,
     slot_sugerido_o_None). Un .bin no lleva ".slot", asi que ahi es None."""
     if not path.endswith(".asm"):
         with open(path, "rb") as f:
-            return f.read(), None
+            return f.read(), None, meta_bytes(None, None)
     with open(path, "r", encoding="utf-8") as f:
         text = f.read()
     asm = casm.Assembler()
     try:
-        image = asm.assemble(text)
+        image = asm.assemble(text, path)
     except casm.AsmError as e:
         print(f"slots: error ensamblando {path}: {e}", file=sys.stderr)
         sys.exit(1)
     used = max(1, asm.max_addr)
-    return image[:used], asm.slot
+    return image[:used], asm.slot, meta_bytes(asm.category, asm.name)
 
 
 def cmd_put(args):
-    data, suggested = build_if_needed(args.file)
+    data, suggested, meta = build_if_needed(args.file)
     slot = args.slot if args.slot is not None else suggested
     if slot is None:
         print("slots: --slot es obligatorio (el .asm no tiene directiva .slot, "
@@ -74,6 +89,8 @@ def cmd_put(args):
     padded = data + bytes(PROGRAM_SIZE - len(data))
     with open(slot_path(args.slots_dir, slot), "wb") as f:
         f.write(padded)
+    with open(meta_path(args.slots_dir, slot), "wb") as f:
+        f.write(meta)
     print(f"slots: {args.file} -> slot {slot} ({len(data)} bytes utiles de "
           f"{PROGRAM_SIZE})")
 
@@ -84,7 +101,12 @@ def cmd_list(args):
         p = slot_path(args.slots_dir, slot)
         if os.path.isfile(p):
             any_found = True
-            print(f"{slot:2d}  {os.path.getsize(p)} bytes  {p}")
+            mp = meta_path(args.slots_dir, slot)
+            info = ""
+            if os.path.isfile(mp):
+                m = open(mp, "rb").read()
+                info = f"  cat {m[0]:3d}  {m[1:].split(bytes(1))[0].decode(errors='replace')}"
+            print(f"{slot:2d}  {os.path.getsize(p)} bytes  {p}{info}")
     if not any_found:
         print(f"slots: {args.slots_dir} no tiene ningun slot todavia")
 
@@ -93,6 +115,8 @@ def cmd_rm(args):
     p = slot_path(args.slots_dir, args.slot)
     if os.path.isfile(p):
         os.remove(p)
+        if os.path.isfile(meta_path(args.slots_dir, args.slot)):
+            os.remove(meta_path(args.slots_dir, args.slot))
         print(f"slots: borrado el slot {args.slot}")
     else:
         print(f"slots: el slot {args.slot} ya estaba vacio")

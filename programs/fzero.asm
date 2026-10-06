@@ -18,7 +18,8 @@
 ;     encoder DATOS     pulsa -> dispara (mata el obstaculo que alcance)
 ;     cualquier pulsador, en la pantalla de titulo o de "GAME OVER" -> empieza
 ;
-;  COMO FUNCIONA LA CARRETERA (sin multiplicacion real, la CPU no tiene MUL):
+;  COMO FUNCIONA LA CARRETERA (con tablas precalculadas, sin multiplicar en
+;  tiempo real -- una tabla sale mas barata que un MUL por fila):
 ;     - road_width[fila]: tabla fija (32 bytes), el ancho de la carretera en
 ;       cada una de las 32 filas (0=horizonte, 31=mas cerca). Se calculo una
 ;       vez en Python (curva, no progresion lineal: crece poco a poco cerca
@@ -105,6 +106,10 @@
 ; ============================================================================
 
     .slot 7
+
+    .name "F-ZERO"
+
+    .category GAME
     .org 0x0000
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
@@ -115,6 +120,15 @@ P_DAT_BTN = 0x0603
 P_T3      = 0x0623      ; ritmo del bucle de juego (8 ms/paso)
 P_SND_NOTE = 0x0632      ; pitidos cortos (disparo/choque/impacto), ver iomap.h
 P_SND_DUR  = 0x0633
+
+; --- record en la EEPROM del slot (iomap.h, 0x0700-0x0801) -----------------
+; byte 0 = REC_MAGIC si hay un record grabado (una flash sin estrenar se lee
+; 0xFF -> record 0), byte 1 = el record. Se graba SOLO al batirlo, al llegar
+; al GAME OVER, para no gastar la flash en cada partida.
+P_EEP_BASE = 0x0700
+P_EEP_LOAD = 0x0800
+P_EEP_SAVE = 0x0801
+REC_MAGIC  = 0xC5
 
 ; --- constantes de juego -----------------------------------------------------
 N_OBST      = 4          ; obstaculos activos como maximo a la vez
@@ -156,23 +170,20 @@ title_init:
     CALL clsg
     CALL clst
 
-    MOV BL,#lo(s_title)
-    MOV BH,#hi(s_title)
-    MOV CL,#4
-    MOV CH,#2
+    MOV BX,#s_title
+    MOV CX,#0x0204
     CALL puts
 
-    MOV BL,#lo(s_help1)
-    MOV BH,#hi(s_help1)
-    MOV CL,#1
-    MOV CH,#4
+    MOV BX,#s_help1
+    MOV CX,#0x0401
     CALL puts
 
-    MOV BL,#lo(s_help2)
-    MOV BH,#hi(s_help2)
-    MOV CL,#1
-    MOV CH,#5
+    MOV BX,#s_help2
+    MOV CX,#0x0501
     CALL puts
+
+    MOV CX,#0x0705
+    CALL show_record
 
 title_l:
     CALL read_start_press
@@ -221,9 +232,8 @@ game_init:
     MOV DL,#0
 gi_clr_obst:
     MOV CL,DL
-    MOV BL,#lo(obst_active)
-    MOV BH,#hi(obst_active)
-    CALL idx_ptr
+    MOV BX,#obst_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     ADD DL,#1
@@ -236,9 +246,8 @@ gi_clr_obst:
     STA [row_i],AL
 gi_ric_l:
     LDA CL,[row_i]
-    MOV BL,#lo(row_center_cache)
-    MOV BH,#hi(row_center_cache)
-    CALL idx_ptr
+    MOV BX,#row_center_cache
+    ADD BX,CL
     MOV AL,#64
     STA [BX],AL
     LDA AL,[row_i]
@@ -286,36 +295,35 @@ game_l:
 ; ============================================================================
 game_over:
     CALL clst
-    MOV BL,#lo(s_over)
-    MOV BH,#hi(s_over)
-    MOV CL,#5
-    MOV CH,#2
+    MOV BX,#s_over
+    MOV CX,#0x0205
     CALL puts
 
-    MOV BL,#lo(s_score)
-    MOV BH,#hi(s_score)
-    MOV CL,#3
-    MOV CH,#4
+    MOV BX,#s_score
+    MOV CX,#0x0403
     CALL puts
     CALL score_digits
     LDA BL,[digit_h]
-    MOV CL,#12
-    MOV CH,#4
+    MOV CX,#0x040C
     CALL putc
     LDA BL,[digit_t]
-    MOV CL,#13
-    MOV CH,#4
+    MOV CX,#0x040D
     CALL putc
     LDA BL,[digit_u]
-    MOV CL,#14
-    MOV CH,#4
+    MOV CX,#0x040E
     CALL putc
 
-    MOV BL,#lo(s_help2)
-    MOV BH,#hi(s_help2)
-    MOV CL,#1
-    MOV CH,#6
+    MOV BX,#s_help2
+    MOV CX,#0x0601
     CALL puts
+
+    CALL save_record        ; graba el record si se ha batido
+    CMP AL,#0
+    JMPZ go_norec
+    MOV BX,#s_newrec
+    MOV CX,#0x0505
+    CALL puts
+go_norec:
 
     IN  AL,(P_DIR_BTN)
     STA [dir_btn_prev],AL
@@ -512,9 +520,8 @@ update_curve:
     CALL rnd
     AND AL,#0x01
     MOV CL,AL
-    MOV BL,#lo(curve_options)
-    MOV BH,#hi(curve_options)
-    CALL idx_ptr
+    MOV BX,#curve_options
+    ADD BX,CL
     LDA AL,[BX]
     STA [curve_target],AL
     JMP uc_move
@@ -557,9 +564,8 @@ try_spawn:
     STA [spawn_slot],AL
 ts_find:
     LDA CL,[spawn_slot]
-    MOV BL,#lo(obst_active)
-    MOV BH,#hi(obst_active)
-    CALL idx_ptr
+    MOV BX,#obst_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ ts_spawn
@@ -575,9 +581,8 @@ ts_spawn:
     STA [BX],AL
 
     LDA CL,[spawn_slot]
-    MOV BL,#lo(obst_row)
-    MOV BH,#hi(obst_row)
-    CALL idx_ptr
+    MOV BX,#obst_row
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
 
@@ -589,9 +594,8 @@ ts_spawn:
 ts_lane_ok:
     STA [tmp1],AL
     LDA CL,[spawn_slot]
-    MOV BL,#lo(obst_lane)
-    MOV BH,#hi(obst_lane)
-    CALL idx_ptr
+    MOV BX,#obst_lane
+    ADD BX,CL
     LDA AL,[tmp1]
     STA [BX],AL
     RET
@@ -685,16 +689,14 @@ sro_l:
     LDA AL,[row_i]
     SUB AL,#1
     MOV CL,AL
-    MOV BL,#lo(row_center_cache)
-    MOV BH,#hi(row_center_cache)
-    CALL idx_ptr
+    MOV BX,#row_center_cache
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp0],AL                ; tmp0 = row_center_cache[i-1]
 
     LDA CL,[row_i]
-    MOV BL,#lo(row_center_cache)
-    MOV BH,#hi(row_center_cache)
-    CALL idx_ptr
+    MOV BX,#row_center_cache
+    ADD BX,CL
     LDA AL,[tmp0]
     STA [BX],AL                  ; row_center_cache[i] = row_center_cache[i-1]
 
@@ -737,17 +739,15 @@ dr_l:
     STA [px_y],AL
 
     LDA CL,[row_i]
-    MOV BL,#lo(road_width)
-    MOV BH,#hi(road_width)
-    CALL idx_ptr
+    MOV BX,#road_width
+    ADD BX,CL
     LDA AL,[BX]
     SHR AL
     STA [half_w],AL
 
     LDA CL,[row_i]
-    MOV BL,#lo(row_center_cache)
-    MOV BH,#hi(row_center_cache)
-    CALL idx_ptr
+    MOV BX,#row_center_cache
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL                 ; tmp1 = centro de esta fila
 
@@ -904,9 +904,8 @@ dm_l:
     ADD AL,BL
     AND AL,#0x1F
     MOV CL,AL
-    MOV BL,#lo(mountain_h)
-    MOV BH,#hi(mountain_h)
-    CALL idx_ptr
+    MOV BX,#mountain_h
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp2],AL                 ; tmp2 = altura de esta columna
 
@@ -977,16 +976,14 @@ dsh_done:
 ; ============================================================================
 compute_ship_lane:
     MOV CL,#31
-    MOV BL,#lo(row_center_cache)
-    MOV BH,#hi(row_center_cache)
-    CALL idx_ptr
+    MOV BX,#row_center_cache
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp0],AL                 ; tmp0 = centro de la fila 31
 
     MOV CL,#31
-    MOV BL,#lo(road_width)
-    MOV BH,#hi(road_width)
-    CALL idx_ptr
+    MOV BX,#road_width
+    ADD BX,CL
     LDA AL,[BX]
     SHR AL,#2
     STA [tmp1],AL                 ; tmp1 = umbral (ancho31/4)
@@ -1038,17 +1035,15 @@ update_obstacles:
     STA [row_i],AL
 uo_chase_l:
     LDA CL,[row_i]
-    MOV BL,#lo(obst_active)
-    MOV BH,#hi(obst_active)
-    CALL idx_ptr
+    MOV BX,#obst_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ uo_chase_next
 
     LDA CL,[row_i]
-    MOV BL,#lo(obst_lane)
-    MOV BH,#hi(obst_lane)
-    CALL idx_ptr
+    MOV BX,#obst_lane
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[ship_lane]      ; DL, no BL: BX sigue apuntando a obst_lane[row_i]
     CMP AL,DL
@@ -1076,17 +1071,15 @@ uo_chase_done:
     STA [obst_i],AL
 uo_l:
     LDA CL,[obst_i]
-    MOV BL,#lo(obst_active)
-    MOV BH,#hi(obst_active)
-    CALL idx_ptr
+    MOV BX,#obst_active
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#0
     JMPZ uo_next
 
     LDA CL,[obst_i]
-    MOV BL,#lo(obst_row)
-    MOV BH,#hi(obst_row)
-    CALL idx_ptr
+    MOV BX,#obst_row
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[speed]          ; DL, no BL: BX sigue apuntando a obst_row[obst_i]
     ADD AL,DL
@@ -1100,24 +1093,21 @@ uo_clamp_ok:
     STA [tmp0],AL
 
     LDA CL,[tmp0]
-    MOV BL,#lo(row_center_cache)
-    MOV BH,#hi(row_center_cache)
-    CALL idx_ptr
+    MOV BX,#row_center_cache
+    ADD BX,CL
     LDA AL,[BX]
     STA [tmp1],AL
 
     LDA CL,[tmp0]
-    MOV BL,#lo(road_width)
-    MOV BH,#hi(road_width)
-    CALL idx_ptr
+    MOV BX,#road_width
+    ADD BX,CL
     LDA AL,[BX]
     SHR AL,#2
     STA [tmp2],AL
 
     LDA CL,[obst_i]
-    MOV BL,#lo(obst_lane)
-    MOV BH,#hi(obst_lane)
-    CALL idx_ptr
+    MOV BX,#obst_lane
+    ADD BX,CL
     LDA AL,[BX]
     CMP AL,#1
     JMPZ uo_lane_c
@@ -1177,9 +1167,8 @@ uo_shot_score_ok:
     MOV AL,#81
     OUT (P_SND_NOTE),AL
     LDA CL,[obst_i]
-    MOV BL,#lo(obst_active)
-    MOV BH,#hi(obst_active)
-    CALL idx_ptr
+    MOV BX,#obst_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     JMP uo_next
@@ -1219,9 +1208,8 @@ uo_hit:
     CALL on_collision
 uo_deactivate:
     LDA CL,[obst_i]
-    MOV BL,#lo(obst_active)
-    MOV BH,#hi(obst_active)
-    CALL idx_ptr
+    MOV BX,#obst_active
+    ADD BX,CL
     MOV AL,#0
     STA [BX],AL
     JMP uo_next
@@ -1238,18 +1226,14 @@ od_l:
     LDA AL,[row_i]
     SHL AL
     MOV CL,AL
-    MOV BL,#lo(obst_pix)
-    MOV BH,#hi(obst_pix)
-    CALL idx_ptr
+    MOV BX,#obst_pix
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[obst_x]
     ADD AL,DL
     STA [px_x],AL
 
-    ADD BL,#1
-    JMPNC od_dy_ok
-    ADD BH,#1
-od_dy_ok:
+    INC BX
     LDA AL,[BX]
     LDA DL,[obst_y]
     ADD AL,DL
@@ -1315,18 +1299,14 @@ ds_l:
     LDA AL,[row_i]
     SHL AL
     MOV CL,AL
-    MOV BL,#lo(ship_pix)
-    MOV BH,#hi(ship_pix)
-    CALL idx_ptr
+    MOV BX,#ship_pix
+    ADD BX,CL
     LDA AL,[BX]
     LDA DL,[ship_x]
     ADD AL,DL
     STA [px_x],AL
 
-    ADD BL,#1
-    JMPNC ds_dy_ok
-    ADD BH,#1
-ds_dy_ok:
+    INC BX
     LDA AL,[BX]
     LDA DL,[ship_draw_y]
     ADD AL,DL
@@ -1350,23 +1330,18 @@ update_hud:
     MOV AL,#0
     STA [score_dirty],AL
 
-    MOV BL,#lo(s_pts)
-    MOV BH,#hi(s_pts)
-    MOV CL,#0
-    MOV CH,#0
+    MOV BX,#s_pts
+    MOV CX,#0x0000
     CALL puts
     CALL score_digits
     LDA BL,[digit_h]
-    MOV CL,#4
-    MOV CH,#0
+    MOV CX,#0x0004
     CALL putc
     LDA BL,[digit_t]
-    MOV CL,#5
-    MOV CH,#0
+    MOV CX,#0x0005
     CALL putc
     LDA BL,[digit_u]
-    MOV CL,#6
-    MOV CH,#0
+    MOV CX,#0x0006
     CALL putc
 uh_lives:
     LDA AL,[lives_dirty]
@@ -1375,15 +1350,12 @@ uh_lives:
     MOV AL,#0
     STA [lives_dirty],AL
 
-    MOV BL,#lo(s_vidas)
-    MOV BH,#hi(s_vidas)
-    MOV CL,#10
-    MOV CH,#0
+    MOV BX,#s_vidas
+    MOV CX,#0x000A
     CALL puts
     LDA BL,[lives]
     ADD BL,#'0'
-    MOV CL,#16
-    MOV CH,#0
+    MOV CX,#0x0010
     CALL putc
 uh_done:
     RET
@@ -1407,16 +1379,13 @@ score_digits:
 
 ; --- div10:  entrada AL (0..255) -> AL = AL/10, [tmp_rem] = AL mod 10 -------
 div10:
-    MOV DL,#0
-d10_l:
-    CMP AL,#10
-    JMPC d10_d
-    SUB AL,#10
-    ADD DL,#1
-    JMP d10_l
-d10_d:
-    STA [tmp_rem],AL
-    MOV AL,DL
+    ; DIV por hardware (docs/isa.md SS4d) en vez de restar 10 en bucle --
+    ; DL sigue saliendo con el cociente, como antes.
+    MOV AH,#0
+    MOV DL,#10
+    DIV DL
+    STA [tmp_rem],AH
+    MOV DL,AL
     RET
 
 ; ============================================================================
@@ -1443,10 +1412,9 @@ idx_ptr:
 ; --- shadow_set_px:  enciende el pixel (px_x,px_y) en `shadow` (RAM) -------
 shadow_set_px:
     CALL calc_pix
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[pix_lo]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[pix_hi]
     ADD BH,AL
     LDA AL,[BX]
@@ -1467,21 +1435,16 @@ shadow_set_px:
 clr_shadow:
     MOV AL,#0
     STA [shadow],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV DL,#lo(shadow+1)
-    MOV DH,#hi(shadow+1)
-    MOV CL,#0xFF
-    MOV CH,#0x03            ; CX = 1023 (el resto del buffer de 1024)
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
     MOVB
     RET
 
 ; --- blit:  copia `shadow` al framebuffer real, solo lo que haya cambiado -
 blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -1490,10 +1453,7 @@ bl_l:
     MOV AL,CL
     OUT (BX),AL
 bl_same:
-    ADD DL,#1
-    JMPNC bl_dnc
-    ADD DH,#1
-bl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC bl_l
     ADD BH,#1
@@ -1530,8 +1490,7 @@ cpx_d:
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------
 clsg:
-    MOV BL,#0
-    MOV BH,#0
+    MOV BX,#0x0000
     MOV AL,#0
 cg_l:
     OUT (BX),AL
@@ -1544,13 +1503,69 @@ cg_l:
 
 ; --- clst:  borra la capa de texto (0x0400..0x04FF) -------------------------
 clst:
-    MOV BL,#0
-    MOV BH,#4
+    MOV BX,#0x0400
     MOV AL,#0
 ct_l:
     OUT (BX),AL
     ADD BL,#1
     JMPNC ct_l
+    RET
+
+
+; ============================================================================
+;  RECORD (EEPROM del slot) -- ver P_EEP_* arriba
+; ============================================================================
+; --- load_record: [record] = el grabado en la flash (0 si no hay ninguno) ---
+load_record:
+    OUT (P_EEP_LOAD),AL
+    IN  AL,(P_EEP_BASE)
+    CMP AL,#REC_MAGIC
+    MOV AL,#0
+    JMPNZ lr_set
+    IN  AL,(P_EEP_BASE+1)
+lr_set:
+    STA [record],AL
+    RET
+
+; --- show_record: carga el record y escribe "RECORD nnn" en CH=fila, CL=col --
+show_record:
+    CALL load_record
+    LDA AL,[record]
+    MOV AH,#0
+    MOV BL,#100
+    DIV BL
+    ADD AL,#'0'
+    STA [rec_d],AL
+    MOV AL,AH
+    MOV AH,#0
+    MOV BL,#10
+    DIV BL
+    ADD AL,#'0'
+    STA [rec_d+1],AL
+    MOV AL,AH
+    ADD AL,#'0'
+    STA [rec_d+2],AL
+    MOV BX,#s_record
+    CALL puts
+    RET
+
+; --- save_record: si [score] supera el record, lo graba en la flash.
+; Sale AL = 1 si es record nuevo, 0 si no. ----------------------------------
+save_record:
+    LDA AL,[score]
+    LDA BL,[record]
+    CMP BL,AL
+    MOV AL,#0
+    JMPNC svr_done          ; record >= puntos: nada que grabar
+    LDA AL,[score]
+    STA [record],AL
+    OUT (P_EEP_LOAD),AL     ; parte del contenido real de la EEPROM
+    OUT (P_EEP_BASE+1),AL
+    MOV AL,#REC_MAGIC
+    OUT (P_EEP_BASE),AL
+    OUT (P_EEP_SAVE),AL
+    MOV AL,#1
+svr_done:
     RET
 
 ; --- putc:  BL = caracter,  CL = col,  CH = fila ---------------------------
@@ -1575,13 +1590,8 @@ ps_l:
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
-    ADD BL,#1
-    JMPNC ps_nb
-    ADD BH,#1
-ps_nb:
-    ADD DL,#1
-    JMPNC ps_l
-    ADD DH,#1
+    INC BX
+    INC DX
     JMP ps_l
 ps_d:
     RET
@@ -1620,6 +1630,7 @@ fw_l:
 ;  DATOS
 ; ============================================================================
 score:          .space 1
+record:   .space 1      ; record cargado de la EEPROM (ver load_record)
 lives:          .space 1
 speed:          .space 1
 ship_x:         .space 1
@@ -1716,6 +1727,9 @@ obst_pix:
     .db 0,0, 0,255, 0,1, 255,0, 1,0
 
 s_title: .asciiz "EXPRESS X-1"
+s_record: .ascii "RECORD "
+rec_d:    .asciiz "000"
+s_newrec: .asciiz "NEW RECORD!"
 s_help1: .asciiz "DIR TURNS, DAT GAS"
 s_help2: .asciiz "PRESS TO START"
 s_over:  .asciiz "GAME OVER"

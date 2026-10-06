@@ -70,7 +70,7 @@ private:
 //   D0 ADDR_A   D1 ADDR_B   D2 ADDR_SW (pulsador DIRECCIÓN)
 //   D3 DATA_A   D4 DATA_B   D5 DATA_SW (pulsador DATOS)
 //   D6 SW_MODO  (abierto = EDITAR,  cerrado = EJECUTAR)
-//   D7 SW_PASO  (abierto = ▲,       cerrado = ▼)   -- significado según SW_MODO
+//   D7 SW_PASO  (abierto = SINGLE,  cerrado = CONTINUOUS)
 class FrontPanel {
 public:
     FrontPanel(uint8_t hc165LoadPin, uint8_t hc165ClockPin, uint8_t hc165DataPin);
@@ -91,7 +91,7 @@ public:
 
     // --- interruptores (nivel) -------------------------------------
     bool ejecutar() const { return swModo_.on(); }   // false = EDITAR
-    bool swAbajo()  const { return swPaso_.on(); }    // false = ▲, true = ▼
+    bool swAbajo()  const { return swPaso_.on(); }    // false = SINGLE, true = CONTINUOUS
 
     // --- encoders: detentes (se consumen) -------------------------
     int16_t takeDirDelta();

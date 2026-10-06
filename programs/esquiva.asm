@@ -9,7 +9,8 @@
 ;  punto y hace que el resto caiga un poco mas rapido (hasta un tope).
 ;  Tocar uno acaba la partida -- pulsar DATOS o girar cualquiera de los dos
 ;  empieza otra en el acto; pulsar DIRECCION sale al sistema (carga el
-;  slot 0).
+;  slot 0). Al arrancar, una pantalla de bienvenida muestra el record
+;  (EEPROM del slot); al acabar una partida que lo supera, se graba.
 ;
 ;  Controles:
 ;     encoder DATOS o DIRECCION gira -> mueve la plataforma: cada detente
@@ -31,6 +32,10 @@
 ; ============================================================================
 
     .slot 4
+
+    .name "DODGE"
+
+    .category GAME
     .org 0x0000
 
 ; --- variables (RAM alta, lejos del codigo) ----------------------------------
@@ -59,6 +64,7 @@ sf_val    = 0xFE31      ; shadow_fill: byte de relleno
 sfb_off   = 0xFE32      ; shadow_fillbox: offset dentro de la pagina
 sfb_pag   = 0xFE33      ; shadow_fillbox: pagina (0..3)
 gp_prev   = 0xFE34      ; posicion del encoder DATOS en el frame anterior
+record    = 0xFE37      ; record cargado de la EEPROM (ver load_record)
 
 ; --- puertos (ver ../docs/isa.md) -------------------------------------------
 P_FB      = 0x0000      ; framebuffer
@@ -71,6 +77,16 @@ P_T3      = 0x0623      ; temporizador 3 (8 ms/paso)
 P_SND_N   = 0x0632      ; nota MIDI
 P_SND_D   = 0x0633      ; duracion automatica (x10 ms)
 P_PROG_LOAD = 0x0640     ; cargar slot (OUT nº de slot): salto a otro programa
+P_DAT_BTN = 0x0603      ; encoder DATOS: pulsado
+
+; --- record en la EEPROM del slot (iomap.h, 0x0700-0x0801) -----------------
+; byte 0 = REC_MAGIC si hay un record grabado (una flash sin estrenar se lee
+; 0xFF -> record 0), byte 1 = el record. Se graba SOLO al batirlo, al llegar
+; al GAME OVER, para no gastar la flash en cada partida.
+P_EEP_BASE = 0x0700
+P_EEP_LOAD = 0x0800
+P_EEP_SAVE = 0x0801
+REC_MAGIC  = 0xC5
 
 ; ============================================================================
 ;  ARRANQUE
@@ -86,9 +102,50 @@ start:
     ADD AL,#0x5D
     STA [seed],AL
     CMP AL,#0
-    JMPNZ game_rs
+    JMPNZ title
     MOV AL,#0x5D
     STA [seed],AL
+
+; ============================================================================
+;  PANTALLA DE BIENVENIDA: nombre, record y "PRESS DATA TO START". Pulsar
+;  DATOS empieza; pulsar DIRECCION vuelve al sistema, como en la partida.
+; ============================================================================
+title:
+    MOV AL,#0
+    CALL shadow_fill
+    CALL shadow_blit
+    CALL clst
+    MOV BX,#str_title
+    MOV CX,#0x0208
+    CALL puts
+    MOV CX,#0x0405
+    CALL show_record
+    MOV BX,#str_start
+    MOV CX,#0x0601
+    CALL puts
+tl_l:
+    CALL poll_exit
+    LDA AL,[g_exit]
+    CMP AL,#0
+    JMPNZ game_ret
+    IN  AL,(P_DAT_BTN)
+    CMP AL,#0
+    JMPNZ tl_rel
+    MOV AL,#2
+    CALL frame_wait
+    JMP tl_l
+tl_rel:                       ; espera a que se suelte DATOS antes de jugar
+    IN  AL,(P_DAT_BTN)
+    CMP AL,#0
+    JMPZ tl_go
+    MOV AL,#2
+    CALL frame_wait
+    JMP tl_rel
+tl_go:
+    IN  AL,(P_DAT_POS)         ; que el giro de la espera no mueva la plataforma
+    STA [gp_prev],AL
+    IN  AL,(P_DIR_POS)
+    STA [dir_prev],AL
 
 ; ============================================================================
 ;  UNA PARTIDA
@@ -127,12 +184,10 @@ game_l:
     ; reaparecer por el lado contrario. Misma cuenta para los dos
     ; encoders, ver apply_move.
     IN  AL,(P_DAT_POS)
-    MOV DL,#lo(gp_prev)
-    MOV DH,#hi(gp_prev)
+    MOV DX,#gp_prev
     CALL apply_move
     IN  AL,(P_DIR_POS)
-    MOV DL,#lo(dir_prev)
-    MOV DH,#hi(dir_prev)
+    MOV DX,#dir_prev
     CALL apply_move
 
     LDA AL,[g_score]         ; sube la velocidad con los puntos
@@ -267,14 +322,11 @@ game_draw:
     CALL draw_ob
     CALL shadow_blit
     CALL clst
-    MOV BL,#lo(h_game)
-    MOV BH,#hi(h_game)
-    MOV CL,#0
-    MOV CH,#0
+    MOV BX,#h_game
+    MOV CX,#0x0000
     CALL puts
     LDA AL,[g_score]
-    MOV CL,#12
-    MOV CH,#0
+    MOV CX,#0x000C
     CALL put_num
     RET
 
@@ -341,20 +393,22 @@ go_l:
     CALL shadow_fill
     CALL shadow_blit
     CALL clst
-    MOV BL,#lo(str_over)
-    MOV BH,#hi(str_over)
-    MOV CL,#6
-    MOV CH,#3
+    MOV BX,#str_over
+    MOV CX,#0x0306
     CALL puts
-    MOV BL,#lo(str_score)
-    MOV BH,#hi(str_score)
-    MOV CL,#5
-    MOV CH,#5
+    MOV BX,#str_score
+    MOV CX,#0x0505
     CALL puts
     LDA AL,[g_score]
-    MOV CL,#13
-    MOV CH,#5
+    MOV CX,#0x050D
     CALL put_num
+    CALL save_record        ; graba el record si se ha batido
+    CMP AL,#0
+    JMPZ go_norec
+    MOV BX,#s_newrec
+    MOV CX,#0x0705
+    CALL puts
+go_norec:
     MOV AL,#120
     CALL hold
     RET
@@ -400,29 +454,27 @@ ps_d:
 ; --- put_num:  AL = valor (0..255),  CL = col,  CH = fila ------------------
 put_num:
     STA [pn_v],AL
-    MOV DL,#0
-pn_h:
     LDA AL,[pn_v]
-    CMP AL,#100
-    JMPC pn_hd
-    SUB AL,#100
-    STA [pn_v],AL
-    ADD DL,#1
-    JMP pn_h
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#100
+    DIV DL                  ; DL = cociente, resto -> [pn_v]
+    STA [pn_v],AH
+    MOV DL,AL
+    POP AH
 pn_hd:
     MOV AL,DL
     ADD AL,#0x30
     CALL putc
     ADD CL,#1
-    MOV DL,#0
-pn_t:
     LDA AL,[pn_v]
-    CMP AL,#10
-    JMPC pn_td
-    SUB AL,#10
-    STA [pn_v],AL
-    ADD DL,#1
-    JMP pn_t
+    PUSH AH
+    MOV AH,#0
+    MOV DL,#10
+    DIV DL                  ; DL = cociente, resto -> [pn_v]
+    STA [pn_v],AH
+    MOV DL,AL
+    POP AH
 pn_td:
     MOV AL,DL
     ADD AL,#0x30
@@ -468,25 +520,15 @@ idx_ptr:
 
 ; --- shadow_fill:  rellena los 1024 bytes de `shadow` con AL --------------
 shadow_fill:
+    ; escribe AL en el primer byte y MOVB lo propaga por los 1023 restantes
+    ; (origen/destino solapados a 1 byte, copia hacia adelante -- docs/isa.md
+    ; SS4d): antes un bucle de 1024 vueltas
     STA [sf_val],AL
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
-    MOV CL,#0
-    MOV CH,#4
-shf_l:
-    LDA AL,[sf_val]
-    STA [BX],AL
-    ADD BL,#1
-    JMPNC shf_addr_ok
-    ADD BH,#1
-shf_addr_ok:
-    SUB CL,#1
-    JMPNC shf_cnt_ok
-    SUB CH,#1
-shf_cnt_ok:
-    MOV DL,CH
-    OR  DL,CL
-    JMPNZ shf_l
+    STA [shadow],AL
+    MOV BX,#shadow
+    MOV DX,#shadow+1
+    MOV CX,#0x03FF
+    MOVB
     RET
 
 ; --- shadow_fillbox:  caja llena de 0xFF en gb_x,gb_y (gb_wb x gb_ht),
@@ -509,10 +551,9 @@ sfb_l:
     SHR AL,#4
     STA [sfb_pag],AL
 
-    MOV BL,#lo(shadow)
-    MOV BH,#hi(shadow)
+    MOV BX,#shadow
     LDA CL,[sfb_off]
-    CALL idx_ptr
+    ADD BX,CL
     LDA AL,[sfb_pag]
     ADD BH,AL
 
@@ -520,10 +561,7 @@ sfb_l:
     MOV AL,#0xFF
 sfb_cl:
     STA [BX],AL
-    ADD BL,#1
-    JMPNC sfb_nc
-    ADD BH,#1
-sfb_nc:
+    INC BX
     SUB CL,#1
     JMPNZ sfb_cl
 
@@ -538,10 +576,8 @@ sfb_nc:
 
 ; --- shadow_blit:  copia `shadow` al framebuffer real, solo lo que cambie --
 shadow_blit:
-    MOV BL,#0
-    MOV BH,#0
-    MOV DL,#lo(shadow)
-    MOV DH,#hi(shadow)
+    MOV BX,#0x0000
+    MOV DX,#shadow
 sbl_l:
     IN  AL,(BX)
     LDA CL,[DX]
@@ -550,10 +586,7 @@ sbl_l:
     MOV AL,CL
     OUT (BX),AL
 sbl_same:
-    ADD DL,#1
-    JMPNC sbl_dnc
-    ADD DH,#1
-sbl_dnc:
+    INC DX
     ADD BL,#1
     JMPNC sbl_l
     ADD BH,#1
@@ -696,12 +729,74 @@ wait_dir_release:
 wdr_d:
     RET
 
+
+; ============================================================================
+;  RECORD (EEPROM del slot) -- ver P_EEP_* arriba
+; ============================================================================
+; --- load_record: [record] = el grabado en la flash (0 si no hay ninguno) ---
+load_record:
+    OUT (P_EEP_LOAD),AL
+    IN  AL,(P_EEP_BASE)
+    CMP AL,#REC_MAGIC
+    MOV AL,#0
+    JMPNZ lr_set
+    IN  AL,(P_EEP_BASE+1)
+lr_set:
+    STA [record],AL
+    RET
+
+; --- show_record: carga el record y escribe "RECORD nnn" en CH=fila, CL=col --
+show_record:
+    CALL load_record
+    LDA AL,[record]
+    MOV AH,#0
+    MOV BL,#100
+    DIV BL
+    ADD AL,#'0'
+    STA [rec_d],AL
+    MOV AL,AH
+    MOV AH,#0
+    MOV BL,#10
+    DIV BL
+    ADD AL,#'0'
+    STA [rec_d+1],AL
+    MOV AL,AH
+    ADD AL,#'0'
+    STA [rec_d+2],AL
+    MOV BX,#s_record
+    CALL puts
+    RET
+
+; --- save_record: si [g_score] supera el record, lo graba en la flash.
+; Sale AL = 1 si es record nuevo, 0 si no. ----------------------------------
+save_record:
+    LDA AL,[g_score]
+    LDA BL,[record]
+    CMP BL,AL
+    MOV AL,#0
+    JMPNC svr_done          ; record >= puntos: nada que grabar
+    LDA AL,[g_score]
+    STA [record],AL
+    OUT (P_EEP_LOAD),AL     ; parte del contenido real de la EEPROM
+    OUT (P_EEP_BASE+1),AL
+    MOV AL,#REC_MAGIC
+    OUT (P_EEP_BASE),AL
+    OUT (P_EEP_SAVE),AL
+    MOV AL,#1
+svr_done:
+    RET
+
 ; ============================================================================
 ;  DATOS
 ; ============================================================================
 h_game:    .asciiz "DODGE  S:"
 str_over:  .asciiz "GAME OVER"
 str_score: .asciiz "SCORE:"
+str_title: .asciiz "DODGE"
+str_start: .asciiz "PRESS DATA TO START"
+s_record: .ascii "RECORD "
+rec_d:    .asciiz "000"
+s_newrec: .asciiz "NEW RECORD!"
 hold_dp:   .space 1    ; posicion de DATOS al entrar en hold() (ver arriba)
 
     .org 0xF300
