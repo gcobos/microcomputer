@@ -19,6 +19,7 @@ P_SND_FREQ_LO = 0x0630
 P_SND_FREQ_HI = 0x0631
 P_SND_NOTE    = 0x0632   ; nota MIDI (0 = silencio)
 P_SND_DUR     = 0x0633   ; duracion automatica x10 ms (0 = sostenida)
+P_SND_VEL     = 0x0634   ; velocidad MIDI 1..127 (solo Bluetooth; pegajosa)
 P_PROG_LOAD   = 0x0640   ; OUT slot: cargar y saltar a ese programa
 P_PROG_SAVE   = 0x0641   ; OUT slot: grabar la RAM entera ahi
 P_SLOT_QUERY  = 0x0642   ; OUT slot: consultar sus metadatos; IN: 1 si usado

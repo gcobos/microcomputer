@@ -465,6 +465,7 @@ MAPA DE PUERTOS
   0x0631            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
   0x0632            PORT_SND_NOTE      sonido: nota MIDI 0..127 (0 = silencio)
   0x0633            PORT_SND_DUR       sonido: duración auto = valor * 10 ms (0 = sostenida)
+  0x0634            PORT_SND_VEL       sonido: velocidad MIDI 1..127 (solo Bluetooth; pegajosa)
   0x0640            PORT_PROG_LOAD     carga un slot de flash en la RAM y reinicia la CPU (OUT slot; IN = 1 si el ultimo intento fallo)
   0x0641            PORT_PROG_SAVE     graba la RAM actual en un slot de flash (OUT slot; IN = 1 si la ultima grabacion salio bien)
   0x0642            PORT_SLOT_QUERY    OUT slot: lee nombre/categoría a 0x0660..; IN = 1 si ese slot tiene programa
@@ -599,7 +600,7 @@ TEMPORIZADORES (puertos 0x0620 .. 0x0629, PORT_TIMER_BASE = 0x0620)
   temporizador se pone al día: descuenta todos los pasos transcurridos de
   una vez (nunca por debajo de 0).
 
-SONIDO (puertos 0x0630 .. 0x0633, PORT_SND_BASE = 0x0630)
+SONIDO (puertos 0x0630 .. 0x0634, PORT_SND_BASE = 0x0630)
   Zumbador PIEZO PASIVO en GPIO3. El firmware genera un tono de onda cuadrada
   por hardware con tone() (LEDC del ESP32-C3); no consume tiempo de CPU.
 
@@ -616,6 +617,12 @@ SONIDO (puertos 0x0630 .. 0x0633, PORT_SND_BASE = 0x0630)
                               "Pegajoso": cada NOTE / FREQ_HI posterior vuelve a
                               armar esta misma duración. IN: tiempo restante en
                               unidades de 10 ms (0 = ya callado).
+    0x0634  PORT_SND_VEL      OUT: velocidad (fuerza) MIDI 1..127 de las notas
+                              siguientes; 0 cuenta como 1. SOLO para la salida
+                              Bluetooth MIDI: el zumbador suena siempre igual.
+                              Pegajosa como DUR; 100 al (re)arrancar. La misma
+                              nota con otra velocidad se vuelve a tocar.
+                              IN: eco.
 
   OJO CON EL ORDEN: 0x0633 (DUR) hay que escribirlo SIEMPRE antes que 0x0632/
   0x0631 (NOTE/FREQ_HI). sndApply() arma el apagado automático con el valor
@@ -631,20 +638,27 @@ SONIDO (puertos 0x0630 .. 0x0633, PORT_SND_BASE = 0x0630)
   tickSound() corre una vez por vuelta de loop() (aplica el auto-apagado).
   El piezo pasivo va directo entre GPIO3 y GND (opcional 100 Ω en serie).
 
-  MUTE/UNMUTE general (botón BOOT, GPIO9, ver docs/hardware.md): corta la
-  salida FÍSICA del zumbador sin tocar el estado emulado de sonido -- el
-  programa en curso sigue escribiendo/leyendo estos 4 puertos con total
-  normalidad, solo se salta la llamada a tone()/noTone() real mientras esté
-  muteado (g_soundMuted en main.cpp). Empieza DESACTIVADO (sonido audible)
-  al encender. tickBootButton() se sondea lo primero en cada loop(), antes
-  de mirar el interruptor de modo -- por eso el mute funciona en las 4
-  vistas (EDITAR/PASO/CONTINUO/menú de programas) y con cualquier programa
-  cargado, no solo durante una ejecución. Antirrebote por tiempo
-  (BOOT_BTN_DEBOUNCE_MS = 30 ms). Al desmutear suena un jingle de 2 notas
-  (880/1175 Hz) NO bloqueante (tickMuteJingle(), un paso por loop(), nunca
-  detiene la emulación de la CPU) que confirma que el sonido ha vuelto;
-  mientras suena, sndApply(0) sigue actualizando el estado emulado pero NO
-  llama a noTone() de verdad, para no cortarlo (ver el comentario de
+  SALIDA DEL SONIDO: ZUMBADOR / BLUETOOTH (botón BOOT, GPIO9, ver
+  docs/hardware.md). Cambia a dónde va el sonido sin tocar el estado emulado:
+  el programa en curso sigue escribiendo/leyendo estos 4 puertos con total
+  normalidad. soundOutOn/soundOutOff (main.cpp) lo mandan al zumbador
+  (tone()/noTone()) o, con g_soundBt, como nota MIDI por Bluetooth LE
+  (src/btmidi.cpp: el aparato se anuncia como "compi-midiN" -- N, el
+  primer número que no use otro compi cercano --, canal 1, velocidad
+  100; una frecuencia sale como la nota MIDI más cercana). Sin nada
+  conectado por Bluetooth no suena nada: hace las veces del antiguo MUTE.
+  Si el sintetizador corta la conexión, vuelve solo al zumbador (como una
+  pulsación de BOOT: jingle incluido, y se guarda; btmidiTakeLost()). De
+  fábrica, el zumbador. La pila BLE solo arranca la primera vez que se elige
+  Bluetooth (o al encender, si estaba elegido). tickBootButton() se sondea
+  lo primero en cada loop(), antes de mirar el interruptor de modo -- por
+  eso funciona en las 4 vistas (EDITAR/PASO/CONTINUO/menú de programas) y
+  con cualquier programa cargado, no solo durante una ejecución.
+  Antirrebote por tiempo (BOOT_BTN_DEBOUNCE_MS = 30 ms). Al volver al
+  zumbador suena un jingle de 2 notas (880/1175 Hz) NO bloqueante
+  (tickMuteJingle(), un paso por loop(), nunca detiene la emulación de la
+  CPU); mientras suena, soundOutOn/Off no tocan el zumbador, y al acabar
+  retoma el tono que tuviera en marcha el programa (ver el comentario de
   g_muteJingleActive en main.cpp).
 
 CARGA Y GRABADO DE PROGRAMAS (puertos 0x0640 / 0x0641)
@@ -737,9 +751,9 @@ CONFIGURACIÓN DEL APARATO (puertos 0x0650 / 0x0651 / 0x0652)
                                   el brillo de SETTINGS se perdia al arrancar
                                   otro programa).
                                   IN: eco del último valor escrito.
-    0x0651  PORT_CFG_SOUND_EN    OUT: 0 = silencia, !=0 = reactiva -- MISMO
-                                  interruptor general que el botón BOOT
-                                  (g_soundMuted, main.cpp). Es una preferencia
+    0x0651  PORT_CFG_SOUND_EN    OUT: 0 = Bluetooth MIDI, !=0 = zumbador --
+                                  MISMO interruptor general que el botón BOOT
+                                  (g_soundBt, main.cpp). Es una preferencia
                                   de sesión, no un ajuste de "este programa":
                                   NO se reinicia al arrancar una ejecución
                                   nueva (igual que pulsar BOOT a mano tampoco
@@ -832,8 +846,8 @@ PINES USADOS (constantes en src/main.cpp)
                           (aviso de fallo en el arranque) y salida del
                           ordenador emulado (puerto PORT_LED, sección 8).
                           Strapping: el firmware lo pone en alto al arrancar.
-  IO9   PIN_BOOT_BTN      Botón BOOT de a bordo, reutilizado como MUTE/UNMUTE
-                          general (entrada, pull-up interno, activo a nivel
+  IO9   PIN_BOOT_BTN      Botón BOOT de a bordo, reutilizado para elegir la
+                          salida del sonido (zumbador/Bluetooth) (entrada, pull-up interno, activo a nivel
                           bajo). Strapping, pero la ROM ya sampleó su nivel
                           en el reset ANTES de que corra setup()/loop() --
                           leerlo despues como entrada normal no interfiere
@@ -1436,17 +1450,17 @@ portRead(port):  port < 1024 -> g_fb[port] ; celda de texto -> g_text[i] ;
   celda de atributos -> g_attr[i] ;
   0x0600/0x0602 -> dirPos/datPos ; 0x0601/0x0603 -> dirDown/datDown ;
   0x0610 -> g_led ; 0x0620..0629 -> g_timer[i] ;
-  0x0630..0633 -> eco de sonido (DUR = tiempo restante) ;
+  0x0630..0634 -> eco de sonido (DUR = tiempo restante) ;
   0x0640 -> g_lastLoadOk ; 0x0641 -> g_lastSaveOk ;
-  0x0650 -> g_screenContrast ; 0x0651 -> !g_soundMuted ; resto -> 0.
+  0x0650 -> g_screenContrast ; 0x0651 -> !g_soundBt ; resto -> 0.
 portWrite(port, v):  port < 1024 -> g_fb[port] = v ; celda de texto -> g_text[i] = v ;
   celda de atributos -> g_attr[i] = v ;
   0x0610 -> LED ; 0x0620..0629 -> arma el temporizador ;
-  0x0630..0633 -> sonido (0x0631 y 0x0632 aplican el tono) ;
+  0x0630..0634 -> sonido (0x0631 y 0x0632 aplican el tono; 0x0634 = velocidad MIDI) ;
   0x0640 -> flash.loadProgram(v, cpu.ram()) + cpu.reset() + clearRuntimeOutputs() si sale bien ;
   0x0641 -> flash.saveProgram(v, cpu.ram()) ;
   0x0650 -> g_screenContrast = v ; oled.contrast(v) ;
-  0x0651 -> g_soundMuted = (v == 0) ; resto -> nada.
+  0x0651 -> setSoundBt(v == 0) ; resto -> nada.
   "celda de texto" = textIndex(port) >= 0  (0x0400 + fila*32 + col, fila<8, col<21).
   "celda de atributos" = attrIndex(port) >= 0  (0x0500 + fila*32 + col, misma
   formula que el texto, comprobado DESPUES de textIndex en el orden de
@@ -1552,9 +1566,9 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
 - SONIDO: zumbador piezo PASIVO en GPIO3 (el último pin que quedaba libre),
   atacado directo (el piezo es capacitivo, corriente media despreciable). El
   tono lo genera tone()/LEDC por hardware, así que no roba tiempo a la CPU
-  emulada ni depende del modelo de ejecución por lotes. Puertos 0x0630..0x0633:
-  frecuencia de 16 bits, nota MIDI (lo más fácil de usar con OUT) y duración
-  automática. Solo suena en CONTINUOUS; se calla en STEP/EDIT y al HALT. Con un
+  emulada ni depende del modelo de ejecución por lotes. Puertos 0x0630..0x0634:
+  frecuencia de 16 bits, nota MIDI (lo más fácil de usar con OUT), duración
+  automática y velocidad MIDI (solo por Bluetooth). Solo suena en CONTINUOUS; se calla en STEP/EDIT y al HALT. Con un
   piezo pasivo se pueden tocar melodías; un buzzer ACTIVO solo daría un pitido
   fijo y bastaría el bit 0 de un puerto.
 - TIMERS + SONIDO: patrón típico de melodía = OUT PORT_SND_DUR una vez, luego

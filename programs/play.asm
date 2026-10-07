@@ -7,40 +7,57 @@
 ;  sale por arriba o por abajo, el teclado se desplaza una octava (la
 ;  escala sube o baja). Arriba, el modo actual y la cancion.
 ;
-;  Mandos:
-;     DIRECCION pulsa  -> siguiente modo: PIANO -> EDIT -> RHYTHM -> PLAY ->
-;                         FILES -> PIANO ...
-;     DIRECCION gira   -> posicion: el cursor en EDIT, la nota de partida en
-;                         RHYTHM/PLAY, la fila en FILES
-;     DATOS gira       -> nota del teclado (se para en DO3 y en DO8); en
-;                         FILES, tambien la fila
-;     DATOS pulsa      -> tocar / insertar / accion, segun el modo
+;  EDIT es la pantalla principal: componer, oir y corregir sin cambiar de
+;  modo. El cursor de la cancion es como el cabezal de una cinta: la
+;  reproduccion lo arrastra.
+;
+;  EDIT (pantalla principal):
+;     DATOS gira       -> elige la nota (se para en DO3 y en DO8); cada nota
+;                         suena un momento al pasar por ella (por Bluetooth
+;                         MIDI, a la mitad de fuerza que al insertarla)
+;     DATOS corta      -> al soltar, inserta la nota marcada en el cursor
+;                         (con el cursor al final, la anade) y suena corta
+;     DATOS larga      -> borra la nota seleccionada (la del cursor, en
+;                         inverso; la seleccion pasa a la siguiente). Con el
+;                         cursor al final, la ultima. Mientras se mantiene no
+;                         suena nada; al borrar, un pitido grave. El teclado
+;                         se queda en la nota borrada (para cambiarla: larga,
+;                         girar DATOS, corta)
+;     DIRECCION gira   -> mueve el cursor (la nota del cursor va en inverso;
+;                         puede quedar "detras de la ultima")
+;     DIRECCION corta  -> reproduce desde el cursor hasta el final, con su
+;                         ritmo; al acabar el cursor queda al final, listo
+;                         para seguir anadiendo. Con el cursor ya al final,
+;                         la cancion entera. Otra pulsacion (de DIRECCION o
+;                         de DATOS) la para: el cursor se queda en esa nota.
+;
+;  DIRECCION mantenido -> cambiar de modo: cada ~0,6 s la fila de arriba
+;  ofrece otro (en inverso) y al soltar se entra en el que se ve. Desde
+;  EDIT: RHYTHM, FILES, PIANO, EDIT (= cancelar); desde los demas, primero
+;  EDIT (volver es siempre una pulsacion larga).
+;
+;     RHYTHM    cada pulsacion de DATOS toca la nota del cursor mientras se
+;               mantenga pulsado, y GRABA ese ritmo (duracion y silencio
+;               previo); avanza a la siguiente. Empieza en el cursor de EDIT
+;               (al final: desde el principio, y al acabar vuelve a
+;               empezar). Tras mover el cursor a mano (DIRECCION gira, con
+;               vuelta) o parar una reproduccion, la primera nota conserva
+;               su silencio. DIRECCION corta reproduce / para, como en EDIT.
+;               Precision: se mide al ms (T1/T2/T4, ver meas_read) y se
+;               guarda al valor mas cercano de TIME_TBL; lo que se pierde al
+;               redondear lo compensa el silencio de la siguiente nota, asi
+;               que las notas entran donde se marcaron (+-16 ms aprox.) y el
+;               error no se acumula a lo largo de la cancion.
+;     FILES     NEW SONG + 32 canciones: cada fila lleva como titulo las 3
+;               primeras notas y la longitud; cualquiera de los dos
+;               encoders cambia de fila. Pulsacion CORTA de DATOS cambia la
+;               accion (LOAD -> SAVE -> DEL, se ve en la fila de estado),
+;               LARGA la ejecuta. LOAD y NEW SONG (larga: vacia la cancion)
+;               vuelven solos a EDIT, con el cursor al final.
+;     PIANO     pulsar DATOS toca la nota marcada mientras se mantiene.
 ;
 ;  No hay salida al sistema desde el programa: se sale cambiando el
 ;  interruptor SW_MODE a EDIT (como pong.asm o calc.asm).
-;
-;  Modos:
-;     PIANO     pulsar DATOS toca la nota marcada mientras se mantiene.
-;     EDIT      componer. La lista de arriba muestra la pagina de 10 notas
-;               del cursor, con la nota bajo el cursor en inverso; el cursor
-;               puede quedar "detras de la ultima" para seguir anadiendo.
-;               Al poner el cursor sobre una nota, el teclado salta a ella.
-;               Pulsacion CORTA de DATOS: inserta la nota marcada DELANTE de
-;               la del cursor (con el ritmo por defecto) y avanza el cursor.
-;               Pulsacion LARGA con el cursor sobre una nota: si la marcada
-;               en el teclado es la misma, la BORRA; si es otra, la
-;               SUSTITUYE (conservando su ritmo).
-;     RHYTHM    cada pulsacion de DATOS toca la nota de la posicion mientras
-;               se mantenga pulsado, y GRABA ese ritmo (duracion y silencio
-;               previo); avanza a la siguiente. Al final vuelve a empezar.
-;               Tras mover la posicion a mano, la primera nota conserva su
-;               silencio (no se mide desde la ultima pulsacion).
-;     PLAY      pulsar DATOS reproduce la cancion sola desde la posicion
-;               elegida, con su ritmo; otra pulsacion la para.
-;     FILES     NEW SONG + 32 canciones: cada fila lleva como titulo las 3
-;               primeras notas y la longitud. Pulsacion CORTA cambia la
-;               accion (LOAD -> SAVE -> DEL, se ve en la fila de estado),
-;               LARGA la ejecuta. En NEW SONG la larga vacia la cancion.
 ;
 ;  DONDE SE GUARDAN LAS CANCIONES: en la propia RAM del programa, y de ahi a
 ;  la flash grabando el programa ENTERO en su slot (PORT_PROG_SAVE):
@@ -86,10 +103,14 @@ P_DIR_POS  = 0x0600
 P_DIR_BTN  = 0x0601
 P_DAT_POS  = 0x0602
 P_DAT_BTN  = 0x0603
+P_T1       = 0x0621      ; 2 ms/paso  } RHYTHM: medir duraciones y silencios
+P_T2       = 0x0622      ; 4 ms/paso  } con mas finura que T4 (ver meas_read)
 P_T3       = 0x0623      ; 8 ms/paso (ritmo del bucle)
 P_T4       = 0x0624      ; 16 ms/paso (duracion de nota y silencio: nunca a la vez)
+P_T5       = 0x0625      ; 32 ms/paso (pasos del menu de DIRECCION mantenido)
 P_SND_NOTE = 0x0632      ; nota MIDI (0 = silencio)
 P_SND_DUR  = 0x0633      ; duracion automatica x10 ms (0 = sostenida)
+P_SND_VEL  = 0x0634      ; velocidad MIDI (solo por Bluetooth; pegajosa)
 P_PROG_SAVE = 0x0641     ; OUT slot: graba la RAM entera ahi; IN = 1 si bien
 P_CUR_SLOT  = 0x0643     ; IN: el slot de este programa (donde se graba)
 
@@ -109,15 +130,17 @@ WORK        = 0xC400     ; notas de la cancion de trabajo
 DEF_DUR     = 13         ; RECORD: TIME_TBL[13] = 16 x 16 ms = 256 ms por nota
 DEF_GAP     = 8          ; RECORD: TIME_TBL[8]  =  8 x 16 ms = 128 ms de silencio
 LONG_FRAMES = 70         ; pulsacion larga: ~70 fotogramas de ~8 ms
+HOLD_STEP   = 19         ; menu de DIRECCION: un modo nuevo cada 19 x 32 ms
 LIST_ROWS   = 5          ; filas visibles de la lista de FILES (filas 1-5)
 ATTR_INVERSE = 0x01
 
-MODE_PIANO  = 0
-MODE_EDIT   = 1
-MODE_RHYTHM = 2
-MODE_PLAY   = 3
-MODE_FILES  = 4
-MODE_COUNT  = 5
+MODE_EDIT   = 0          ; la pantalla principal
+MODE_RHYTHM = 1
+MODE_FILES  = 2
+MODE_PIANO  = 3
+PREVIEW_DUR = 12         ; nota de muestra al girar DATOS / al insertar: 120 ms
+VEL_FULL    = 100        ; velocidad MIDI normal (por Bluetooth)
+VEL_PREVIEW = 50         ; la muestra al girar DATOS: la mitad (solo MIDI)
 
 KB_X0   = 4              ; teclado: 15 blancas de 8 px desde x=4
 KB_Y0   = 34             ; borde de arriba
@@ -139,6 +162,7 @@ start:
     STA [files_top],AL
     STA [files_act],AL
     STA [play_state],AL
+    STA [abtn_down],AL
     MOV AL,#24               ; empieza en DO5, con el teclado en DO4..DO6
     STA [cur_note],AL
     MOV AL,#12
@@ -150,31 +174,31 @@ start:
     CALL len_valid
     STA [len_lo],BL
     STA [len_hi],BH
+    CALL rpos_set            ; EDIT empieza con el cursor al final
     IN  AL,(P_DIR_POS)
     STA [dir_prev],AL
     IN  AL,(P_DAT_POS)
     STA [dat_prev],AL
-    IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
     MOV AL,#0
     OUT (P_SND_DUR),AL       ; notas sostenidas (la duracion es "pegajosa")
     CALL redraw_all
 
 main_l:
-    ; pulsador DIRECCION, con flanco: siguiente modo
-    IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
-    CMP AL,#0
-    JMPZ ml_dir_done
-    CMP BL,#0
-    JMPNZ ml_dir_done        ; sigue pulsado: no es una pulsacion nueva
-    CALL next_mode
-ml_dir_done:
+    CALL poll_addr_btn
     CALL poll_addr_rot
     CALL poll_dat_rot
     CALL poll_dat_btn
     CALL tick_play
+    ; grabando el ritmo o reproduciendo, sin espera: la pulsacion y el final
+    ; de cada nota se atienden en cuanto pasan (con la espera de 8 ms, cada
+    ; nota se medía o arrancaba hasta 8 ms tarde, y en la reproduccion ese
+    ; retraso se acumulaba nota a nota)
+    LDA AL,[play_state]
+    CMP AL,#0
+    JMPNZ main_l
+    LDA AL,[mode]
+    CMP AL,#MODE_RHYTHM
+    JMPZ main_l
     MOV AL,#1
     CALL frame_wait
     JMP main_l
@@ -295,7 +319,9 @@ note_pack:
     RET
 
 ; --- time_idx: AL = tiempo medido (pasos de 16 ms) -> AL = indice de
-; TIME_TBL (el primero que llega a ese tiempo; 31 si se pasa de todo) ----
+; TIME_TBL con el valor MAS CERCANO (31 si se pasa de todo). Redondear
+; siempre hacia arriba alargaba cada nota y cada silencio hasta un escalon
+; entero, y al sumarse el ritmo grabado se iba quedando atras ------------
 time_idx:
     MOV CL,AL
     MOV BX,#TIME_TBL
@@ -306,10 +332,75 @@ ti_l:
     JMPNC ti_d               ; TIME_TBL[i] >= medido
     INC BX
     ADD DL,#1
-    CMP DL,#31
+    CMP DL,#32
     JMPNZ ti_l
+    MOV AL,#31               ; mas que el ultimo (3,2 s)
+    RET
 ti_d:
+    CMP DL,#0
+    JMPZ ti_r
+    SUB AL,CL                ; CH = TIME_TBL[i] - medido
+    MOV CH,AL
+    DEC BX
+    LDA AL,[BX]
+    MOV AH,CL
+    SUB AH,AL                ; AH = medido - TIME_TBL[i-1]
+    CMP AH,CH
+    JMPNC ti_r               ; mas cerca (o igual) del de arriba
+    SUB DL,#1
+ti_r:
     MOV AL,DL
+    RET
+
+; --- meas_arm / meas_read: cronometro de RHYTHM. meas_arm arranca T1, T2
+; y T4 a la vez; meas_read da en BX lo que ha pasado desde entonces, en ms:
+; con T1 (2 ms) hasta ~0,5 s, con T2 (4 ms) hasta ~1 s, y despues con T4
+; (16 ms, hasta ~4 s). Un temporizador solo dice cuantos pasos ENTEROS han
+; pasado: se toma el centro del paso en curso (pasos x 2 + 1 ms con T1...),
+; si no cada medida sale de media medio paso corta y, al sumarse, la cancion
+; grabada se adelanta (con solo T4, 8 ms por medida). Usan AX, BX y CL. ---
+meas_arm:
+    MOV AL,#255
+    OUT (P_T1),AL
+    OUT (P_T2),AL
+    OUT (P_T4),AL
+    RET
+meas_read:
+    IN  AL,(P_T1)
+    MOV CL,#2
+    CMP AL,#0
+    JMPNZ mr_mul
+    IN  AL,(P_T2)
+    MOV CL,#4
+    CMP AL,#0
+    JMPNZ mr_mul
+    IN  AL,(P_T4)
+    MOV CL,#16
+mr_mul:
+    MOV BL,AL
+    MOV AL,#255
+    SUB AL,BL                ; pasos enteros
+    MUL CL                   ; -> ms
+    MOV BX,AX
+    SHR CL                   ; + medio paso
+    ADD BX,CL
+    RET
+
+; --- to16: BX = tiempo en ms (>= 0) -> AL = pasos de 16 ms, redondeado
+; (255 si se pasa: DIV satura) ---------------------------------------------
+to16:
+    ADD BX,#8
+    MOV AX,BX
+    MOV CL,#16
+    DIV CL
+    RET
+
+; --- val_ms: AL = indice de TIME_TBL -> BX = su tiempo en ms --------------
+val_ms:
+    CALL time_val
+    MOV CL,#16
+    MUL CL
+    MOV BX,AX
     RET
 
 ; --- time_val: AL = indice -> AL = pasos de 16 ms (TIME_TBL[AL]) ----------
@@ -334,37 +425,138 @@ rpos_entry:
 ; ============================================================================
 ;  ENTRADA
 ; ============================================================================
-; --- next_mode: DIRECCION pulsado -> el modo siguiente (con vuelta). EDIT
-; empieza con el cursor al final (para seguir anadiendo); RHYTHM y PLAY,
-; en la primera nota ---------------------------------------------------------
-next_mode:
-    LDA AL,[mode]
+; --- poll_addr_btn: pulsador DIRECCION. Corta (al soltar): reproduce /
+; para (EDIT y RHYTHM). Mantenido: cada ~0,6 s (T5) la fila de arriba
+; ofrece otro modo (en inverso, segun HOLD_SEQ); al soltar se entra en el
+; que se ve. El ultimo de la ronda es el propio modo: soltar ahi cancela --
+poll_addr_btn:
+    IN  AL,(P_DIR_BTN)
+    LDA BL,[abtn_down]
+    CMP AL,#0
+    JMPZ pab_up
+    CMP BL,#0
+    JMPNZ pab_held
+    MOV AL,#1                ; flanco de bajada
+    STA [abtn_down],AL
+    MOV AL,#HOLD_STEP
+    OUT (P_T5),AL
+    MOV AL,#0xFF
+    STA [abtn_idx],AL        ; 0xFF = aun no es larga
+    RET
+pab_held:
+    IN  AL,(P_T5)
+    CMP AL,#0
+    JMPNZ pab_ret
+    MOV AL,#HOLD_STEP
+    OUT (P_T5),AL
+    LDA AL,[abtn_idx]
     ADD AL,#1
-    CMP AL,#MODE_COUNT
-    JMPNZ nm_set
+    AND AL,#3
+    STA [abtn_idx],AL
+    CALL hold_mode
+    CALL show_hold
+    RET
+pab_up:
+    CMP BL,#0
+    JMPZ pab_ret
+    MOV AL,#0                ; flanco de subida
+    STA [abtn_down],AL
+    LDA AL,[abtn_idx]
+    CMP AL,#0xFF
+    JMPZ addr_short
+    CALL hold_mode
+    LDA BL,[mode]
+    CMP AL,BL
+    JMPNZ set_mode
+    MOV CH,#0                ; el propio modo: cancelar, sin parar nada
+    CALL clear_row
+    CALL show_mode
+pab_ret:
+    RET
+
+; --- hold_mode: AL = el modo que ofrece ahora el menu de DIRECCION
+; (HOLD_SEQ[mode*4 + abtn_idx]) ----------------------------------------------
+hold_mode:
+    LDA AL,[mode]
+    SHL AL,#2
+    LDA BL,[abtn_idx]
+    ADD AL,BL
+    MOV CL,AL
+    MOV BX,#HOLD_SEQ
+    ADD BX,CL
+    LDA AL,[BX]
+    RET
+
+; --- show_hold: AL = modo ofrecido -> su nombre en inverso en la fila 0 ---
+show_hold:
+    PUSH AL
+    MOV CH,#0
+    CALL clear_row
+    POP AL
+    CALL put_mode_name
+    MOV CX,#0x0005
+    MOV AL,#ATTR_INVERSE
+    STA [attr_val],AL
+    MOV AL,#10
+    STA [attr_n],AL
+    CALL set_attr
+    RET
+
+; --- addr_short: pulsacion corta de DIRECCION -----------------------------
+addr_short:
+    LDA AL,[mode]
+    CMP AL,#MODE_EDIT
+    JMPZ play_toggle
+    CMP AL,#MODE_RHYTHM
+    JMPZ play_toggle
+    RET
+
+; --- play_toggle: reproduce desde el cursor hasta el final, con el cursor
+; detras (al acabar queda al final, listo para seguir anadiendo); con el
+; cursor ya al final, la cancion entera. Si ya sonaba, la para: el cursor
+; se queda en la nota donde paro ---------------------------------------------
+play_toggle:
+    LDA AL,[play_state]
+    CMP AL,#0
+    JMPNZ play_stop
+    CALL len_zero
+    JMPZ pt_ret
+    CALL rpos_lt_len
+    JMPC pt_go
+    MOV BX,#0
+    CALL rpos_set
+pt_go:
     MOV AL,#0
-nm_set:
+    OUT (P_T4),AL            ; sin silencio delante de la primera nota
+    MOV AL,#1
+    STA [play_state],AL      ; 1 = esperando el silencio antes de una nota
+pt_ret:
+    RET
+play_stop:
+    MOV AL,#0
+    STA [play_state],AL
+    OUT (P_SND_NOTE),AL
+    MOV AL,#1
+    STA [rh_fresh],AL        ; RHYTHM: la siguiente conserva su silencio
+    CALL replay_show_pos
+    RET
+
+; --- set_mode: AL = modo nuevo. Para el sonido y la reproduccion; el
+; cursor de la cancion se conserva entre EDIT y RHYTHM ------------------------
+set_mode:
     STA [mode],AL
     MOV AL,#0
     OUT (P_SND_NOTE),AL
-    STA [btn_down],AL        ; una pulsacion a medias no sigue en otro modo
-    STA [rpos_lo],AL
-    STA [rpos_hi],AL
     STA [files_act],AL
     STA [play_state],AL      ; para una reproduccion en marcha
     MOV AL,#1
     STA [rh_fresh],AL
-    LDA AL,[mode]
-    CMP AL,#MODE_EDIT
-    JMPNZ nm_draw
-    CALL len_get
-    CALL rpos_set
-nm_draw:
+    STA [long_done],AL       ; si DATOS sigue pulsado, al soltarlo no hace nada
     CALL redraw_all
     RET
 
-; --- poll_addr_rot: DIRECCION gira -> posicion (cursor en EDIT, nota de
-; partida en RHYTHM/PLAY, fila en FILES), un paso por detente -------------
+; --- poll_addr_rot: DIRECCION gira -> el cursor (EDIT, RHYTHM) o la fila
+; (FILES), un paso por detente ----------------------------------------------
 poll_addr_rot:
     IN  AL,(P_DIR_POS)
     LDA BL,[dir_prev]
@@ -401,6 +593,9 @@ addr_up:
     JMPZ au_ret
     CMP AL,#MODE_EDIT
     JMPNZ su_pos
+    LDA AL,[play_state]
+    CMP AL,#0
+    JMPNZ au_ret             ; mientras suena, el cursor lo lleva la cancion
     CALL rpos_lt_len         ; EDIT: hasta "detras de la ultima", sin vuelta
     JMPNC au_ret
     CALL rpos_get
@@ -418,6 +613,9 @@ addr_down:
     JMPZ ad_ret
     CMP AL,#MODE_EDIT
     JMPNZ sd_pos
+    LDA AL,[play_state]
+    CMP AL,#0
+    JMPNZ ad_ret
     LDA AL,[rpos_lo]         ; EDIT: hasta la primera, sin vuelta
     OR  AL,[rpos_hi]
     JMPZ ad_ret
@@ -428,8 +626,8 @@ addr_down:
 ad_ret:
     RET
 
-; --- poll_dat_rot: DATOS gira -> nota (o fila en FILES, o posicion en
-; REPLAY/PLAY), un paso por detente --------------------------------------
+; --- poll_dat_rot: DATOS gira -> nota (o fila en FILES), un paso por
+; detente --------------------------------------------------------------------
 poll_dat_rot:
     IN  AL,(P_DAT_POS)
     LDA BL,[dat_prev]
@@ -467,6 +665,7 @@ step_up:
     CMP AL,#NOTE_COUNT
     JMPZ su_ret              ; ya en DO8: se queda
     CALL set_note
+    CALL preview_note
 su_ret:
     RET
 su_files:
@@ -484,7 +683,7 @@ su_fset:
 su_pos:
     LDA AL,[play_state]
     CMP AL,#0
-    JMPNZ su_r_done          ; durante PLAY no se mueve la posicion a mano
+    JMPNZ su_r_done          ; mientras suena no se mueve a mano
     CALL len_zero
     JMPZ su_r_done
     CALL rpos_get
@@ -510,6 +709,7 @@ step_down:
     JMPZ sd_ret              ; ya en DO3: se queda
     SUB AL,#1
     CALL set_note
+    CALL preview_note
 sd_ret:
     RET
 sd_files:
@@ -546,8 +746,26 @@ sd_r_set:
 sd_r_done:
     RET
 
+; --- preview_note: EDIT, DATOS girado -> la nota marcada suena un momento
+; (no mientras se reproduce la cancion ni con DATOS pulsado); por Bluetooth
+; MIDI, con la mitad de velocidad que al insertarla --------------------------
+preview_note:
+    LDA AL,[mode]
+    CMP AL,#MODE_EDIT
+    JMPNZ pv_ret
+    LDA AL,[play_state]
+    OR  AL,[btn_down]
+    JMPNZ pv_ret
+    MOV AL,#VEL_PREVIEW      ; por Bluetooth MIDI, a la mitad de fuerza que
+    OUT (P_SND_VEL),AL       ; al insertarla (el zumbador suena igual)
+    CALL sound_short
+    MOV AL,#VEL_FULL         ; la velocidad es pegajosa: el resto, normal
+    OUT (P_SND_VEL),AL
+pv_ret:
+    RET
+
 ; --- set_note: AL = nota nueva (0..24): mueve el punto, actualiza la linea
-; de la nota y, si esta sonando por una pulsacion, cambia el tono --------
+; de la nota y, en PIANO, si esta sonando por una pulsacion, cambia el tono
 set_note:
     PUSH AL
     MOV AL,#0
@@ -560,6 +778,9 @@ set_note:
     STA [dot_on],AL
     CALL draw_dot
     CALL show_note_line
+    LDA AL,[mode]
+    CMP AL,#MODE_PIANO
+    JMPNZ sn_done            ; solo PIANO cambia el tono de la que suena
     LDA AL,[btn_down]
     CMP AL,#0
     JMPZ sn_done
@@ -623,36 +844,28 @@ poll_dat_btn:
     LDA AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ pdb_ret
-    CMP AL,#MODE_PLAY
-    JMPZ pdb_play_toggle
     CMP AL,#MODE_RHYTHM
     JMPZ pdb_replay_start
-    CALL sound_cur           ; PIANO / EDIT: suena la nota marcada
+    CMP AL,#MODE_EDIT
+    JMPZ pdb_edit_down
+    CALL sound_cur           ; PIANO: suena la nota marcada mientras se pulsa
     RET
-pdb_play_toggle:
+pdb_edit_down:
+    ; EDIT: no suena nada al pulsar (ni durante la larga, que borra). Si se
+    ; esta reproduciendo, esta pulsacion solo la para.
     LDA AL,[play_state]
     CMP AL,#0
-    JMPNZ pdb_play_stop
-    CALL len_zero
     JMPZ pdb_ret
-    CALL rpos_lt_len         ; desde la posicion elegida (o el principio)
-    JMPC pdb_pt_go
-    MOV BX,#0
-    CALL rpos_set
-pdb_pt_go:
-    MOV AL,#0
-    OUT (P_T4),AL            ; sin silencio delante de la primera nota
+    CALL play_stop
     MOV AL,#1
-    STA [play_state],AL      ; 1 = esperando el silencio antes de una nota
-    RET
-pdb_play_stop:
-    MOV AL,#0
-    STA [play_state],AL
-    OUT (P_SND_NOTE),AL
-    CALL show_song
-    CALL show_note_line
+    STA [long_done],AL       ; al soltar no inserta, y no cuenta como larga
     RET
 pdb_replay_start:
+    LDA AL,[play_state]
+    CMP AL,#0
+    JMPZ pdb_rs_np
+    CALL play_stop           ; marcar el ritmo para la reproduccion
+pdb_rs_np:
     CALL len_zero
     JMPZ pdb_ret             ; nada que reproducir
     CALL rpos_lt_len
@@ -661,36 +874,64 @@ pdb_replay_start:
     CALL rpos_set
 pdb_rs_ok:
     ; silencio antes de esta nota: lo que ha pasado desde que se solto la
-    ; anterior (T4, armado a 255 al soltar), pasado a indice de TIME_TBL.
-    ; La primera de la cancion, 0; la primera tras mover la posicion a mano
-    ; (o al entrar en el modo, [rh_fresh]), conserva el que tenia.
+    ; anterior (meas_read), mas el error que arrastran las anteriores
+    ; ([rh_e_*], ver mas abajo), al indice de TIME_TBL mas cercano. La primera de la cancion, 0; la primera tras mover la
+    ; posicion a mano (o al entrar en el modo, [rh_fresh]), conserva el que
+    ; tenia. En esas dos, el error vuelve a 0.
+    CALL meas_read
+    STA [rh_m_lo],BL         ; silencio medido (ms)
+    STA [rh_m_hi],BH
+    CALL meas_arm            ; ya empieza a medir la duracion de esta nota
     CALL rpos_entry
+    LDA AL,[un_note]
+    CALL sound_note          ; suena ya: la pantalla, despues
     LDA AL,[rpos_lo]
     OR  AL,[rpos_hi]
     JMPNZ pdb_rs_nz
     MOV AL,#0
     STA [un_gap],AL
-    JMP pdb_rs_pack
+    JMP pdb_rs_e0
 pdb_rs_nz:
     LDA AL,[rh_fresh]
     CMP AL,#0
-    JMPNZ pdb_rs_pack
-    IN  AL,(P_T4)
-    MOV BL,AL
-    MOV AL,#255
-    SUB AL,BL
+    JMPNZ pdb_rs_e0
+    ; objetivo = medido + error arrastrado (con signo, 16 bits, en
+    ; ms); si sale negativo, 0
+    LDA BL,[rh_m_lo]
+    LDA BH,[rh_m_hi]
+    LDA CL,[rh_e_lo]
+    LDA CH,[rh_e_hi]
+    ADD BX,CX
+    MOV AL,BH
+    AND AL,#0x80
+    JMPZ pdb_rs_t
+    MOV BX,#0
+pdb_rs_t:
+    STA [rh_m_lo],BL
+    STA [rh_m_hi],BH
+    CALL to16
     CALL time_idx
     STA [un_gap],AL
+    ; el error que queda (objetivo - lo guardado) pasa a la siguiente: asi
+    ; los redondeos no se suman y cada nota entra en su sitio
+    CALL val_ms
+    LDA CL,[rh_m_lo]
+    LDA CH,[rh_m_hi]
+    SUB CX,BX
+    STA [rh_e_lo],CL
+    STA [rh_e_hi],CH
+    JMP pdb_rs_pack
+pdb_rs_e0:
+    MOV AL,#0
+    STA [rh_e_lo],AL
+    STA [rh_e_hi],AL
 pdb_rs_pack:
     CALL rpos_get
     CALL note_ptr
     CALL note_pack
     MOV AL,#0
     STA [rh_fresh],AL
-    MOV AL,#255
-    OUT (P_T4),AL            ; empieza a medir la duracion de la nota
     CALL replay_show_pos     ; mueve el punto a la nota que toca
-    CALL sound_cur
     RET
 
 pdb_held:
@@ -709,7 +950,7 @@ pdb_held:
     CMP AL,#MODE_FILES
     JMPZ pdb_files_do
     CMP AL,#MODE_EDIT
-    JMPZ edit_long
+    JMPZ edit_delete
     MOV AL,#0                ; en los demas modos una nota larga es solo eso
     STA [long_done],AL
     RET
@@ -727,16 +968,15 @@ pdb_up:
     LDA AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ pdb_files_short
-    CMP AL,#MODE_PLAY
-    JMPZ pdb_ret             ; en PLAY la pulsacion solo arranca/para
-    MOV AL,#0
-    OUT (P_SND_NOTE),AL
     LDA AL,[long_done]
     CMP AL,#0
     JMPNZ pdb_ret            ; era una pulsacion larga: ya hizo lo suyo
     LDA AL,[mode]
     CMP AL,#MODE_EDIT
     JMPZ edit_insert
+    MOV AL,#0
+    OUT (P_SND_NOTE),AL
+    LDA AL,[mode]
     CMP AL,#MODE_RHYTHM
     JMPZ pdb_replay_next
     RET
@@ -745,24 +985,36 @@ pdb_replay_next:
     JMPZ pdb_ret
     CALL rpos_lt_len
     JMPNC pdb_ret
-    ; duracion de esta nota: lo que ha bajado T4 desde 255 (pasos de
-    ; 16 ms), pasado a indice de TIME_TBL (minimo 1: una nota nunca dura 0)
-    IN  AL,(P_T4)
-    MOV BL,AL
-    MOV AL,#255
-    SUB AL,BL
+    ; duracion de esta nota: lo que mide meas_read desde que se pulso, al
+    ; indice de TIME_TBL mas cercano (minimo 1: una nota nunca
+    ; dura 0). Lo que se pierde al redondear se suma a [rh_e_*]: lo
+    ; compensa el silencio de la siguiente.
+    CALL meas_read
+    STA [rh_m_lo],BL         ; duracion medida (ms)
+    STA [rh_m_hi],BH
+    CALL meas_arm            ; ya empieza a medir el silencio hasta la siguiente
+    LDA BL,[rh_m_lo]
+    LDA BH,[rh_m_hi]
+    CALL to16
     CALL time_idx
     CMP AL,#0
     JMPNZ pdb_rn_d1
     MOV AL,#1
 pdb_rn_d1:
     STA [gap_val],AL
+    CALL val_ms                ; error += medido - guardado
+    LDA CL,[rh_m_lo]
+    LDA CH,[rh_m_hi]
+    SUB CX,BX
+    LDA BL,[rh_e_lo]
+    LDA BH,[rh_e_hi]
+    ADD BX,CX
+    STA [rh_e_lo],BL
+    STA [rh_e_hi],BH
     CALL rpos_entry
     LDA AL,[gap_val]
     STA [un_dur],AL
     CALL note_pack
-    MOV AL,#255
-    OUT (P_T4),AL            ; empieza a medir el silencio hasta la siguiente
     CALL rpos_get
     INC BX
     CALL rpos_set            ; puede quedar == longitud: "final"
@@ -842,32 +1094,31 @@ ei_put:
     CALL rpos_set
     CALL show_song
     CALL show_note_line
+    CALL sound_short         ; se oye la que se acaba de poner
     RET
 
-; --- edit_long: pulsacion larga con el cursor sobre una nota -> si la nota
-; marcada en el teclado es la misma, la BORRA; si es otra, la SUSTITUYE
-; (conservando su ritmo). Con el cursor al final no hace nada. ------------
-edit_long:
-    MOV AL,#0
-    OUT (P_SND_NOTE),AL
+; --- edit_delete: pulsacion larga -> borra la nota SELECCIONADA (la del
+; cursor, en inverso), y la seleccion pasa a la siguiente. Con el cursor
+; al final (nada seleccionado), la ultima, como un retroceso. El teclado se
+; queda en la nota borrada: para cambiarla, girar DATOS y pulsar (la nueva
+; entra delante de la seleccionada, justo en su sitio). Cancion vacia: nada.
+edit_delete:
     CALL rpos_lt_len
-    JMPNC el_ret
+    JMPC ed_sel              ; sobre una nota: esa
+    LDA AL,[rpos_lo]
+    OR  AL,[rpos_hi]
+    JMPZ eb_ret
+    CALL rpos_get            ; al final: la ultima
+    DEC BX
+    CALL rpos_set
+ed_sel:
     CALL rpos_entry
     LDA AL,[un_note]
-    LDA BL,[cur_note]
-    CMP AL,BL
-    JMPZ el_delete
-    MOV AL,BL                ; sustituir
-    STA [un_note],AL
-    CALL rpos_get
-    CALL note_ptr
-    CALL note_pack
-    JMP el_done
-el_delete:
+    STA [gap_val],AL         ; la nota que se va (para dejarla marcada)
     ; las notas de detras se corren una posicion hacia delante (MOVW,
     ; destino antes que el origen: la copia hacia adelante es segura)
     CALL len_minus_rpos
-    DEC CX                   ; notas detras de la del cursor
+    DEC CX                   ; notas detras de la borrada
     PUSH CL
     PUSH CH
     CALL rpos_get
@@ -878,16 +1129,17 @@ el_delete:
     MOV DL,BL
     MOV DH,BH
     DEC DX
-    DEC DX                   ; destino: la del cursor
+    DEC DX                   ; destino: la borrada
     MOVW
     CALL len_get
     DEC BX
     STA [len_lo],BL
     STA [len_hi],BH
-el_done:
+    LDA AL,[gap_val]
+    CALL set_note
+    CALL show_song
     CALL beep_low
-    CALL replay_show_pos     ; el cursor queda sobre la nota siguiente
-el_ret:
+eb_ret:
     RET
 
 ; --- replay_show_pos: el punto y la lista siguen a [rpos] -----------------
@@ -902,7 +1154,7 @@ rsp_end:
     CALL show_note_line
     RET
 
-; --- tick_play: avanza la reproduccion automatica de PLAY (una vez por
+; --- tick_play: avanza la reproduccion (EDIT/RHYTHM; una vez por
 ; vuelta del bucle principal, sin bloquear: se sigue pudiendo parar).
 ; [play_state]: 0 parado, 1 esperando el silencio antes de la nota [rpos],
 ; 2 sonando; las dos esperas con T4 (nunca a la vez) -----------------------
@@ -920,8 +1172,9 @@ tick_play:
     CALL time_val
     OUT (P_T4),AL            ; duracion grabada
     LDA AL,[un_note]
+    CALL sound_note          ; suena ya: la pantalla, despues
+    LDA AL,[un_note]
     CALL set_note            ; el punto y la linea siguen a la nota
-    CALL sound_cur
     CALL show_song
     MOV AL,#2
     STA [play_state],AL
@@ -958,6 +1211,26 @@ tp_next:
 sound_cur:
     MOV AL,#0
     OUT (P_SND_DUR),AL       ; sostenida hasta soltar
+    LDA AL,[cur_note]
+    ADD AL,#BASE_MIDI
+    OUT (P_SND_NOTE),AL
+    RET
+
+; AL = nota (0..60): suena sostenida (RHYTHM y la reproduccion, que la
+; hacen sonar antes de mover el punto y redibujar la lista)
+sound_note:
+    ADD AL,#BASE_MIDI
+    PUSH AL
+    MOV AL,#0
+    OUT (P_SND_DUR),AL
+    POP AL
+    OUT (P_SND_NOTE),AL
+    RET
+
+; la nota marcada, corta (muestra al girar DATOS, y al insertarla)
+sound_short:
+    MOV AL,#PREVIEW_DUR
+    OUT (P_SND_DUR),AL
     LDA AL,[cur_note]
     ADD AL,#BASE_MIDI
     OUT (P_SND_NOTE),AL
@@ -1024,10 +1297,7 @@ fe_new:
     MOV AL,#0
     STA [len_lo],AL
     STA [len_hi],AL
-    STA [rpos_lo],AL
-    STA [rpos_hi],AL
-    MOV BX,#s_cleared
-    JMP fe_status
+    JMP fe_to_edit
 fe_load:
     LDA AL,[files_sel]
     SUB AL,#1
@@ -1043,11 +1313,14 @@ fe_load:
     MOV DX,#WORK
     MOV CX,#512              ; 1 KiB de notas (MOVW: palabras)
     MOVW
-    MOV AL,#0
-    STA [rpos_lo],AL
-    STA [rpos_hi],AL
-    MOV BX,#s_loaded
-    JMP fe_status
+fe_to_edit:
+    ; LOAD / NEW SONG: a EDIT, con el cursor al final de la cancion
+    CALL len_get
+    CALL rpos_set
+    MOV AL,#MODE_EDIT
+    CALL set_mode            ; (para el sonido: el pitido, despues)
+    CALL beep_low
+    RET
 fe_empty:
     MOV BX,#s_empty
     JMP fe_status
@@ -1131,9 +1404,11 @@ ra_files:
     CALL draw_files
     RET
 
-; --- show_mode: fila 0, "< NOMBRE >" centrado (10 columnas de nombre) -----
+; --- show_mode: fila 0, "< NOMBRE >" centrado (10 columnas de nombre).
+; put_mode_name: lo mismo con AL = modo --------------------------------------
 show_mode:
     LDA AL,[mode]
+put_mode_name:
     SHL AL,#1
     MOV CL,AL
     MOV BX,#MODE_NAMES
@@ -1146,7 +1421,7 @@ show_mode:
     CALL puts
     RET
 
-; --- show_song: filas 1-2. EDIT/RHYTHM/PLAY: la "pagina" de 10 notas que
+; --- show_song: filas 1-2. EDIT/RHYTHM: la "pagina" de 10 notas que
 ; contiene [rpos], con esa nota en inverso (con el cursor al final, la
 ; pagina de la ultima). PIANO: ayuda. --------------------------------------
 show_song:
@@ -1276,7 +1551,7 @@ show_note_line:
     JMPC snl_pos             ; la longitud ("LEN n/512", donde se anade)
     JMP snl_rec
 snl_rp:
-    ; RHYTHM / PLAY: posicion
+    ; RHYTHM: posicion
     CALL len_zero
     JMPZ snl_ret
     CALL rpos_lt_len
@@ -1804,12 +2079,18 @@ TIME_TBL:   .db 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20
 MASK8:      .db 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01
 NOTE_NAMES: .ascii "C C#D D#E F F#G G#A A#B "
 
-MODE_NAMES: .dw s_m_piano, s_m_edit, s_m_rhythm, s_m_play, s_m_files
-s_m_piano:  .asciiz "< PIANO  >"
-s_m_edit:   .asciiz "<  EDIT  >"
-s_m_rhythm: .asciiz "< RHYTHM >"
-s_m_play:   .asciiz "<  PLAY  >"
-s_m_files:  .asciiz "< FILES  >"
+MODE_NAMES: .dw s_m_edit, s_m_rhythm, s_m_files, s_m_piano
+s_m_edit:   .asciiz "   EDIT   "
+s_m_rhythm: .asciiz "  RHYTHM  "
+s_m_files:  .asciiz "  FILES   "
+s_m_piano:  .asciiz "  PIANO   "
+; menu de DIRECCION mantenido: los modos que ofrece, en orden, desde cada
+; modo (4 por modo; el ultimo es el propio = cancelar). Desde EDIT, primero
+; RHYTHM (lo mas usado); desde los demas, primero volver a EDIT
+HOLD_SEQ:   .db MODE_RHYTHM, MODE_FILES,  MODE_PIANO,  MODE_EDIT
+            .db MODE_EDIT,   MODE_FILES,  MODE_PIANO,  MODE_RHYTHM
+            .db MODE_EDIT,   MODE_RHYTHM, MODE_PIANO,  MODE_FILES
+            .db MODE_EDIT,   MODE_RHYTHM, MODE_FILES,  MODE_PIANO
 
 ACT_NAMES:  .dw s_a_load, s_a_save, s_a_del
 s_a_load:   .asciiz "LOAD"
@@ -1817,7 +2098,7 @@ s_a_save:   .asciiz "SAVE"
 s_a_del:    .asciiz "DEL "
 
 s_help1:    .asciiz "DATA:NOTE  PRESS:PLAY"
-s_help2:    .asciiz "ADDR PRESS: NEXT MODE"
+s_help2:    .asciiz "HOLD ADDR:CHANGE MODE"
 s_nosong:   .asciiz "(NO NOTES)"
 s_note:     .asciiz "NOTE"
 s_len:      .asciiz "LEN"
@@ -1830,9 +2111,7 @@ s_fhelp:    .asciiz "SHORT:ACTION LONG:DO"
 s_saving:   .asciiz "SAVING..."
 s_savefail: .asciiz "SAVE FAILED!"
 s_saved:    .asciiz "SAVED"
-s_loaded:   .asciiz "LOADED"
 s_deleted:  .asciiz "DELETED"
-s_cleared:  .asciiz "SONG CLEARED"
 s_empty:    .asciiz "THAT FILE IS EMPTY"
 s_nothing:  .asciiz "NOTHING TO SAVE"
 
@@ -1840,9 +2119,14 @@ s_nothing:  .asciiz "NOTHING TO SAVE"
 ; 0x4000-0xC7FF, ver la cabecera -- fuera del .bin) ---------------------------
 mode:         .space 1
 rh_fresh:     .space 1    ; 1 = RHYTHM: la siguiente nota no mide su silencio
+rh_m_lo:      .space 1    ; RHYTHM: tiempo medido / objetivo (ms, 16 bits)
+rh_m_hi:      .space 1
+rh_e_lo:      .space 1    ; RHYTHM: error de redondeo arrastrado (ms, con signo)
+rh_e_hi:      .space 1
 kb_base:      .space 1    ; primera nota del teclado dibujado (0, 12, 24, 36)
 kf_old:       .space 1
-dir_btn_prev: .space 1
+abtn_down:    .space 1    ; pulsador DIRECCION: 1 = pulsado
+abtn_idx:     .space 1    ; paso del menu (0..3), 0xFF = pulsacion corta
 cur_note:     .space 1
 dir_prev:     .space 1
 dat_prev:     .space 1
@@ -1850,7 +2134,7 @@ rot_n:        .space 1
 btn_down:     .space 1
 press_frames: .space 1
 long_done:    .space 1
-rpos_lo:      .space 1    ; posicion en REPLAY/PLAY (16 bits)
+rpos_lo:      .space 1    ; cursor de la cancion, EDIT y RHYTHM (16 bits)
 rpos_hi:      .space 1
 play_state:   .space 1
 gap_val:      .space 1

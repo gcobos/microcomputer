@@ -23,7 +23,7 @@ constexpr size_t MAX_PROGRAM_SLOTS = 60;
 // más.
 constexpr size_t EEPROM_SLOT_SIZE = 256;
 
-// Ajustes globales del aparato (brillo de pantalla, mute -- ver iomap.h
+// Ajustes globales del aparato (brillo de pantalla, salida del sonido -- ver iomap.h
 // PORT_CFG_*), guardados en la flash para que sobrevivan a un reset o a
 // apagarlo. Viven en el KiB que sobra al final del chip, tras las EEPROM de
 // los 60 slots (16384 - 60*256 = 1024 bytes libres): no pertenecen a ningun

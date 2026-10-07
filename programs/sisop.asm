@@ -78,7 +78,7 @@ start:
 
 main_l:
     ; SETTINGS (view=2) tiene su propio manejo de DATOS (gira=brillo,
-    ; pulsa=mute) -- ver ml_settings, mas abajo, que comparte con el resto
+    ; pulsa=zumbador/Bluetooth) -- ver ml_settings, mas abajo, que comparte con el resto
     ; de vistas el pulsador de DIRECCION (volver) y la espera del final.
     LDA AL,[view]
     CMP AL,#2
@@ -268,7 +268,7 @@ on_back:
     JMPZ ob_ret
     CMP AL,#2
     JMPNZ ob_folders
-    OUT (P_CFG_SAVE),AL     ; sale de SETTINGS: graba brillo/mute en la flash
+    OUT (P_CFG_SAVE),AL     ; sale de SETTINGS: graba brillo/salida del sonido
                              ; (una sola vez, no en cada detente del dial)
 ob_folders:
     MOV AL,#0
@@ -383,9 +383,10 @@ bv_td:
     CALL txt_puts
     RET
 
-; --- settings_press_dat: pulsa DATOS -> alterna PORT_CFG_SOUND_EN (activa/
-; silencia). Igual que arriba, PORT_CFG_SOUND_EN ya guarda el estado; solo
-; hace falta invertirlo y redibujar la palabra ON/OFF en pantalla.
+; --- settings_press_dat: pulsa DATOS -> alterna PORT_CFG_SOUND_EN (salida
+; del sonido: 1 = zumbador, 0 = Bluetooth MIDI). Igual que arriba,
+; PORT_CFG_SOUND_EN ya guarda el estado; solo hace falta invertirlo y
+; redibujar la palabra BUZZER/BLUETOOTH en pantalla.
 settings_press_dat:
     IN  AL,(P_DAT_BTN)
     LDA BL,[dat_btn_prev]
@@ -404,7 +405,7 @@ spd_on:
     MOV AL,#1
 spd_apply:
     OUT (P_CFG_SOUND_EN),AL
-    CALL redraw_settings    ; solo la palabra ON/OFF cambia -- sin parpadeo
+    CALL redraw_settings    ; solo cambia BUZZER/BLUETOOTH -- sin parpadeo
 spd_ret:
     RET
 
@@ -744,9 +745,9 @@ s_nomark: .asciiz "  "
 ; --- textos de la vista SETTINGS (view=2) -----------------------------------
 s_settings_title: .asciiz "SETTINGS"
 s_set_help1:      .asciiz "TURN: BRIGHTNESS"
-s_set_help2:      .asciiz "PRESS: MUTE SOUND"
-s_sound_on:       .asciiz "SOUND: ON "
-s_sound_off:      .asciiz "SOUND: OFF"
+s_set_help2:      .asciiz "PRESS: BUZZER/BT"
+s_sound_on:       .asciiz "SOUND: BUZZER   "
+s_sound_off:      .asciiz "SOUND: BLUETOOTH"
 s_set_back:       .asciiz "DIR: BACK"
 
 ; --- carpetas (indice "real" 0..6, ver FOLDER_OTHER/SETTINGS_FOLDER) ------

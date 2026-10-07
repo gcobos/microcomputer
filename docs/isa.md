@@ -320,6 +320,7 @@ de periféricos en `0x0600`–`0x0801`.
 | `0x0631` | E/S | **Sonido** – frecuencia, byte alto; al escribirlo suena `Hz = alto·256 + bajo` (0 = silencio). |
 | `0x0632` | E/S | **Sonido** – nota MIDI 0–127 (0 = silencio). 69 = LA4 = 440 Hz, +12 = octava. La forma fácil. |
 | `0x0633` | E/S | **Sonido** – duración automática = valor × 10 ms (0 = sostenida). "Pegajosa": cada nota la re-arma. |
+| `0x0634` | E/S | **Sonido** – velocidad (fuerza) MIDI 1–127 de las notas siguientes, **solo por Bluetooth MIDI** (el zumbador suena igual). Pegajosa; 100 al arrancar. |
 | `0x0640` | E/S | **Cargar programa**: `OUT` con un número de slot (0–59) carga esa imagen entera en la RAM de la CPU y la reinicia (PC=0, SP=0xFFFF); también deja pantalla, LED y sonido apagados y los encoders a 0, igual que al entrar en una ejecución nueva por el panel — un salto a otro programa, sin vuelta atrás. Slot vacío o fuera de rango: no hace nada. `IN` = 1 si el último intento falló (solo tiene sentido leerlo tras un fallo: si la carga sale bien, quien iba a leerlo ya no es el programa que sigue corriendo). |
 | `0x0641` | E/S | **Grabar programa**: `OUT` con un número de slot (0–59) graba ahí la RAM actual entera (equivale a "Guardar" del panel), con el nombre y la categoría del programa cargado. El programa sigue corriendo después. `IN` = 1 si la última grabación salió bien. |
 | `0x0642` | E/S | **Consultar slot**: `OUT` con un número de slot lee su nombre y categoría a `0x0660`–`0x066E`. `IN` = 1 si ese slot tiene programa. |
@@ -361,7 +362,8 @@ A esta resolución (glifos de 5×7 en una celda de 8 px de alto) no hay margen
 para además encoger el carácter en subíndice/superíndice y que se siga
 leyendo, así que solo se desplaza, a tamaño normal.
 
-**Sonido** (`0x0630`–`0x0633`): zumbador piezo pasivo en GPIO3. Solo suena en
+**Sonido** (`0x0630`–`0x0634`): zumbador piezo pasivo en GPIO3, o Bluetooth
+MIDI (botón BOOT). `0x0634` solo cuenta por Bluetooth: la velocidad de la nota. Solo suena en
 **CONTINUOUS**; se calla en paso a paso, al volver a EDIT y al `HALT`. Lo genera
 el hardware, no gasta tiempo de CPU. Lo más simple: `OUT (0x0632),reg` con una
 nota MIDI. Para efectos (sirenas, barridos) usa la frecuencia de 16 bits

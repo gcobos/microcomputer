@@ -91,10 +91,10 @@
   <text x="548.5" y="382.7" class="name" style="font-size:12px">SOUND</text>
   <text x="548.5" y="395.7" class="tiny">piezo · OUT 0x0630–0x0633</text>
   <!-- lenguetas flexibles recortadas en la tapa: pulsan RESET y BOOT de la SuperMini -->
-  <text x="446.9" y="483.3" text-anchor="end" class="name" style="font-size:12px">RESET · MUTE</text>
+  <text x="446.9" y="483.3" text-anchor="end" class="name" style="font-size:12px">RESET · SOUND</text>
   <text x="446.9" y="496.3" text-anchor="end" class="tiny">press tabs cut in the case, over</text>
   <text x="446.9" y="508.3" text-anchor="end" class="tiny">the SuperMini RESET and BOOT buttons</text>
-  <text x="446.9" y="520.3" text-anchor="end" class="tiny">BOOT = sound MUTE / UNMUTE</text>
+  <text x="446.9" y="520.3" text-anchor="end" class="tiny">BOOT = sound: buzzer / Bluetooth</text>
   <g fill="none" stroke="#3a3a40" stroke-width="2.2" stroke-linecap="round">
     <line x1="462.0" y1="451.0" x2="462.0" y2="488.4"/>
     <line x1="496.0" y1="451.0" x2="496.0" y2="488.4"/>

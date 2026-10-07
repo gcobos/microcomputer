@@ -16,6 +16,7 @@
 #include "hal/usb_serial_jtag_ll.h"   // usbTxRecover(): reactivar la interrupcion de salida
 #include "esp_random.h"
 #include "ui.h"
+#include "btmidi.h"
 
 using namespace compi;
 
@@ -39,7 +40,8 @@ constexpr bool PIN_LED_ACTIVE_LOW = true;
 // Zumbador piezo PASIVO en GPIO3 (único pin libre). Tono por hardware (tone()).
 constexpr uint8_t PIN_BUZZER = 3;
 
-// Botón BOOT (GPIO9) reutilizado como MUTE/UNMUTE general, disponible EN
+// Botón BOOT (GPIO9) reutilizado para elegir la salida del sonido
+// (zumbador / Bluetooth MIDI, ver g_soundBt), disponible EN
 // TODO MOMENTO sin importar qué programa corre ni en qué modo esté el
 // panel (por eso se sondea en loop() antes de cualquier otra cosa, nunca
 // dentro del switch(view) de más abajo). docs/hardware.md lo marca como
@@ -140,7 +142,7 @@ uint8_t g_led = 0;                          // estado del LED (puerto PORT_LED)
 // para que un programa pueda pedir su propio brillo sin desmontar el ahorro
 // de energía automático (que sigue atenuando/apagando por inactividad igual
 // que siempre, solo que "pleno" pasa a ser este valor). Arranca al de
-// fábrica y PERSISTE desde ahí para todo el aparato, igual que g_soundMuted:
+// fábrica y PERSISTE desde ahí para todo el aparato, igual que g_soundBt:
 // NO se reinicia en cada arranque de ejecución nueva (clearRuntimeOutputs).
 uint8_t g_screenContrast = OLED_CONTRAST_FULL;
 uint8_t g_timer[TIMER_COUNT] = {0};         // temporizadores (puertos 0x0620+)
@@ -150,17 +152,19 @@ unsigned long g_timerLast[TIMER_COUNT] = {0};
 uint8_t  g_sndLo = 0, g_sndHi = 0;          // frecuencia enganchada (bytes)
 uint8_t  g_sndNote = 0;                     // última nota MIDI escrita (eco de IN)
 uint8_t  g_sndDurUnits = 0;                 // duración auto en unidades de 10 ms
+uint8_t  g_sndVel = SND_VEL_DEFAULT;        // velocidad MIDI (solo Bluetooth)
 uint16_t g_sndHz = 0;
 unsigned long g_sndOffAt = 0;               // millis() en que callar; 0 = sostenido
 
-// Mute general (botón BOOT, ver PIN_BOOT_BTN). Empieza con el sonido
-// ACTIVADO. Mientras g_soundMuted esté a true, sndApply() no llama a
-// tone() -- el programa en curso sigue escribiendo en los puertos de
-// sonido con total normalidad, solo se corta la salida física.
-bool g_soundMuted = false;
+// Salida del sonido (botón BOOT, ver PIN_BOOT_BTN): false = el zumbador
+// (de fábrica), true = Bluetooth MIDI (btmidi.h) y el zumbador callado. Sin
+// nada conectado por Bluetooth no suena nada: hace las veces del antiguo
+// MUTE. El programa en curso sigue escribiendo en los puertos de sonido con
+// total normalidad, solo cambia a dónde va (soundOutOn/soundOutOff).
+bool g_soundBt = false;
 
-// --- Ajustes globales persistentes (brillo + mute) ----------------------
-// g_screenContrast y g_soundMuted son del APARATO, no del programa: solo
+// --- Ajustes globales persistentes (brillo + salida del sonido) ---------
+// g_screenContrast y g_soundBt son del APARATO, no del programa: solo
 // los cambian SETTINGS de sisop (slot 0, puertos PORT_CFG_*) y el boton
 // BOOT. Se guardan en la flash (storage.h SETTINGS_SIZE) para sobrevivir a
 // un reset o a apagarlo, y se cargan en setup(). Para no gastar la flash
@@ -168,7 +172,9 @@ bool g_soundMuted = false;
 // (g_settingsDirty) y se graba de una vez cuando sisop sale de SETTINGS
 // (OUT a PORT_CFG_SAVE), o, para el boton BOOT, al acabar su jingle
 // (g_bootSavePending, ver tickSettingsSave).
-// Formato: [0] = SETTINGS_MAGIC, [1] = brillo, [2] = 1 si muteado.
+// Formato: [0] = SETTINGS_MAGIC, [1] = brillo, [2] = 1 si sale por Bluetooth
+// (antes "1 si muteado": un aparato que estaba muteado arranca en Bluetooth,
+// que sin nada conectado tambien calla).
 constexpr uint8_t SETTINGS_MAGIC = 0x5E;
 bool g_settingsDirty    = false;
 bool g_bootSavePending  = false;
@@ -178,12 +184,11 @@ bool g_bootBtnRawPrev = HIGH;               // ultima lectura CRUDA (para detect
 bool g_bootBtnStable = HIGH;                // estado ya anti-rebotado
 unsigned long g_bootBtnLastChangeMs = 0;
 
-// Jingle de "sonido reactivado": 2 notas cortas, NO bloqueante (se avanza
+// Jingle de "vuelve el zumbador": 2 notas cortas, NO bloqueante (se avanza
 // un paso por vuelta de loop(), igual que tickSound() -- nunca se para la
-// emulación de la CPU para reproducirlo). Mientras suena, g_soundMuted
-// sigue en true (ver tickMuteJingle) para que no compita con el propio
-// sonido del programa por el único zumbador: se desmutea de verdad justo
-// al terminar la melodia.
+// emulación de la CPU para reproducirlo). Mientras suena, soundOutOn/Off no
+// tocan el zumbador (ver tickMuteJingle) para que no compita con el propio
+// sonido del programa: al terminar la melodia retoma el tono en marcha.
 constexpr uint16_t MUTE_JINGLE_HZ[2] = {880, 1175};   // La5, Re6 -- subida alegre
 constexpr unsigned long MUTE_JINGLE_NOTE_MS = 110;
 bool g_muteJingleActive = false;
@@ -254,25 +259,38 @@ uint16_t noteToHz(uint8_t note) {
     return (uint16_t)lroundf(hz);
 }
 
+// Salida fisica del sonido emulado: al zumbador o, con g_soundBt, como
+// nota MIDI por Bluetooth (la frecuencia, a la nota mas cercana: un barrido
+// de frecuencia sale a semitonos). Mientras suena el jingle del BOOT, nada.
+void soundOutOn(uint16_t hz) {
+    if (g_muteJingleActive) return;
+    if (g_soundBt) btmidiNote(hzToMidi(hz), g_sndVel);
+    else tone(PIN_BUZZER, hz);
+}
+
+void soundOutOff() {
+    if (g_muteJingleActive) return;
+    if (g_soundBt) btmidiNote(0);
+    else noTone(PIN_BUZZER);
+}
+
+// Cambia la salida del sonido; el tono en marcha (si lo hay) pasa a la nueva
+void setSoundBt(bool bt) {
+    if (bt == g_soundBt) return;
+    if (g_sndHz) soundOutOff();
+    g_soundBt = bt;
+    if (bt) btmidiBegin();
+    if (g_sndHz) soundOutOn(g_sndHz);
+}
+
 void sndApply(uint16_t hz) {
     if (hz == 0) {
-        // No toca el zumbador de verdad mientras suena el jingle de
-        // reactivar el sonido (g_muteJingleActive): esta funcion la llaman
-        // muchos sitios del firmware para "callar el sonido DEL PROGRAMA",
-        // y ese silencio no tiene por que cortar una melodia de UI que esta
-        // sonando encima en ese mismo instante -- el estado emulado
-        // (g_sndHz/g_sndOffAt) se pone a cero igual, solo se salta la
-        // llamada fisica a noTone().
-        if (g_sndHz && !g_muteJingleActive) noTone(PIN_BUZZER);
+        if (g_sndHz) soundOutOff();
         g_sndHz = 0;
         g_sndOffAt = 0;
         return;
     }
-    // Mientras esta muteado NO se toca el zumbador de verdad -- el programa
-    // sigue creyendo que el tono suena (g_sndHz/g_sndOffAt se actualizan
-    // igual) para que, en cuanto se desmutee, todo siga su curso normal sin
-    // que el programa tenga que volver a escribir nada.
-    if (!g_soundMuted) tone(PIN_BUZZER, hz);
+    soundOutOn(hz);
     g_sndHz = hz;
     g_sndOffAt = g_sndDurUnits
                      ? millis() + (unsigned long)g_sndDurUnits * 10
@@ -285,6 +303,7 @@ void tickSound() {
 
 void resetSound() {
     g_sndLo = g_sndHi = g_sndNote = g_sndDurUnits = 0;
+    g_sndVel = SND_VEL_DEFAULT;
     sndApply(0);
 }
 
@@ -308,25 +327,25 @@ void tickMuteJingle() {
     } else {
         noTone(PIN_BUZZER);
         g_muteJingleActive = false;
-        g_soundMuted = false;   // ya termino la melodia: el sonido vuelve de verdad
+        if (g_sndHz) soundOutOn(g_sndHz);   // retoma el tono del programa, si lo hay
     }
 }
 
-// --- Botón BOOT (GPIO9) como MUTE/UNMUTE general, con antirrebote --------
+// --- Botón BOOT (GPIO9): alterna zumbador <-> Bluetooth, con antirrebote -
 void toggleMute() {
     if (g_muteJingleActive) {
-        // pulsacion durante la propia melodia de reactivacion: la corta y
-        // mutea de nuevo directamente, sin dejarla terminar
+        // pulsacion durante la propia melodia de vuelta al zumbador: la
+        // corta y pasa de nuevo a Bluetooth directamente
         g_muteJingleActive = false;
         noTone(PIN_BUZZER);
-        g_soundMuted = true;
+        setSoundBt(true);
         return;
     }
-    if (g_soundMuted) {
-        startMuteJingle();   // sigue "muteado" (ver tickMuteJingle) hasta que acabe
+    if (g_soundBt) {
+        setSoundBt(false);
+        startMuteJingle();   // el zumbador avisa de que vuelve (ver tickMuteJingle)
     } else {
-        g_soundMuted = true;
-        if (g_sndHz) noTone(PIN_BUZZER);
+        setSoundBt(true);
     }
     markSettingsDirty();
     g_bootSavePending = true;   // se graba al acabar el jingle (tickSettingsSave)
@@ -363,7 +382,7 @@ void clearRuntimeOutputs() {
     resetTimers();
     resetSound();
     // Brillo (PORT_CFG_BRIGHTNESS): NO se toca aquí -- es una preferencia de
-    // TODO el aparato, igual que el mute (g_soundMuted, ver iomap.h). Un
+    // TODO el aparato, igual que la salida del sonido (g_soundBt). Un
     // programa nuevo hereda el brillo que hubiera puesto el anterior (p.ej.
     // sisop.asm -> SETTINGS -> arrancar un juego). Se reaplica con el valor
     // actual por si el atenuado automático lo había dejado en OLED_CONTRAST_DIM.
@@ -414,6 +433,7 @@ uint8_t portRead(uint16_t port) {
                 long units = (rem + 9) / 10;
                 return units > 255 ? 255 : (uint8_t)units;
             }
+            case PORT_SND_VEL:     return g_sndVel;
         }
         return 0;
     }
@@ -433,7 +453,7 @@ uint8_t portRead(uint16_t port) {
         case PORT_CUR_SLOT:   return g_currentSlot;
         case PORT_RANDOM:     return (uint8_t)(esp_random() & 0xFF);
         case PORT_CFG_BRIGHTNESS: return g_screenContrast;
-        case PORT_CFG_SOUND_EN:   return g_soundMuted ? 0 : 1;
+        case PORT_CFG_SOUND_EN:   return g_soundBt ? 0 : 1;
         case PORT_EEPROM_LOAD:    return g_lastEepromLoadOk;
         case PORT_EEPROM_SAVE:    return g_lastEepromSaveOk;
         default:           return 0;
@@ -458,6 +478,8 @@ void portWrite(uint16_t port, uint8_t value) {
             case PORT_SND_NOTE:    g_sndNote = value;
                 sndApply(noteToHz(value)); break;
             case PORT_SND_DUR:     g_sndDurUnits = value; break;
+            case PORT_SND_VEL:
+                g_sndVel = value == 0 ? 1 : (value > 127 ? 127 : value); break;
         }
         return;
     }
@@ -534,19 +556,13 @@ void portWrite(uint16_t port, uint8_t value) {
     }
     if (port == PORT_CFG_SOUND_EN) {
         if (g_currentSlot != 0) return;   // igual que el brillo (ver arriba)
-        // Mismo interruptor general que el boton BOOT (g_soundMuted), pero
-        // sin su "jingle" de reactivacion -- eso es una cortesia pensada
-        // para que la note un humano, no para dispararla desde código. Ver
-        // toggleMute() mas arriba para el equivalente con jingle.
-        bool enable = (value != 0);
-        if (enable == g_soundMuted) markSettingsDirty();   // cambia de verdad
-        if (!enable) {
-            if (!g_soundMuted && g_sndHz) noTone(PIN_BUZZER);
-            g_soundMuted = true;
-        } else if (g_soundMuted) {
-            g_soundMuted = false;
-            if (g_sndHz) tone(PIN_BUZZER, g_sndHz);   // retoma el tono en marcha, si habia
-        }
+        // Mismo interruptor general que el boton BOOT (g_soundBt): 0 =
+        // Bluetooth, distinto de 0 = zumbador. Sin el "jingle" del boton --
+        // eso es una cortesia pensada para que la note un humano, no para
+        // dispararla desde código.
+        bool bt = (value == 0);
+        if (bt != g_soundBt) markSettingsDirty();   // cambia de verdad
+        setSoundBt(bt);
         return;
     }
 }
@@ -557,7 +573,7 @@ void loadSettings() {
     flash.readSettings(buf);
     if (buf[0] != SETTINGS_MAGIC) return;   // nunca grabados: los de fabrica
     g_screenContrast = buf[1];
-    g_soundMuted = (buf[2] != 0);
+    setSoundBt(buf[2] != 0);   // arranca el Bluetooth si estaba elegido
 }
 
 // Graba los ajustes si cambiaron desde la ultima vez (una pulsacion de
@@ -569,12 +585,12 @@ void saveSettings() {
     memset(buf, 0xFF, sizeof(buf));
     buf[0] = SETTINGS_MAGIC;
     buf[1] = g_screenContrast;
-    buf[2] = g_soundMuted ? 1 : 0;
+    buf[2] = g_soundBt ? 1 : 0;
     flash.writeSettings(buf);
 }
 
 // Boton BOOT: graba una vez por pulsacion, cuando el jingle de reactivar
-// ya ha terminado (antes g_soundMuted aun no tiene su valor final).
+// ya ha terminado.
 void tickSettingsSave() {
     if (!g_bootSavePending || g_muteJingleActive) return;
     g_bootSavePending = false;
@@ -1023,7 +1039,7 @@ void setup() {
 
     if (!oled.begin())  failBlink(200); // parpadeo lento = falla la OLED
     if (!flash.init())  failBlink(80);  // parpadeo rápido = falla la flash
-    loadSettings();                     // brillo y mute guardados (antes de aplicar el contraste)
+    loadSettings();                     // brillo y salida del sonido guardados (antes de aplicar el contraste)
 
     // Arranque automatico: si el slot 0 tiene algo grabado (pensado para un
     // "sistema operativo" que arranque otros programas, ver PORT_PROG_LOAD
@@ -1072,6 +1088,11 @@ void loop() {
     // interruptor de modo, en cualquiera de las 4 vistas.
     tickBootButton();
     tickMuteJingle();
+    btmidiTick();
+    // Si el sintetizador corta la conexión con el sonido en Bluetooth, se
+    // vuelve solo al zumbador -- lo mismo que pulsar BOOT (jingle incluido,
+    // y se guarda). Con el sonido ya en el zumbador, un corte no hace nada.
+    if (btmidiTakeLost() && g_soundBt && !g_muteJingleActive) toggleMute();
     tickSettingsSave();
 
     provisionPoll();

@@ -14,7 +14,7 @@ namespace compi {
 //   0x0610             LED de a bordo
 //   0x0611             número aleatorio (generador por hardware del ESP32)
 //   0x0620 .. 0x0629   temporizadores
-//   0x0630 .. 0x0633   sonido (piezo)
+//   0x0630 .. 0x0634   sonido (piezo / Bluetooth MIDI)
 //   0x0640 .. 0x0643   carga/grabado de programas, consulta de slots, slot en curso
 //   0x0650 .. 0x0652   configuración (brillo de pantalla, activar/desactivar sonido, grabar)
 //   0x0660 .. 0x066E   metadatos (categoría + nombre) del slot consultado
@@ -140,7 +140,7 @@ constexpr uint16_t PORT_TIMER_BASE = 0x0620;
 constexpr uint8_t  TIMER_COUNT     = 10;
 constexpr unsigned long TIMER_BASE_MS = 1;   // periodo de t0 (ajustable)
 
-// --- Sonido: zumbador piezo PASIVO en GPIO3 (0x0630 .. 0x0633) ------
+// --- Sonido: zumbador piezo PASIVO en GPIO3 (0x0630 .. 0x0634) ------
 // Tono de onda cuadrada generado por hardware (LEDC / tone()). Suena en
 // cuanto se escribe una frecuencia o una nota; 0 = silencio. Solo suena en
 // EJECUTAR + CONTINUO; se calla al (re)arrancar una ejecución, al pasar a
@@ -154,15 +154,22 @@ constexpr unsigned long TIMER_BASE_MS = 1;   // periodo de t0 (ajustable)
 //   0x0633 PORT_SND_DUR      duración automática = valor * 10 ms; luego se calla
 //                            sola. 0 = sostenida. Es "pegajosa": cada nota o
 //                            frecuencia posterior re-arma esta misma duración.
+//   0x0634 PORT_SND_VEL      velocidad (fuerza) MIDI 1..127 de las notas
+//                            siguientes, SOLO para la salida Bluetooth MIDI
+//                            (btmidi.h): el zumbador suena siempre igual.
+//                            0 cuenta como 1. Pegajosa como 0x0633; vuelve a
+//                            SND_VEL_DEFAULT (100) al arrancar una ejecución.
 //
-//   IN 0x0630/0x0631/0x0632 -> eco del último valor escrito.
+//   IN 0x0630/0x0631/0x0632/0x0634 -> eco del último valor escrito.
 //   IN 0x0633 -> tiempo que queda, en unidades de 10 ms (0 = ya callado).
 constexpr uint16_t PORT_SND_BASE    = 0x0630;
 constexpr uint16_t PORT_SND_FREQ_LO = 0x0630;
 constexpr uint16_t PORT_SND_FREQ_HI = 0x0631;
 constexpr uint16_t PORT_SND_NOTE    = 0x0632;
 constexpr uint16_t PORT_SND_DUR     = 0x0633;
-constexpr uint8_t  SND_PORT_COUNT   = 4;
+constexpr uint16_t PORT_SND_VEL     = 0x0634;
+constexpr uint8_t  SND_PORT_COUNT   = 5;
+constexpr uint8_t  SND_VEL_DEFAULT  = 100;
 
 // --- Carga y grabado de programas (slots de la flash SPI, 0x0640/0x0641) --
 // Para un "sistema operativo" en un slot que arranque otros: cargar y
@@ -263,26 +270,27 @@ constexpr uint16_t PORT_SLOT_INFO_BASE = 0x0660;
 //                                programa se ignora. Se guarda en la flash
 //                                (storage.h SETTINGS_SIZE) con un OUT a
 //                                PORT_CFG_SAVE, y se recupera al arrancar.
-//   0x0651 PORT_CFG_SOUND_EN    OUT: 0 = silencia el sonido, distinto de 0 =
-//                                lo reactiva -- MISMO interruptor general
-//                                que el botón BOOT del propio aparato (ver
-//                                g_soundMuted, main.cpp): es una preferencia
+//   0x0651 PORT_CFG_SOUND_EN    OUT: salida del sonido: 0 = Bluetooth MIDI
+//                                (btmidi.h), distinto de 0 = el zumbador --
+//                                MISMO interruptor general que el botón BOOT
+//                                del propio aparato (ver g_soundBt,
+//                                main.cpp): es una preferencia
 //                                de sesión, no un ajuste de este programa en
 //                                concreto, así que NO se reinicia al
 //                                arrancar una ejecución nueva (igual que
 //                                pulsar BOOT a mano tampoco se olvida al
 //                                cambiar de programa). A diferencia del
 //                                botón BOOT, no reproduce el "jingle" de
-//                                reactivación (pensado para que lo note un
-//                                humano, no para que lo dispare código).
-//                                IN: 1 si el sonido está activado ahora
-//                                mismo, 0 si está silenciado. Igual que el
+//                                vuelta al zumbador (pensado para que lo
+//                                note un humano, no para que lo dispare
+//                                código). IN: 1 si el sonido va al
+//                                zumbador ahora mismo, 0 si por Bluetooth. Igual que el
 //                                brillo: SOLO el slot 0 puede cambiarlo
 //                                (además del botón BOOT), y se guarda en
 //                                la flash para sobrevivir a un reset (con
 //                                PORT_CFG_SAVE; el botón BOOT graba solo).
 //   0x0652 PORT_CFG_SAVE        OUT (cualquier valor, solo desde el slot
-//                                0): graba brillo y mute en la flash si han
+//                                0): graba brillo y salida del sonido si han
 //                                cambiado desde la última vez. sisop lo hace
 //                                al salir de SETTINGS (botón DIRECCIÓN), no
 //                                en cada detente del dial, para no gastar la
@@ -297,7 +305,7 @@ constexpr uint8_t  CFG_PORT_COUNT      = 2;
 // Cada slot de programa (storage.h MAX_PROGRAM_SLOTS) tiene EEPROM_SLOT_SIZE
 // (256) bytes propios en la flash SPI, aparte de la imagen del programa y
 // con su propia dirección -- para records o ajustes que deben sobrevivir a
-// apagar el aparato (p.ej. sisop.asm guardando ahí el brillo/mute elegidos
+// apagar el aparato (p.ej. sisop.asm guardando ahí el brillo/sonido elegidos
 // en SETTINGS, o un juego guardando su mejor puntuación). Vive en el resto
 // de la flash que los 60 slots de programa no llegan a llenar (sobran
 // exactamente 60*256 bytes, ver storage.h) -- no comparte sitio con ningún

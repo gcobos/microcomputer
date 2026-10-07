@@ -174,13 +174,15 @@ periféricos va en `0x06xx`.
   pueden reflejar el tiempo real entre pasos. `resetTimers()` los pone a 0
   al (re)iniciar una ejecución. `IN` **no** toca flags: para un bucle de espera
   hay que `CMP reg,#0` antes del `JMPNZ`.
-- **Sonido** (`OUT`/`IN`): `PORT_SND_BASE` 0x0630..0x0633, zumbador piezo pasivo
+- **Sonido** (`OUT`/`IN`): `PORT_SND_BASE` 0x0630..0x0634, zumbador piezo pasivo
   en `PIN_BUZZER` (GPIO3). `0x0630`/`0x0631` = frecuencia de 16 bits (LO
   engancha, HI aplica `Hz=hi<<8|lo`); `0x0632` = nota MIDI 0–127 (`noteToHz()`,
-  `440·2^((n-69)/12)`); `0x0633` = auto-apagado `valor·10 ms` (pegajoso). El
+  `440·2^((n-69)/12)`); `0x0633` = auto-apagado `valor·10 ms` (pegajoso);
+  `0x0634` = velocidad MIDI 1–127 (`g_sndVel`, pegajosa, 100 al arrancar), que
+  solo usa la salida Bluetooth (`btmidiNote(nota, vel)`). El
   tono lo genera `tone()` (LEDC), no gasta CPU. `sndApply(hz)` centraliza
   `tone`/`noTone` y (re)arma `g_sndOffAt`. `tickSound()` aplica el auto-apagado
-  en `ExecCont`; `resetSound()` calla y pone los 4 registros a 0. Se silencia
+  en `ExecCont`; `resetSound()` calla, pone los 4 primeros registros a 0 y la velocidad a 100. Se silencia
   también al salir de `ExecCont` y al `HALT` (`if (g_sndHz) sndApply(0)`).
 - **Carga y grabado de programas** (`OUT`/`IN`): `PORT_PROG_LOAD` 0x0640 y
   `PORT_PROG_SAVE` 0x0641, sobre los mismos 60 slots de la flash que usan el
@@ -206,12 +208,28 @@ periféricos va en `0x06xx`.
   por inactividad sigue igual, solo cambia a qué vuelve. Es una preferencia de
   TODO el aparato: **no** se reinicia en `clearRuntimeOutputs()` (arranque de
   ejecución nueva) -- bug real reportado, el brillo elegido en SETTINGS
-  (`sisop.asm`) se perdía al arrancar otro programa. `OUT 0x0651, v` = activa (`v!=0`) o silencia (`v=0`) el sonido:
-  mismo interruptor que el botón BOOT (`g_soundMuted`), pero sin su jingle de
-  reactivación (pensado para un humano, no para código) y, a diferencia del
-  brillo, **no** se reinicia entre ejecuciones (es una preferencia de sesión).
-  `IN` de cada uno: eco del brillo actual, o 1/0 según el sonido esté
-  activado/silenciado.
+  (`sisop.asm`) se perdía al arrancar otro programa. `OUT 0x0651, v` = salida del sonido: zumbador (`v!=0`) o
+  Bluetooth MIDI (`v=0`). Es el mismo interruptor que el botón BOOT
+  (`g_soundBt`), pero sin su jingle de vuelta al zumbador (pensado para un
+  humano, no para código). Igual que el brillo, **no** se reinicia entre
+  ejecuciones (es una preferencia del aparato). `IN` de cada uno: eco del
+  brillo actual, o 1/0 según el sonido vaya al zumbador o por Bluetooth.
+
+  **Bluetooth MIDI** ([`src/btmidi.cpp`](../src/btmidi.cpp)): el aparato se
+  anuncia por BLE como `compi-midiN`: al arrancar el Bluetooth busca 2 s otros
+  `compi-midiN` anunciándose y toma el número libre más bajo (`compi-midi0`,
+  `compi-midi1`...; uno ya conectado no se anuncia y no se ve, así que su
+  número puede repetirse). Cualquier sintetizador o app BLE MIDI (móvil,
+  ordenador) se conecta y recibe cada tono como nota MIDI por el canal 1
+  (velocidad 100). Un tono por frecuencia (`0x0630/31`) se manda como la nota
+  más cercana, así que un barrido sale a semitonos. Sin nada conectado no
+  suena nada, así que hace las veces del antiguo MUTE. Si el otro lado corta
+  la conexión, el compi vuelve solo al zumbador, igual que si se pulsara BOOT
+  (con su jingle, y queda guardado). La pila BLE (NimBLE
+  1.4.x, con la librería BLE-MIDI) solo arranca la primera vez que se elige
+  Bluetooth, o al encender si estaba elegido. Mientras no se usa, la radio
+  no gasta. BLE-MIDI 2.2 necesita la API 1.x de NimBLE: con la 2.x compila,
+  pero nunca detecta la conexión (ver `platformio.ini`).
 - `main` fija `cpu.setPortRead(portRead)` y `cpu.setPortWrite(portWrite)`.
   Los contadores de posición viven en `FrontPanel`.
 

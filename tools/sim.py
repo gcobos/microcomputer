@@ -54,6 +54,7 @@ class Ports:
         self.dir_btn = 0
         self.dat_btn = 0
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
+        self.snd_vel = 100   # 0x0634: velocidad MIDI (solo Bluetooth en el aparato)
         self.snd_hz = 0
         self.now_ns = 0
         self.instr_ns = instr_ns
@@ -120,6 +121,8 @@ class Ports:
             return self.snd_note
         if port == 0x0633:
             return self.snd_dur
+        if port == 0x0634:
+            return self.snd_vel
         if port == 0x0600:
             return self.dir_pos
         if port == 0x0601:
@@ -185,6 +188,9 @@ class Ports:
             return
         if port == 0x0633:
             self.snd_dur = val
+            return
+        if port == 0x0634:
+            self.snd_vel = 1 if val == 0 else min(val, 127)
             return
         if port == 0x0610:
             self.led = val & 1
@@ -300,6 +306,7 @@ class Ports:
             self.timer[i] = 0
             self.timer_set_ns[i] = self.now_ns
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
+        self.snd_vel = 100   # 0x0634: velocidad MIDI (solo Bluetooth en el aparato)
         self._snd(0)
         # brillo y sonido: preferencias de TODO el aparato -- NO se tocan al
         # cargar otro programa, igual que main.cpp (ver iomap.h).

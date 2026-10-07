@@ -41,20 +41,25 @@ El SuperMini expone 13 GPIO: **IO0–IO10, IO20, IO21**.
 Libres: **GPIO0, 1, 3, 4, 5, 6, 7, 10, 20, 21** (10 pines). El diseño los usa
 todos: GPIO3 = zumbador piezo (sección 9).
 
-### GPIO9 / botón BOOT: doble uso (bootloader + MUTE/UNMUTE)
+### GPIO9 / botón BOOT: doble uso (bootloader + zumbador/Bluetooth)
 
 GPIO9 es un *strapping pin* (su nivel en el instante del reset decide modo
 bootloader vs arranque normal) y es el botón físico BOOT de la placa. Esa
 comprobación la hace la ROM del propio chip **antes** de que corra
 `setup()`/`loop()` — leerlo luego como una entrada normal durante la
 ejecución no interfiere con eso en absoluto, así que el firmware lo
-reutiliza como pulsador de **MUTE/UNMUTE general** (`PIN_BOOT_BTN` en
+reutiliza para elegir la **salida del sonido: zumbador o Bluetooth MIDI**
+(`PIN_BOOT_BTN` en
 [`src/main.cpp`](../src/main.cpp)), disponible en todo momento sin importar
 qué programa corra ni en qué modo esté el panel: `tickBootButton()` se
 sondea lo primero en cada vuelta de `loop()`, antes de mirar el interruptor
-de modo. Antirrebote por tiempo (`BOOT_BTN_DEBOUNCE_MS`); al desmutear
-suena un jingle de 2 notas no bloqueante (`tickMuteJingle()`) para
-confirmarlo. El sonido empieza activado al encender.
+de modo. Antirrebote por tiempo (`BOOT_BTN_DEBOUNCE_MS`); al volver al
+zumbador suena un jingle de 2 notas no bloqueante (`tickMuteJingle()`) para
+confirmarlo. Por Bluetooth el aparato se anuncia como `compi-midi0` (o 1, 2... si hay otros cerca; BLE MIDI, ver
+[firmware.md](firmware.md)); sin nada conectado no suena nada, así que
+también sirve para silenciarlo. Si el ordenador o el móvil cortan la conexión,
+vuelve solo al zumbador. Se recuerda al apagar (de fábrica, el
+zumbador).
 
 La vía de recuperación manual de flasheo (mantenerlo pulsado al enchufar si
 falla el auto-reset, ver más abajo) sigue funcionando exactamente igual,
@@ -83,7 +88,7 @@ pines por defecto del C3; el driver de la flash los toma solo.
 | 6  | SPI MOSI | salida | flash pin 5 (DI) |
 | 7  | Flash /CS | salida | flash pin 1 (/CS) **+ `[10 kΩ]` a 3V3** |
 | 8  | LED de fallo | salida | LED azul de a bordo (**activo a nivel bajo**) |
-| 9  | MUTE/UNMUTE general | entrada (pull-up) | botón BOOT de a bordo (**activo a nivel bajo**) |
+| 9  | salida del sonido: zumbador / Bluetooth | entrada (pull-up) | botón BOOT de a bordo (**activo a nivel bajo**) |
 | 10 | 74HC165 PL (SH/LD) | salida | pin 1 (SH/LD) |
 | 20 | I2C SDA | bidir | OLED SDA |
 | 21 | I2C SCL | salida | OLED SCL |
@@ -160,8 +165,8 @@ vertical en la parte de abajo, bajo la rejilla del zumbador (ver
 Bajo la rejilla del zumbador, la tapa tiene tres cortes que dejan dos
 lengüetas flexibles con un círculo en la punta. Cada lengüeta cae encima de
 un botón de la ESP32-C3 SuperMini (RESET y BOOT), que así se pulsan sin abrir
-la caja. En compi son RESET (reinicia el aparato) y MUTE/UNMUTE (el botón
-BOOT, GPIO9, ver arriba). El USB-C
+la caja. En compi son RESET (reinicia el aparato) y SOUND (el botón
+BOOT, GPIO9, ver arriba: zumbador / Bluetooth). El USB-C
 de la SuperMini queda accesible por el lado frontal de la caja.
 
 - Una pata → D6 / D7 con pull-up de 10 kΩ a 3V3.
@@ -291,7 +296,7 @@ batería (sección 10).
 
 ## 9. Sonido — zumbador piezo pasivo (GPIO3)
 
-Salida de sonido del ordenador emulado (puertos `0x0630`–`0x0633`, ver
+Salida de sonido del ordenador emulado (puertos `0x0630`–`0x0634`, ver
 `specs.txt` §8). El firmware genera un tono de onda cuadrada con `tone()`
 (controlador **LEDC** del ESP32-C3): frecuencia arbitraria, por hardware, sin
 gastar tiempo de CPU. El C3 **no tiene DAC**, así que es tono, no audio PCM.
