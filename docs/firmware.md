@@ -238,7 +238,8 @@ periféricos va en `0x06xx`.
 ## 4c. Provisioning por USB-CDC (`main.cpp`)
 
 `provisionPoll()` se sondea al principio de cada `loop()`, leyendo líneas del
-puerto serie (115200 baudios). Dos protocolos, simétricos:
+puerto serie (115200 baudios). Dos protocolos de transferencia, simétricos,
+y unas órdenes cortas:
 
 - **LOAD** (host → aparato, `provisionLoad()`): `"COMPI LOAD <slot> <len>
   [<cat> <nombre>]\n"` (categoría en decimal y nombre hasta fin de línea,
@@ -253,6 +254,45 @@ puerto serie (115200 baudios). Dos protocolos, simétricos:
   con `flash.loadProgram()` en `g_provisionBuf` y lo manda de un tirón
   (`Serial.write()`, sin trocear: para ENVIAR no hay el problema de cola
   pequeña de LOAD).
+- **Órdenes cortas** (protocolo 2, `COMPI_PROTO`): `COMPI HELLO` → `COMPI HI
+  <slots> <versión>` (para reconocer el aparato al buscar el puerto); `COMPI
+  LIST` → una línea `COMPI SLOT <n> <cat> <nombre>` por slot ocupado y
+  `COMPI END <cuántos>`; `COMPI SUM <slot>` → checksum de la imagen sin
+  mandarla (restore lo usa para saltarse lo que ya está igual); `COMPI
+  EEDUMP`/`EELOAD <slot>` → leer o grabar los 256 bytes de EEPROM del slot;
+  `COMPI DEL <slot>` → vaciar el slot (su EEPROM no).
+- **Hora y red** (protocolo 3): `COMPI TIME <epoch>` pone la hora; `COMPI
+  WIFI <ssid> <clave>` (en hexadecimal, `-` = quitar) guarda la red y
+  sincroniza; `COMPI TZ <posix>` guarda la zona horaria; `COMPI SYNC` pide
+  la hora ya; `COMPI NET` → `COMPI NET <estado> <epoch> <ssid hex> <tz>`.
+  `tools/compi.py` pone la hora y la zona del PC de paso si el aparato no
+  tiene hora.
+- **Diagnóstico y sonido**: `COMPI DIAG` → arranques desde el último
+  encendido, motivo del último (`esp_reset_reason()`), ms encendido, entradas
+  a RUN, cargas de slot, light sleeps de un programa, salida del sonido
+  (Bluetooth o zumbador), estado del Bluetooth (parado / buscando / anunciándose),
+  si hay algo conectado y el estado del reloj (`compi.py diag`). `COMPI SOUND
+  BT|BUZZER` cambia la salida del sonido como el botón BOOT, y se guarda
+  (`compi.py sound bt|buzzer`).
+
+**Hora real (`netclock.cpp`).** `clockBegin()` enciende el Wi-Fi al
+arrancar, pide la hora por SNTP y lo apaga en cuanto la tiene. Prueba
+primero la red guardada (bloque `NET_CONFIG` de la flash, tras los
+ajustes; 30 s) y, si no hay o no va, escanea y prueba las redes ABIERTAS
+de la de más señal a la de menos (hasta 6, 15 s cada una: muchas tienen
+portal cautivo y no dejan pasar el NTP). Repite cada 12 h si lo consiguió
+y a los 30 min si no. `COMPI NET` dice qué red dio la hora. Entre medias la lleva el reloj del ESP32
+(`time()`, con la zona horaria POSIX en `TZ`). `clockLatch()` rellena los
+14 registros de `PORT_TIME_BASE` al hacer `OUT 0x0670`. El Wi-Fi suma unos
+400 KB de firmware; con la radio apagada no gasta.
+
+**Ahorro de energía de un programa (`PORT_POWER`/`PORT_SLEEP`).** En su modo
+ahorro, un programa en `ExecCont` deja de contar como "en uso" para
+`samplerCb()` y para la gestión de pantalla (atenúa a `PS_DIM_MS`, apaga a
+`PS_OFF_MS`). `OUT 0x0613,n` marca `g_cpuSleeping` hasta `g_cpuWakeAt` y
+llama a `cpu.requestYield()` para que `run()` vuelva ya; mientras, `loop()`
+no ejecuta CPU y al final cede con `delay(1)` o, con la pantalla apagada,
+`esp_light_sleep_start()` a tramos de `SAMPLE_IDLE_MS`.
 
 **Cuelgues del USB.** El driver HWCDC de arduino-esp32 se da por
 desconectado si el host deja de leer más de 100 ms (típicamente ModemManager
@@ -282,8 +322,10 @@ NN") no se quede colgado en pantalla -- se pinta directo al panel, sin pasar
 por `g_fb`/`oled.render()`.
 
 Las dos terminan con `"COMPI OK <sum>"` (checksum de los bytes) o `"COMPI
-ERR <motivo>"`. Detalle completo del protocolo: `specs.txt` §7. Herramientas
-de host: `tools/compi_send.py` (LOAD), `tools/compi_recv.py` (DUMP) y
+ERR <motivo>"`. Detalle completo del protocolo: `specs.txt` §7. Herramienta
+de host: `tools/compi.py` (list/send/recv/backup/restore/rm, sobre
+`tools/compilink.py`: busca el puerto por el VID 303a, reintenta y comprueba
+checksums; `compi_send.py`/`compi_recv.py` son atajos suyos) y
 `tools/compi_disasm.py` (vuelca un `.bin` como texto ensamblador,
 reensamblable byte a byte con `casm.py` -- ver su docstring para el porqué).
 

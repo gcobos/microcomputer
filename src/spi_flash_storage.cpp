@@ -258,6 +258,20 @@ bool SpiFlashStorage::writeSettings(const uint8_t* src) {
     return true;
 }
 
+bool SpiFlashStorage::readNetConfig(uint8_t* dest) {
+    wake();
+    readBytes(NET_CONFIG_ADDR, dest, (uint32_t)NET_CONFIG_SIZE);
+    sleep();
+    return true;
+}
+
+bool SpiFlashStorage::writeNetConfig(const uint8_t* src) {
+    wake();
+    patchSector(NET_CONFIG_ADDR, src, (uint32_t)NET_CONFIG_SIZE);
+    sleep();
+    return true;
+}
+
 // Unico modo de tocar unos pocos bytes en NOR flash sin perder el resto:
 // leer el sector ENTERO que los contiene (ahi viven tambien otras EEPROM de
 // slot, o los ajustes globales), parchear solo [addr, addr+len), borrar ese

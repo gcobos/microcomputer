@@ -21,3 +21,6 @@ __pycache__/
 *.elf
 *.map
 *.d
+
+# Copias del aparato (tools/compi.py backup)
+backups/

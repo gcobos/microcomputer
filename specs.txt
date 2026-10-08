@@ -370,9 +370,33 @@ OPERACIONES DESDE EL PANEL (ver sección 12)
 
 PROVISIONING POR USB-CDC (meter o sacar un slot del PC, sin teclear)
   provisionPoll() se sondea al principio de cada loop() (src/main.cpp). Lee
-  líneas del puerto serie; las que no empiezan por "COMPI LOAD " o
-  "COMPI DUMP " se ignoran (se puede seguir usando el monitor). Dos
-  protocolos, LOAD (grabar, host -> aparato) y DUMP (sacar, aparato -> host):
+  líneas del puerto serie; las que no empiezan por "COMPI " se ignoran (se
+  puede seguir usando el monitor). Dos protocolos de transferencia, LOAD
+  (grabar, host -> aparato) y DUMP (sacar, aparato -> host), y órdenes
+  cortas (protocolo 2, COMPI_PROTO) para listar, copiar y restaurar:
+
+    "COMPI HELLO\n"        -> "COMPI HI <slots> <versión>\n"
+    "COMPI LIST\n"         -> "COMPI SLOT <n> <cat> <nombre>\n" por slot
+                              ocupado, y "COMPI END <cuántos>\n"
+    "COMPI SUM <slot>\n"   -> "COMPI OK <sum>\n" (suma de los 65536 bytes,
+                              sin mandarlos) o "COMPI ERR empty"
+    "COMPI EEDUMP <slot>\n"-> "COMPI READY 256\n" + 256 bytes de EEPROM +
+                              "COMPI OK <sum>\n"
+    "COMPI EELOAD <slot>\n"-> "COMPI READY\n"; el host manda 256 bytes;
+                              "COMPI OK <sum>\n" cuando están grabados
+    "COMPI DEL <slot>\n"   -> "COMPI OK 0\n": vacía el slot (no su EEPROM)
+  Hora y red (protocolo 3, COMPI_PROTO):
+    "COMPI TIME <epoch>\n" -> pone la hora (segundos UTC)
+    "COMPI WIFI <ssid> <clave>\n"   en hexadecimal; "-" = sin Wi-Fi. Se guarda
+                              en la flash (NET_CONFIG, storage.h) y sincroniza
+    "COMPI TZ <posix>\n"   -> zona horaria (se guarda)
+    "COMPI SYNC\n"         -> pide la hora por Wi-Fi ya
+    "COMPI NET\n"          -> "COMPI NET <estado> <epoch> <ssid hex|-> <tz>"
+
+  Herramienta de host: tools/compi.py (list, send, recv, backup, restore,
+  rm, net, time, wifi, tz, sync), que busca el puerto sola (VID 303a), reintenta y comprueba checksums.
+  send conserva las zonas .persist del programa (casm) leyéndolas del slot.
+
 
     LOAD  host -> aparato:  "COMPI LOAD <slot> <len> [<cat> <nombre>]\n"
                             slot 0..59, len 0..65536; cat (decimal) y
@@ -460,6 +484,8 @@ MAPA DE PUERTOS
   0x0603            PORT_DAT_BTN   encoder DATA: bit0 = pulsado (IN)
   0x0610            PORT_LED       LED azul de a bordo (GPIO8)   (OUT bit0; IN lee eco)
   0x0611            PORT_RANDOM    byte aleatorio nuevo en cada lectura (esp_random) (IN)
+  0x0612            PORT_POWER     modo ahorro del programa (bit 0) / encender pantalla (bit 1); IN bit1 = encendida
+  0x0613            PORT_SLEEP     OUT n: la CPU duerme n x 10 ms (esperar sin gastar)
   0x0620 .. 0x0629  PORT_TIMER_BASE+i   10 temporizadores descendentes  (OUT arma; IN lee)
   0x0630            PORT_SND_FREQ_LO   sonido: byte bajo de la frecuencia  (OUT engancha)
   0x0631            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
@@ -474,6 +500,8 @@ MAPA DE PUERTOS
   0x0651            PORT_CFG_SOUND_EN    activa/desactiva el sonido, igual que BOOT (OUT solo desde el slot 0; IN 1=activado)
   0x0652            PORT_CFG_SAVE        OUT: graba brillo y sonido en la flash si cambiaron (solo slot 0)
   0x0660 .. 0x066E  PORT_SLOT_INFO_BASE  categoría + nombre (14 B) del slot consultado (IN)
+  0x0670            PORT_TIME_CTRL     hora real: OUT congela; IN estado (bit0 hay hora, bit1 Wi-Fi, bit2 conectando, bit3 red)
+  0x0671 .. 0x067E  PORT_TIME_BASE     epoch UTC (4) + seg, min, hora, día, mes, año-2000, día semana + minutos locales desde 2020 (3)
   0x0700 .. 0x07FF  EEPROM            búfer de 256 B por slot (E/S); 0x0800 OUT carga / 0x0801 OUT graba
   resto            IN -> 0 ; OUT -> nada
 
@@ -555,6 +583,45 @@ LED DE A BORDO (puerto PORT_LED = 0x0610)
   GPIO8 es pin de strapping: el firmware lo pone en alto (LED apagado) al
   arrancar; si un programa lo deja encendido y la placa se reinicia, como
   mucho se suprime el log de arranque por UART.
+
+AHORRO DE ENERGÍA Y DORMIR (puertos 0x0612 / 0x0613)
+  Un programa en CONTINUO cuenta como "en uso": pantalla a pleno brillo,
+  panel muestreado cada 2 ms, sin light sleep. Para uno que pasa horas
+  encendido (tama.asm):
+    0x0612  PORT_POWER   OUT bit 0 = modo ahorro: la pantalla se atenúa a los
+                         PS_DIM_MS (5 s) sin tocar el panel y se apaga a los
+                         PS_OFF_MS (10 s); el muestreo del panel baja como en
+                         reposo. Un giro o pulsación la enciende (el programa
+                         también lo recibe; puede mirar el bit 1 de IN antes).
+                         OUT bit 1 = encender la pantalla ya (noteActivity).
+                         IN: bit 0 modo ahorro, bit 1 pantalla encendida.
+                         Vuelve a 0 en clearRuntimeOutputs().
+    0x0613  PORT_SLEEP   OUT n (n > 0): la CPU emulada se para n x 10 ms. El
+                         gancho de E/S pide cpu.requestYield() (run() vuelve
+                         tras esa instrucción) y loop() no vuelve a llamar a
+                         run() hasta g_cpuWakeAt; entretanto delay(1), o, en
+                         modo ahorro con la pantalla apagada, light sleep a
+                         tramos de SAMPLE_IDLE_MS (no con sonido, Bluetooth,
+                         Wi-Fi ni un host de serie). Temporizadores, sonido y
+                         panel siguen. En PASO no para.
+
+HORA REAL (puertos 0x0670 .. 0x067E, netclock.h)
+  La pone el Wi-Fi por NTP (la red guardada con "COMPI WIFI", ver sección 7,
+  y si no hay o no va, cualquier red ABIERTA, de la de más señal a la de
+  menos: se conecta un momento al arrancar y cada NET_RESYNC_MS = 12 h -- a
+  los 30 min si no lo consiguió --, y apaga la radio en cuanto la tiene) o el PC ("COMPI TIME", compi.py). La zona
+  horaria POSIX ("COMPI TZ"; compi.py manda la del PC) da la hora local con su
+  horario de verano. Sin ninguna, no hay hora (sin pila de respaldo).
+    0x0670  PORT_TIME_CTRL  OUT: congela la hora de ahora en los 14 registros
+                            (clockLatch); IN: estado (clockStatus: bit 0 hay
+                            hora, bit 1 vino del Wi-Fi, bit 2 conectando,
+                            bit 3 hay red configurada)
+    0x0671..0x0674  epoch UTC, byte bajo primero
+    0x0675..0x067B  segundo, minuto, hora, día, mes, año-2000, día de la
+                    semana (0 = domingo), en hora local
+    0x067C..0x067E  minutos locales desde el 1-1-2020 00:00 (24 bits): restar
+                    dos de estos da los minutos pasados, sin divisiones
+  Todo a 0 si no hay hora; los registros solo cambian con OUT 0x0670.
 
 TEMPORIZADORES (puertos 0x0620 .. 0x0629, PORT_TIMER_BASE = 0x0620)
   10 cuentas atrás independientes. OUT carga el temporizador i con un valor

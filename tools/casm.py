@@ -16,6 +16,11 @@ Sintaxis = la del desensamblador (src/disasm.cpp) + etiquetas y directivas.
     .name "PONG"       ; nombre del programa (hasta 14 caracteres) -- va a la
                        ; cabecera del slot, sisop.asm lo usa en sus menus
     .category GAME     ; GAME PROGRAM UTILITY DEMO DOCS SYSTEM (o un numero)
+    .persist 0x4000, 0xC800  ; zona de RAM [inicio, fin) donde el programa
+                       ; guarda datos que deben sobrevivir a reenviarlo
+                       ; (p.ej. las canciones de play.asm): tools/compi.py
+                       ; send la copia del slot antes de grabar. Puede haber
+                       ; varias; no puede solaparse con el programa
     .include "text.asm"  ; inserta otro fichero aqui (busca junto al que lo
                        ; incluye y luego en programs/lib/); cada fichero se
                        ; incluye una sola vez aunque se pida varias
@@ -261,6 +266,8 @@ class Assembler:
         self.slot = None
         self.name = None        # .name    (cabecera del slot, ver storage.h)
         self.category = None    # .category
+        self.persist = []       # .persist: [(inicio, fin)] con fin exclusivo
+        self.max_space = 0      # fin del .space mas alto (variables sin bytes)
         self.origins = []       # linea expandida -> (fichero, linea original)
         self.image = bytearray(IMAGE_SIZE)
         self.max_addr = 0
@@ -341,7 +348,7 @@ class Assembler:
 
     def _dir_size(self, mnem, rest, pc, lineno):
         d = mnem.lower()
-        if d in (".name", ".category"):
+        if d in (".name", ".category", ".persist"):
             return "data", 0
         if d == ".org":
             return "org", eval_expr(rest, self.symbols, pc, lineno)
@@ -401,12 +408,22 @@ class Assembler:
                 raise AsmError(f".name: hasta {NAME_MAX} caracteres ASCII imprimibles", lineno)
             self.name = nm.decode()
             return
+        if d == ".persist":
+            ops = split_operands(rest)
+            if len(ops) != 2:
+                raise AsmError(".persist inicio, fin", lineno)
+            a, b = (eval_expr(o, self.symbols, pc, lineno) for o in ops)
+            if not (0 <= a < b <= IMAGE_SIZE):
+                raise AsmError(".persist: hace falta 0 <= inicio < fin <= 0x10000", lineno)
+            self.persist.append((a, b))
+            return
         if d == ".category":
             key = rest.strip().upper()
             self.category = CATEGORIES[key] if key in CATEGORIES else \
                 eval_expr(rest, self.symbols, pc, lineno) & 0xFF
             return
         if d in (".space", ".res"):
+            self.max_space = max(self.max_space, pc + eval_expr(rest, self.symbols, pc, lineno))
             return  # ya es 0
         if d == ".db":
             data = self._db_bytes(rest, pc, lineno)
@@ -606,6 +623,12 @@ class Assembler:
             elif e.lineno:
                 where = f" (linea {e.lineno})"
             raise AsmError(f"{e}{where}") from None
+        top = max(self.max_addr, self.max_space)
+        for a, b in self.persist:
+            if a < top:
+                raise AsmError(f".persist 0x{a:04X}-0x{b:04X} se solapa con el "
+                               f"programa (ocupa hasta 0x{top:04X}): al reenviarlo "
+                               f"se conservarian bytes viejos del codigo o las variables")
         return bytes(self.image)
 
     def format_listing(self):
@@ -650,6 +673,8 @@ def main(argv=None):
         print(f"casm: slot de destino sugerido: {slot}")
     if asm.name is not None or asm.category is not None:
         print(f"casm: nombre {asm.name!r}, categoria {asm.category}")
+    for a, b in asm.persist:
+        print(f"casm: datos persistentes 0x{a:04X}-0x{b - 1:04X} (compi.py send los conserva)")
 
     if args.listing:
         with open(args.listing, "w", encoding="utf-8") as f:

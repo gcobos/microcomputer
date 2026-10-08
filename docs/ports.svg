@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1610" font-family="'Segoe UI',system-ui,sans-serif">
-  <rect x="0" y="0" width="1260" height="1610" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1260 1806" font-family="'Segoe UI',system-ui,sans-serif">
+  <rect x="0" y="0" width="1260" height="1806" fill="#ffffff"/>
   <style>
     .ttl   { font-size:18px; font-weight:700; fill:#0f172a; }
     .sub   { font-size:12px; fill:#475569; }
@@ -20,7 +20,7 @@
 
   <!-- ================= columna: espacio completo ================= -->
   <text x="70" y="96" class="grp">Espacio completo</text>
-  <rect x="70" y="110" width="150" height="1130" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <rect x="70" y="110" width="150" height="1326" fill="#f1f5f9" stroke="#cbd5e1"/>
   <rect x="70" y="110" width="150" height="130" fill="#dbeafe" stroke="#0969da"/>
   <text x="145" y="162" text-anchor="middle" class="nm" fill="#0969da">GRÁFICOS</text>
   <text x="145" y="178" text-anchor="middle" class="cap">0x0000–0x03FF</text>
@@ -34,7 +34,7 @@
     <text x="80" y="331" fill="#1e293b">ENTRADA (encoders)</text>
     <rect x="70" y="336" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="336" width="4" height="16" fill="#d97706"/>
-    <text x="80" y="347" fill="#1e293b">LED · ALEATORIO</text>
+    <text x="80" y="347" fill="#1e293b">LED · ALEAT. · ENERGÍA</text>
     <rect x="70" y="352" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
     <rect x="70" y="352" width="4" height="16" fill="#0d9488"/>
     <text x="80" y="363" fill="#1e293b">TEMPORIZADORES</text>
@@ -51,11 +51,14 @@
     <rect x="70" y="416" width="4" height="16" fill="#4f46e5"/>
     <text x="80" y="427" fill="#1e293b">INFO DE SLOT</text>
     <rect x="70" y="432" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
-    <rect x="70" y="432" width="4" height="16" fill="#ca8a04"/>
-    <text x="80" y="443" fill="#1e293b">EEPROM POR SLOT</text>
+    <rect x="70" y="432" width="4" height="16" fill="#0891b2"/>
+    <text x="80" y="443" fill="#1e293b">HORA REAL</text>
+    <rect x="70" y="448" width="150" height="16" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="70" y="448" width="4" height="16" fill="#ca8a04"/>
+    <text x="80" y="459" fill="#1e293b">EEPROM POR SLOT</text>
   </g>
-  <text x="145" y="498" text-anchor="middle" class="cap">sin mapear</text>
-  <text x="145" y="516" text-anchor="middle" class="cap">IN → 0 · OUT → nada</text>
+  <text x="145" y="514" text-anchor="middle" class="cap">sin mapear</text>
+  <text x="145" y="532" text-anchor="middle" class="cap">IN → 0 · OUT → nada</text>
   <text x="62" y="114" text-anchor="end" class="adr">0x0000</text>
   <text x="62" y="245" text-anchor="end" class="adr">0x0400</text>
   <text x="62" y="285" text-anchor="end" class="adr">0x0500</text>
@@ -67,9 +70,10 @@
     <text x="62" y="395">0x0640</text>
     <text x="62" y="411">0x0650</text>
     <text x="62" y="427">0x0660</text>
-    <text x="62" y="443">0x0700</text>
+    <text x="62" y="443">0x0670</text>
+    <text x="62" y="459">0x0700</text>
   </g>
-  <text x="62" y="1237" text-anchor="end" class="adr">0xFFFF</text>
+  <text x="62" y="1433" text-anchor="end" class="adr">0xFFFF</text>
   <text x="228" y="200" class="cap">PANTALLA</text>
   <text x="228" y="214" class="cap">(gráficos + texto</text>
   <text x="228" y="228" class="cap">+ atributos van</text>
@@ -78,12 +82,13 @@
   <path d="M220,110 L360,150" fill="none" stroke="#0969da" stroke-width="1" stroke-dasharray="3 3"/>
   <path d="M220,328 L360,336" fill="none" stroke="#0969da" stroke-width="1" stroke-dasharray="3 3"/>
   <path d="M220,344 L360,452" fill="none" stroke="#d97706" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,360 L360,524" fill="none" stroke="#0d9488" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,376 L360,592" fill="none" stroke="#db2777" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,392 L360,766" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,408 L360,918" fill="none" stroke="#059669" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,424 L360,1048" fill="none" stroke="#4f46e5" stroke-width="1" stroke-dasharray="3 3"/>
-  <path d="M220,440 L360,1138" fill="none" stroke="#ca8a04" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,360 L360,586" fill="none" stroke="#0d9488" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,376 L360,654" fill="none" stroke="#db2777" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,392 L360,828" fill="none" stroke="#7c3aed" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,408 L360,980" fill="none" stroke="#059669" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,424 L360,1110" fill="none" stroke="#4f46e5" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,440 L360,1200" fill="none" stroke="#0891b2" stroke-width="1" stroke-dasharray="3 3"/>
+  <path d="M220,456 L360,1334" fill="none" stroke="#ca8a04" stroke-width="1" stroke-dasharray="3 3"/>
 
   <!-- ================= detalle ================= -->
   <text x="372" y="96" class="grp">Detalle</text>
@@ -130,97 +135,120 @@
   <rect x="696" y="426" width="24" height="13" rx="2" fill="#0969da"/><text x="701" y="436" class="ac">IN</text>
   <text x="752" y="436" class="fn">encoder DATA: bit 0 = pulsado</text>
 
-  <rect x="360" y="452" width="6" height="60" fill="#d97706"/>
-  <text x="372" y="465" class="grp" fill="#b45309">LED de a bordo  ·  NÚMEROS ALEATORIOS</text>
+  <rect x="360" y="452" width="6" height="122" fill="#d97706"/>
+  <text x="372" y="465" class="grp" fill="#b45309">LED de a bordo  ·  NÚMEROS ALEATORIOS  ·  AHORRO DE ENERGÍA</text>
   <text x="372" y="486" class="adr">0x0610</text><text x="520" y="486" class="nm">PORT_LED</text>
   <rect x="696" y="476" width="24" height="13" rx="2" fill="#d97706"/><text x="700" y="486" class="ac">IO</text>
   <text x="752" y="486" class="fn">OUT bit 0 → enciende el LED azul del SuperMini (GPIO8) · IN devuelve el eco</text>
   <text x="372" y="508" class="adr">0x0611</text><text x="520" y="508" class="nm">PORT_RANDOM</text>
   <rect x="696" y="498" width="24" height="13" rx="2" fill="#d97706"/><text x="701" y="508" class="ac">IN</text>
   <text x="752" y="508" class="fn">byte aleatorio nuevo en cada lectura (generador por hardware del ESP32, esp_random)</text>
+  <text x="372" y="530" class="adr">0x0612</text><text x="520" y="530" class="nm">PORT_POWER</text>
+  <rect x="696" y="520" width="24" height="13" rx="2" fill="#d97706"/><text x="700" y="530" class="ac">IO</text>
+  <text x="752" y="530" class="fn">OUT bit 0 = modo ahorro: pantalla atenuada a los 5 s sin tocar nada y apagada a los 10 s</text>
+  <text x="752" y="548" class="fn">OUT bit 1 = encender la pantalla ya · IN bit 0 = modo ahorro, bit 1 = pantalla encendida</text>
+  <text x="372" y="570" class="adr">0x0613</text><text x="520" y="570" class="nm">PORT_SLEEP</text>
+  <rect x="696" y="560" width="30" height="13" rx="2" fill="#d97706"/><text x="700" y="570" class="ac">OUT</text>
+  <text x="752" y="570" class="fn">OUT n → la CPU duerme n × 10 ms sin gastar (temporizadores y sonido siguen)</text>
 
-  <rect x="360" y="524" width="6" height="56" fill="#0d9488"/>
-  <text x="372" y="537" class="grp" fill="#0f766e">TEMPORIZADORES  ·  10 cuentas atrás</text>
-  <text x="372" y="558" class="adr">0x0620–0x0629</text><text x="520" y="558" class="nm">PORT_TIMER_BASE + i</text>
-  <rect x="696" y="548" width="24" height="13" rx="2" fill="#0d9488"/><text x="700" y="558" class="ac">IO</text>
-  <text x="752" y="558" class="fn">OUT arma (0–255); decrece solo hasta 0 y se queda · IN lee el valor actual</text>
-  <text x="752" y="576" class="fn">tᵢ baja 1 cada (1 &lt;&lt; i) ms  →  t0..t9 = 1,2,4,8,16,32,64,128,256,512 ms/paso</text>
+  <rect x="360" y="586" width="6" height="56" fill="#0d9488"/>
+  <text x="372" y="599" class="grp" fill="#0f766e">TEMPORIZADORES  ·  10 cuentas atrás</text>
+  <text x="372" y="620" class="adr">0x0620–0x0629</text><text x="520" y="620" class="nm">PORT_TIMER_BASE + i</text>
+  <rect x="696" y="610" width="24" height="13" rx="2" fill="#0d9488"/><text x="700" y="620" class="ac">IO</text>
+  <text x="752" y="620" class="fn">OUT arma (0–255); decrece solo hasta 0 y se queda · IN lee el valor actual</text>
+  <text x="752" y="638" class="fn">tᵢ baja 1 cada (1 &lt;&lt; i) ms  →  t0..t9 = 1,2,4,8,16,32,64,128,256,512 ms/paso</text>
 
-  <rect x="360" y="592" width="6" height="162" fill="#db2777"/>
-  <text x="372" y="605" class="grp" fill="#be185d">SONIDO  ·  zumbador piezo PASIVO en GPIO3, o Bluetooth MIDI (botón BOOT)</text>
-  <text x="372" y="626" class="adr">0x0630</text><text x="520" y="626" class="nm">PORT_SND_FREQ_LO</text>
-  <rect x="696" y="616" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="626" class="ac">IO</text>
-  <text x="752" y="626" class="fn">frecuencia en Hz, byte bajo — solo se engancha (aún no suena)</text>
-  <text x="372" y="648" class="adr">0x0631</text><text x="520" y="648" class="nm">PORT_SND_FREQ_HI</text>
-  <rect x="696" y="638" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="648" class="ac">IO</text>
-  <text x="752" y="648" class="fn">byte alto; al escribirlo SUENA  Hz = alto·256 + bajo  (Hz = 0 → silencio)</text>
-  <text x="372" y="670" class="adr">0x0632</text><text x="520" y="670" class="nm">PORT_SND_NOTE</text>
-  <rect x="696" y="660" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="670" class="ac">IO</text>
-  <text x="752" y="670" class="fn">nota MIDI 0–127 (0 = silencio) · 69 = LA4 = 440 Hz · +12 = una octava · la forma fácil</text>
-  <text x="372" y="692" class="adr">0x0633</text><text x="520" y="692" class="nm">PORT_SND_DUR</text>
-  <rect x="696" y="682" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="692" class="ac">IO</text>
-  <text x="752" y="692" class="fn">duración automática = valor · 10 ms, luego se calla sola (0 = sostenida; "pegajosa")</text>
-  <text x="752" y="710" class="fn">escríbelo SIEMPRE antes que 0x0632 / 0x0631</text>
-  <text x="372" y="732" class="adr">0x0634</text><text x="520" y="732" class="nm">PORT_SND_VEL</text>
+  <rect x="360" y="654" width="6" height="162" fill="#db2777"/>
+  <text x="372" y="667" class="grp" fill="#be185d">SONIDO  ·  zumbador piezo PASIVO en GPIO3, o Bluetooth MIDI (botón BOOT)</text>
+  <text x="372" y="688" class="adr">0x0630</text><text x="520" y="688" class="nm">PORT_SND_FREQ_LO</text>
+  <rect x="696" y="678" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="688" class="ac">IO</text>
+  <text x="752" y="688" class="fn">frecuencia en Hz, byte bajo — solo se engancha (aún no suena)</text>
+  <text x="372" y="710" class="adr">0x0631</text><text x="520" y="710" class="nm">PORT_SND_FREQ_HI</text>
+  <rect x="696" y="700" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="710" class="ac">IO</text>
+  <text x="752" y="710" class="fn">byte alto; al escribirlo SUENA  Hz = alto·256 + bajo  (Hz = 0 → silencio)</text>
+  <text x="372" y="732" class="adr">0x0632</text><text x="520" y="732" class="nm">PORT_SND_NOTE</text>
   <rect x="696" y="722" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="732" class="ac">IO</text>
-  <text x="752" y="732" class="fn">velocidad (fuerza) MIDI 1–127 de las notas siguientes — SOLO por Bluetooth MIDI</text>
-  <text x="752" y="750" class="fn">(el zumbador suena igual) · pegajosa · 100 al arrancar</text>
+  <text x="752" y="732" class="fn">nota MIDI 0–127 (0 = silencio) · 69 = LA4 = 440 Hz · +12 = una octava · la forma fácil</text>
+  <text x="372" y="754" class="adr">0x0633</text><text x="520" y="754" class="nm">PORT_SND_DUR</text>
+  <rect x="696" y="744" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="754" class="ac">IO</text>
+  <text x="752" y="754" class="fn">duración automática = valor · 10 ms, luego se calla sola (0 = sostenida; "pegajosa")</text>
+  <text x="752" y="772" class="fn">escríbelo SIEMPRE antes que 0x0632 / 0x0631</text>
+  <text x="372" y="794" class="adr">0x0634</text><text x="520" y="794" class="nm">PORT_SND_VEL</text>
+  <rect x="696" y="784" width="24" height="13" rx="2" fill="#db2777"/><text x="700" y="794" class="ac">IO</text>
+  <text x="752" y="794" class="fn">velocidad (fuerza) MIDI 1–127 de las notas siguientes — SOLO por Bluetooth MIDI</text>
+  <text x="752" y="812" class="fn">(el zumbador suena igual) · pegajosa · 100 al arrancar</text>
 
-  <rect x="360" y="766" width="6" height="140" fill="#7c3aed"/>
-  <text x="372" y="779" class="grp" fill="#6d28d9">PROGRAMAS  ·  slots de la flash (0–59)</text>
-  <text x="372" y="800" class="adr">0x0640</text><text x="520" y="800" class="nm">PORT_PROG_LOAD</text>
-  <rect x="696" y="790" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="800" class="ac">IO</text>
-  <text x="752" y="800" class="fn">OUT nº de slot → carga esa imagen en la RAM y reinicia la CPU (salto sin vuelta)</text>
-  <text x="752" y="818" class="fn">apaga pantalla/LED/sonido · slot vacío o ≥ 60: nada · IN = 1 si falló el último intento</text>
-  <text x="372" y="840" class="adr">0x0641</text><text x="520" y="840" class="nm">PORT_PROG_SAVE</text>
-  <rect x="696" y="830" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="840" class="ac">IO</text>
-  <text x="752" y="840" class="fn">OUT nº de slot → graba la RAM actual ahí (con su nombre y categoría) y SIGUE</text>
-  <text x="752" y="858" class="fn">ejecutando · IN = 1 si la última grabación salió bien</text>
-  <text x="372" y="880" class="adr">0x0642</text><text x="520" y="880" class="nm">PORT_SLOT_QUERY</text>
-  <rect x="696" y="870" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="880" class="ac">IO</text>
-  <text x="752" y="880" class="fn">OUT nº de slot → lee su nombre y categoría a 0x0660–0x066E · IN = 1 si tiene programa</text>
-  <text x="372" y="902" class="adr">0x0643</text><text x="520" y="902" class="nm">PORT_CUR_SLOT</text>
-  <rect x="696" y="892" width="24" height="13" rx="2" fill="#7c3aed"/><text x="701" y="902" class="ac">IN</text>
-  <text x="752" y="902" class="fn">slot del que se cargó el programa en curso (para grabarse a sí mismo)</text>
+  <rect x="360" y="828" width="6" height="140" fill="#7c3aed"/>
+  <text x="372" y="841" class="grp" fill="#6d28d9">PROGRAMAS  ·  slots de la flash (0–59)</text>
+  <text x="372" y="862" class="adr">0x0640</text><text x="520" y="862" class="nm">PORT_PROG_LOAD</text>
+  <rect x="696" y="852" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="862" class="ac">IO</text>
+  <text x="752" y="862" class="fn">OUT nº de slot → carga esa imagen en la RAM y reinicia la CPU (salto sin vuelta)</text>
+  <text x="752" y="880" class="fn">apaga pantalla/LED/sonido · slot vacío o ≥ 60: nada · IN = 1 si falló el último intento</text>
+  <text x="372" y="902" class="adr">0x0641</text><text x="520" y="902" class="nm">PORT_PROG_SAVE</text>
+  <rect x="696" y="892" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="902" class="ac">IO</text>
+  <text x="752" y="902" class="fn">OUT nº de slot → graba la RAM actual ahí (con su nombre y categoría) y SIGUE</text>
+  <text x="752" y="920" class="fn">ejecutando · IN = 1 si la última grabación salió bien</text>
+  <text x="372" y="942" class="adr">0x0642</text><text x="520" y="942" class="nm">PORT_SLOT_QUERY</text>
+  <rect x="696" y="932" width="24" height="13" rx="2" fill="#7c3aed"/><text x="700" y="942" class="ac">IO</text>
+  <text x="752" y="942" class="fn">OUT nº de slot → lee su nombre y categoría a 0x0660–0x066E · IN = 1 si tiene programa</text>
+  <text x="372" y="964" class="adr">0x0643</text><text x="520" y="964" class="nm">PORT_CUR_SLOT</text>
+  <rect x="696" y="954" width="24" height="13" rx="2" fill="#7c3aed"/><text x="701" y="964" class="ac">IN</text>
+  <text x="752" y="964" class="fn">slot del que se cargó el programa en curso (para grabarse a sí mismo)</text>
 
-  <rect x="360" y="918" width="6" height="118" fill="#059669"/>
-  <text x="372" y="931" class="grp" fill="#047857">CONFIGURACIÓN  ·  ajustes globales, OUT solo desde el slot 0 (SETTINGS de sisop)</text>
-  <text x="372" y="952" class="adr">0x0650</text><text x="520" y="952" class="nm">PORT_CFG_BRIGHTNESS</text>
-  <rect x="696" y="942" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="952" class="ac">IO</text>
-  <text x="752" y="952" class="fn">OUT 0–255 → brillo real al instante; queda como "pleno brillo" tras atenuar por</text>
-  <text x="752" y="970" class="fn">inactividad y se mantiene entre programas · IN = valor actual</text>
-  <text x="372" y="992" class="adr">0x0651</text><text x="520" y="992" class="nm">PORT_CFG_SOUND_EN</text>
-  <rect x="696" y="982" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="992" class="ac">IO</text>
-  <text x="752" y="992" class="fn">salida del sonido: OUT 0 = Bluetooth MIDI, ≠0 = zumbador</text>
-  <text x="752" y="1010" class="fn">(mismo interruptor que el botón BOOT) · IN = 1 si zumbador</text>
-  <text x="372" y="1032" class="adr">0x0652</text><text x="520" y="1032" class="nm">PORT_CFG_SAVE</text>
-  <rect x="696" y="1022" width="30" height="13" rx="2" fill="#059669"/><text x="700" y="1032" class="ac">OUT</text>
-  <text x="752" y="1032" class="fn">graba brillo y sonido en la flash (solo si cambiaron); se leen al encender</text>
+  <rect x="360" y="980" width="6" height="118" fill="#059669"/>
+  <text x="372" y="993" class="grp" fill="#047857">CONFIGURACIÓN  ·  ajustes globales, OUT solo desde el slot 0 (SETTINGS de sisop)</text>
+  <text x="372" y="1014" class="adr">0x0650</text><text x="520" y="1014" class="nm">PORT_CFG_BRIGHTNESS</text>
+  <rect x="696" y="1004" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="1014" class="ac">IO</text>
+  <text x="752" y="1014" class="fn">OUT 0–255 → brillo real al instante; queda como "pleno brillo" tras atenuar por</text>
+  <text x="752" y="1032" class="fn">inactividad y se mantiene entre programas · IN = valor actual</text>
+  <text x="372" y="1054" class="adr">0x0651</text><text x="520" y="1054" class="nm">PORT_CFG_SOUND_EN</text>
+  <rect x="696" y="1044" width="24" height="13" rx="2" fill="#059669"/><text x="700" y="1054" class="ac">IO</text>
+  <text x="752" y="1054" class="fn">salida del sonido: OUT 0 = Bluetooth MIDI, ≠0 = zumbador</text>
+  <text x="752" y="1072" class="fn">(mismo interruptor que el botón BOOT) · IN = 1 si zumbador</text>
+  <text x="372" y="1094" class="adr">0x0652</text><text x="520" y="1094" class="nm">PORT_CFG_SAVE</text>
+  <rect x="696" y="1084" width="30" height="13" rx="2" fill="#059669"/><text x="700" y="1094" class="ac">OUT</text>
+  <text x="752" y="1094" class="fn">graba brillo y sonido en la flash (solo si cambiaron); se leen al encender</text>
 
-  <rect x="360" y="1048" width="6" height="78" fill="#4f46e5"/>
-  <text x="372" y="1061" class="grp" fill="#4338ca">INFO DEL SLOT CONSULTADO  ·  la rellena 0x0642  (solo IN)</text>
-  <text x="372" y="1082" class="adr">0x0660</text><text x="520" y="1082" class="nm">PORT_SLOT_INFO_BASE</text>
-  <rect x="696" y="1072" width="24" height="13" rx="2" fill="#4f46e5"/><text x="701" y="1082" class="ac">IN</text>
-  <text x="752" y="1082" class="fn">categoría: 1 sistema · 2 juego · 3 programa · 4 utilidad · 5 demo · 6 documentación</text>
-  <text x="752" y="1100" class="fn">0xFF = sin categoría (la pone casm con .category)</text>
-  <text x="372" y="1122" class="adr">0x0661–0x066E</text><text x="520" y="1122" class="nm">… + 1 … + 14</text>
-  <rect x="696" y="1112" width="24" height="13" rx="2" fill="#4f46e5"/><text x="701" y="1122" class="ac">IN</text>
-  <text x="752" y="1122" class="fn">nombre ASCII, hasta 14 caracteres, relleno con 0 (casm: .name "TEXTO")</text>
+  <rect x="360" y="1110" width="6" height="78" fill="#4f46e5"/>
+  <text x="372" y="1123" class="grp" fill="#4338ca">INFO DEL SLOT CONSULTADO  ·  la rellena 0x0642  (solo IN)</text>
+  <text x="372" y="1144" class="adr">0x0660</text><text x="520" y="1144" class="nm">PORT_SLOT_INFO_BASE</text>
+  <rect x="696" y="1134" width="24" height="13" rx="2" fill="#4f46e5"/><text x="701" y="1144" class="ac">IN</text>
+  <text x="752" y="1144" class="fn">categoría: 1 sistema · 2 juego · 3 programa · 4 utilidad · 5 demo · 6 documentación</text>
+  <text x="752" y="1162" class="fn">0xFF = sin categoría (la pone casm con .category)</text>
+  <text x="372" y="1184" class="adr">0x0661–0x066E</text><text x="520" y="1184" class="nm">… + 1 … + 14</text>
+  <rect x="696" y="1174" width="24" height="13" rx="2" fill="#4f46e5"/><text x="701" y="1184" class="ac">IN</text>
+  <text x="752" y="1184" class="fn">nombre ASCII, hasta 14 caracteres, relleno con 0 (casm: .name "TEXTO")</text>
 
-  <rect x="360" y="1138" width="6" height="100" fill="#ca8a04"/>
-  <text x="372" y="1151" class="grp" fill="#a16207">EEPROM POR SLOT  ·  256 bytes persistentes, sobreviven a apagar el aparato</text>
-  <text x="372" y="1172" class="adr">0x0700–0x07FF</text><text x="520" y="1172" class="nm">PORT_EEPROM_BASE+i</text>
-  <rect x="696" y="1162" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1172" class="ac">IO</text>
-  <text x="752" y="1172" class="fn">byte i (0–255) del búfer en RAM del slot EN CURSO — instantáneo, no toca la flash</text>
-  <text x="752" y="1190" class="fn">hace falta 0x0800 / 0x0801 para leer o guardar de verdad</text>
-  <text x="372" y="1212" class="adr">0x0800</text><text x="520" y="1212" class="nm">PORT_EEPROM_LOAD</text>
-  <rect x="696" y="1202" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1212" class="ac">IO</text>
-  <text x="752" y="1212" class="fn">OUT cualquier valor → sustituye el búfer por los 256 bytes grabados · IN = 1 si falló</text>
-  <text x="372" y="1234" class="adr">0x0801</text><text x="520" y="1234" class="nm">PORT_EEPROM_SAVE</text>
-  <rect x="696" y="1224" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1234" class="ac">IO</text>
-  <text x="752" y="1234" class="fn">OUT cualquier valor → graba el búfer en la flash (slot EN CURSO) · IN = 1 si salió bien</text>
+  <rect x="360" y="1200" width="6" height="122" fill="#0891b2"/>
+  <text x="372" y="1213" class="grp" fill="#0e7490">HORA REAL  ·  del Wi-Fi (NTP) o del PC (compi.py)</text>
+  <text x="372" y="1234" class="adr">0x0670</text><text x="520" y="1234" class="nm">PORT_TIME_CTRL</text>
+  <rect x="696" y="1224" width="24" height="13" rx="2" fill="#0891b2"/><text x="700" y="1234" class="ac">IO</text>
+  <text x="752" y="1234" class="fn">OUT → congela la hora de ahora en 0x0671–0x067E · IN = estado: bit 0 hay hora,</text>
+  <text x="752" y="1252" class="fn">bit 1 vino del Wi-Fi, bit 2 conectando, bit 3 hay red Wi-Fi configurada</text>
+  <text x="372" y="1274" class="adr">0x0671–0x0674</text><text x="520" y="1274" class="nm">PORT_TIME_BASE</text>
+  <rect x="696" y="1264" width="24" height="13" rx="2" fill="#0891b2"/><text x="701" y="1274" class="ac">IN</text>
+  <text x="752" y="1274" class="fn">segundos desde 1970 (UTC), byte bajo primero</text>
+  <text x="372" y="1296" class="adr">0x0675–0x067B</text><text x="520" y="1296" class="nm">… + 4 … + 10</text>
+  <rect x="696" y="1286" width="24" height="13" rx="2" fill="#0891b2"/><text x="701" y="1296" class="ac">IN</text>
+  <text x="752" y="1296" class="fn">segundo, minuto, hora, día, mes, año − 2000, día de la semana (0 = domingo) — hora local</text>
+  <text x="372" y="1318" class="adr">0x067C–0x067E</text><text x="520" y="1318" class="nm">… + 11 … + 13</text>
+  <rect x="696" y="1308" width="24" height="13" rx="2" fill="#0891b2"/><text x="701" y="1318" class="ac">IN</text>
+  <text x="752" y="1318" class="fn">minutos locales desde el 1-1-2020 (24 bits): restar dos da los minutos pasados</text>
 
-  <g transform="translate(0,558)">
+  <rect x="360" y="1334" width="6" height="100" fill="#ca8a04"/>
+  <text x="372" y="1347" class="grp" fill="#a16207">EEPROM POR SLOT  ·  256 bytes persistentes, sobreviven a apagar el aparato</text>
+  <text x="372" y="1368" class="adr">0x0700–0x07FF</text><text x="520" y="1368" class="nm">PORT_EEPROM_BASE+i</text>
+  <rect x="696" y="1358" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1368" class="ac">IO</text>
+  <text x="752" y="1368" class="fn">byte i (0–255) del búfer en RAM del slot EN CURSO — instantáneo, no toca la flash</text>
+  <text x="752" y="1386" class="fn">hace falta 0x0800 / 0x0801 para leer o guardar de verdad</text>
+  <text x="372" y="1408" class="adr">0x0800</text><text x="520" y="1408" class="nm">PORT_EEPROM_LOAD</text>
+  <rect x="696" y="1398" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1408" class="ac">IO</text>
+  <text x="752" y="1408" class="fn">OUT cualquier valor → sustituye el búfer por los 256 bytes grabados · IN = 1 si falló</text>
+  <text x="372" y="1430" class="adr">0x0801</text><text x="520" y="1430" class="nm">PORT_EEPROM_SAVE</text>
+  <rect x="696" y="1420" width="24" height="13" rx="2" fill="#ca8a04"/><text x="700" y="1430" class="ac">IO</text>
+  <text x="752" y="1430" class="fn">OUT cualquier valor → graba el búfer en la flash (slot EN CURSO) · IN = 1 si salió bien</text>
+
+  <g transform="translate(0,754)">
   <rect x="360" y="692" width="6" height="20" fill="#cbd5e1"/>
   <text x="372" y="706" class="adr">resto</text>
   <text x="752" y="706" class="fn">IN → 0 · OUT → no hace nada</text>
@@ -250,5 +278,5 @@
   <text x="820" y="958" class="mono" xml:space="preserve">ADD AL,#48       ; DO3..RE#8</text>
   <text x="820" y="976" class="mono" xml:space="preserve">OUT (0x0632),AL  ; PORT_SND_NOTE</text>
   </g>
-  <text x="40" y="1590" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8, docs/isa.md §8 e include/iomap.h</text>
+  <text x="40" y="1786" class="cap">compi_panel · docs/ports.svg — mantener sincronizado con specs.txt §8, docs/isa.md §8 e include/iomap.h</text>
 </svg>

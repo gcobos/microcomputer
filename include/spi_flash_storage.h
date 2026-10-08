@@ -28,6 +28,8 @@ public:
     bool writeEeprom(int slot, const uint8_t* src) override;
     bool readSettings(uint8_t* dest) override;
     bool writeSettings(const uint8_t* src) override;
+    bool readNetConfig(uint8_t* dest) override;
+    bool writeNetConfig(const uint8_t* src) override;
 
     // Diagnóstico: JEDEC ID. Para el 25Q32FVSIG: 0xEF, 0x40, 0x16.
     void readJedecId(uint8_t* manufacturer, uint8_t* memType, uint8_t* capacity);
@@ -63,6 +65,8 @@ private:
     // sector de borrado con la EEPROM de los slots 48-59 -- se graba con el
     // mismo leer-parchear-borrar-reescribir del sector que writeEeprom.
     static constexpr uint32_t SETTINGS_ADDR = EEPROM_BASE_ADDR + MAX_PROGRAM_SLOTS * EEPROM_SLOT_SIZE; // 0x3FFC00
+    // Configuracion de red (storage.h NET_CONFIG_SIZE), detras de los ajustes
+    static constexpr uint32_t NET_CONFIG_ADDR = SETTINGS_ADDR + 64;   // 0x3FFC40
 
     uint8_t csPin_;
 

@@ -30,6 +30,13 @@ constexpr size_t EEPROM_SLOT_SIZE = 256;
 // slot, ningun programa puede tocarlos desde los puertos de EEPROM.
 constexpr size_t SETTINGS_SIZE = 16;
 
+// Configuracion de red (Wi-Fi para poner la hora por NTP, ver netclock.h):
+// [0] = NET_CONFIG_MAGIC, [1..33] SSID, [34..98] contraseña, [99..162] zona
+// horaria POSIX (cadenas con 0 al final). En el mismo KiB libre que los
+// ajustes, detras de ellos. Solo se escribe desde el USB (compi.py wifi/tz).
+constexpr size_t NET_CONFIG_SIZE = 192;
+constexpr uint8_t NET_CONFIG_MAGIC = 0x4E;
+
 // Metadatos de cada slot: viajan con el programa y se guardan en la cabecera
 // del slot en la flash (bytes 1..15, antes reservados), no en su RAM:
 //   [0]     categoria (ver SLOT_CAT_*; 0xFF = sin categoria / slot antiguo)
@@ -78,6 +85,8 @@ public:
     // Lee/escribe los SETTINGS_SIZE bytes de ajustes globales (ver arriba).
     virtual bool readSettings(uint8_t* dest) = 0;
     virtual bool writeSettings(const uint8_t* src) = 0;
+    virtual bool readNetConfig(uint8_t* dest) = 0;          // NET_CONFIG_SIZE bytes
+    virtual bool writeNetConfig(const uint8_t* src) = 0;
 };
 
 } // namespace compi

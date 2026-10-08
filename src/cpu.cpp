@@ -442,7 +442,8 @@ bool Cpu::step() {
 
 void Cpu::run(int32_t maxSteps) {
     int32_t count = 0;
-    while (!halted_ && (maxSteps < 0 || count < maxSteps)) {
+    yield_ = false;
+    while (!halted_ && !yield_ && (maxSteps < 0 || count < maxSteps)) {
         step();
         ++count;
     }

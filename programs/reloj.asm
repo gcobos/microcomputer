@@ -6,11 +6,14 @@
 ;  "fotogramas" aproximado -- mientras el aparato este en EJECUTAR+CONTINUO,
 ;  el segundero avanza al ritmo real del reloj del aparato.
 ;
-;  Como no hay pila ni bateria de respaldo, el reloj SIEMPRE arranca en
-;  12:00:00 -- no "recuerda" la hora entre ejecuciones. Para ponerlo en hora:
+;  Se pone en hora SOLO si el aparato tiene la hora real (puertos 0x0670..,
+;  que da el Wi-Fi o el PC: ver docs/isa.md), y se vuelve a ajustar a ella
+;  cada minuto. Si no la tiene, arranca en 12:00:00. A mano:
 ;     encoder DIRECCION (el de la izquierda, "ADDR") gira -> horas
 ;     encoder DATOS      (el de la derecha,  "DATA") gira -> minutos
-;  (los segundos no se pueden ajustar a mano; siguen corriendo desde 0)
+;  (los segundos no se pueden ajustar a mano; siguen corriendo desde 0).
+;  Tocar la hora a mano deja de seguir la hora real hasta la siguiente
+;  ejecucion.
 ;
 ;  Numeros romanos: I, V, X son trazos rectos, perfectos para Bresenham. Cada
 ;  numeral es una lista de hasta 5 segmentos en coordenadas LOCALES (relativas
@@ -75,6 +78,10 @@ P_DAT_POS = 0x0602   ; encoder derecho (DATA/DATOS): posicion -> minutos
 P_DAT_BTN = 0x0603   ; encoder derecho: pulsador -> segundero a 0 (igual)
 P_T2      = 0x0622   ; latido de 1 s (armado a 250 pasos de 4 ms)
 P_T3      = 0x0623   ; ritmo de sondeo del bucle principal
+P_TIME    = 0x0670   ; hora real: OUT congela, IN bit 0 = hay hora
+P_T_SEC   = 0x0675   ; segundo, minuto, hora (locales)
+P_T_MIN   = 0x0676
+P_T_HOUR  = 0x0677
 
 ; ============================================================================
 ;  ARRANQUE + BUCLE PRINCIPAL
@@ -94,8 +101,10 @@ start:
     IN  AL,(P_DAT_BTN)
     STA [dat_btn_prev],AL
 
+    STA [manual],AL         ; (AL = 0)
     MOV AL,#250
     OUT (P_T2),AL           ; arma el latido de 1 s
+    CALL sync_rtc           ; la hora real, si el aparato la tiene
 
     CALL clsg
     CALL draw_numerals
@@ -172,6 +181,7 @@ hr_upok:
 hr_mark:
     MOV AL,#1
     STA [redraw],AL
+    STA [manual],AL
 hr_done:
 
     ; --- encoder derecho (DATOS) -> minutos ---------------------------------
@@ -203,6 +213,7 @@ mn_upok:
 mn_mark:
     MOV AL,#1
     STA [redraw],AL
+    STA [manual],AL
 mn_done:
 
     ; --- latido de 1 s (T2): avanza el segundero, con acarreo a min/hora ----
@@ -235,6 +246,10 @@ st_ss_ok:
     STA [ss],AL
     MOV AL,#1
     STA [redraw],AL
+    LDA AL,[ss]
+    CMP AL,#0
+    JMPNZ sec_done
+    CALL sync_rtc            ; cada minuto, a la hora real (si no se toco a mano)
 sec_done:
 
     LDA AL,[redraw]
@@ -248,6 +263,34 @@ nr_done:
     MOV AL,#1
     CALL frame_wait
     JMP main_l
+
+; ============================================================================
+;  sync_rtc: si el aparato tiene la hora real y no se ha tocado a mano, la
+;  copia (hora de 12) y reinicia el latido para que el segundo cuadre
+; ============================================================================
+sync_rtc:
+    LDA AL,[manual]
+    CMP AL,#0
+    JMPNZ sr_done
+    OUT (P_TIME),AL          ; congela la hora de ahora
+    IN  AL,(P_TIME)
+    AND AL,#1
+    JMPZ sr_done             ; sin hora real: sigue la suya
+    IN  AL,(P_T_HOUR)
+    MOV AH,#0
+    MOV DL,#12
+    DIV DL                   ; AH = hora mod 12
+    STA [hh],AH
+    IN  AL,(P_T_MIN)
+    STA [mm],AL
+    IN  AL,(P_T_SEC)
+    STA [ss],AL
+    MOV AL,#250
+    OUT (P_T2),AL
+    MOV AL,#1
+    STA [redraw],AL
+sr_done:
+    RET
 
 ; ============================================================================
 ;  div12:  AL = AL / 12  (entrada 0..59, division entera por resta repetida)
@@ -723,6 +766,7 @@ dir_btn_prev: .space 1
 dat_btn_prev: .space 1
 ss_reset:     .space 1    ; 1 = algun pulsador tuvo flanco este ciclo -> ss=0
 redraw:       .space 1
+manual:       .space 1    ; 1 = se ha puesto la hora a mano: no seguir la real
 tmp0:         .space 1
 tmp_idx:      .space 1
 

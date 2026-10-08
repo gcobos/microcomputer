@@ -22,8 +22,8 @@ en su slot.
 
 **ISA versión 2 (2026-10):** la codificación de las instrucciones cambió
 entera (ver [`docs/isa.md`](docs/isa.md) §3). Tras flashear este firmware hay
-que reenviar todos los programas con `compi_send.py`: los `.bin` anteriores
-no son compatibles.
+que reenviar todos los programas con `tools/compi.py send`: los `.bin`
+anteriores no son compatibles.
 
 ## Fuente de verdad: `specs.txt`
 
@@ -62,24 +62,37 @@ Se puede escribir en ensamblador y grabar en un slot sin teclear byte a byte:
 ```sh
 python3 tools/casm.py programs/demo.asm -o programs/demo.bin        # ensambla
 python3 tools/sim.py  programs/demo.bin --steps 2000000             # prueba sin el aparato
-python3 tools/compi_send.py --port /dev/ttyACM0 programs/demo.asm  # slot, nombre y categoría salen del .asm
+python3 tools/compi.py send programs/demo.asm                       # slot, nombre y categoría salen del .asm
+
+python3 tools/compi.py list                  # qué hay en cada slot
+python3 tools/compi.py backup                # copia de TODO: programas, nombres y EEPROM
+python3 tools/compi.py restore backups/compi-20261008-005444
 
 # y al revés: sacar un slot del aparato (p. ej. uno editado a mano en el
 # panel, que solo existe allí) de vuelta a un .bin, y verlo como texto
-python3 tools/compi_recv.py --port /dev/ttyACM0 --slot 4 -o vuelta.bin
+python3 tools/compi.py recv 4 -o vuelta.bin
 python3 tools/compi_disasm.py vuelta.bin -o vuelta.asm
 ```
+
+El puerto se busca solo (el USB-serie del ESP32-C3; `--port` para indicarlo
+a mano), cada orden se reintenta si el aparato no contesta y todo se
+comprueba con checksum.
 
 - [`tools/casm.py`](tools/casm.py) — ensamblador (sintaxis = la del desensamblador
   + etiquetas y directivas). `tools/test_casm.py` lo verifica.
 - [`tools/sim.py`](tools/sim.py) — emulador headless de la CPU y los puertos.
-- [`tools/compi_send.py`](tools/compi_send.py) — graba una imagen en un slot por
-  USB-CDC (protocolo LOAD, el firmware la recibe en `provisionPoll()`, ver
-  `specs.txt` §7). Manda también el nombre (`.name`) y la categoría
-  (`.category`) cuando se le da un `.asm`.
-- [`tools/compi_recv.py`](tools/compi_recv.py) — saca la imagen de un slot por
-  USB-CDC (protocolo DUMP, simétrico de LOAD; admite `--len` para traer solo
-  un trozo).
+- [`tools/compi.py`](tools/compi.py) — todo lo que se hace con el aparato por
+  USB: `list`, `send` (ensambla un `.asm` y lo graba con su nombre y
+  categoría), `recv`, `backup`/`restore` (todos los slots, sus nombres y sus
+  EEPROM; restore se salta lo que ya está igual) y `rm`. `send` **conserva
+  los datos del programa**: las zonas que el `.asm` declara con `.persist`
+  (p. ej. las canciones de `play.asm`) se leen del slot antes de grabar.
+  Usa [`tools/compilink.py`](tools/compilink.py) (búsqueda del puerto,
+  reintentos, protocolo; el firmware lo atiende en `provisionPoll()`, ver
+  `specs.txt` §7).
+- [`tools/compi_send.py`](tools/compi_send.py) /
+  [`tools/compi_recv.py`](tools/compi_recv.py) — atajos de `compi.py send` /
+  `recv` con las opciones de siempre (`--port` ya es opcional).
 - [`tools/compi_disasm.py`](tools/compi_disasm.py) — vuelca un `.bin` como
   texto ensamblador, reensamblable byte a byte con `casm.py` (ver su
   docstring para el porqué y sus límites con datos incrustados en el código).
@@ -89,6 +102,17 @@ python3 tools/compi_disasm.py vuelta.bin -o vuelta.asm
   [`programs/demo.asm`](programs/demo.asm) es una demo de todas las
   capacidades (menú + gráficos, texto, sonido, animación, luces y un juego);
   va al **slot 23**.
+
+**Hora real.** El aparato no tiene pila: la hora (puertos `0x0670`..) se la
+da el Wi-Fi o el PC. Al encender se conecta un momento, pide la hora por NTP
+y apaga la radio (y repite cada 12 h): a la red guardada con
+`python3 tools/compi.py wifi MiRed` (pide la clave; se guarda en la flash)
+o, si no hay o no va, a cualquier red abierta que encuentre. Sin Wi-Fi, cualquier orden de
+`compi.py` le pone la hora y la zona horaria del PC de paso. `compi.py net`
+enseña el estado. `compi.py sound bt|buzzer` cambia la salida del sonido
+(como el botón BOOT) y `compi.py diag` dice si el Bluetooth MIDI está
+encendido y conectado, reinicios, etc. La usan `reloj.asm` (se pone en hora solo) y `tama.asm`
+(la mascota vive aunque el aparato esté apagado).
 
 Si el USB deja de responder a veces, suele ser ModemManager abriendo el
 puerto; la regla udev de [`docs/firmware.md`](docs/firmware.md) (sección de

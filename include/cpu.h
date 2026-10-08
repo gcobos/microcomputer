@@ -81,8 +81,13 @@ public:
     // Ejecuta una única instrucción. Devuelve false si la CPU quedó parada (HALT).
     bool step();
 
-    // Ejecuta hasta HALT o hasta maxSteps instrucciones (maxSteps<0 = sin límite).
+    // Ejecuta hasta HALT, hasta maxSteps instrucciones (maxSteps<0 = sin
+    // límite) o hasta que un gancho de E/S pida parar con requestYield().
     void run(int32_t maxSteps = -1);
+
+    // Desde un gancho de E/S (p. ej. PORT_SLEEP): que run() vuelva en cuanto
+    // termine la instrucción en curso. La siguiente llamada a run() sigue.
+    void requestYield() { yield_ = true; }
 
     bool halted() const { return halted_; }
 
@@ -154,6 +159,7 @@ private:
     uint16_t sp_ = 0;
     uint8_t  flags_ = 0;
     bool halted_ = false;
+    bool yield_ = false;
 
     PortReadFn  portRead_ = nullptr;
     PortWriteFn portWrite_ = nullptr;

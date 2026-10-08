@@ -15,8 +15,11 @@
 #include "iomap.h"
 #include "hal/usb_serial_jtag_ll.h"   // usbTxRecover(): reactivar la interrupcion de salida
 #include "esp_random.h"
+#include "esp_system.h"
+#include "esp_attr.h"
 #include "ui.h"
 #include "btmidi.h"
+#include "netclock.h"
 
 using namespace compi;
 
@@ -373,7 +376,30 @@ void tickBootButton() {
 // no segun le convenga. Factorizado aparte porque PORT_PROG_LOAD (ver
 // portWrite) necesita exactamente esto mismo: el programa que arranca no
 // debe heredar la pantalla, el LED o un tono en marcha del que lo cargo.
+// --- Diagnostico ("COMPI DIAG"): para saber, despues, si el aparato se ha
+// reiniciado solo (cuelgue, vigilante, caida de tension) o si un programa
+// ha vuelto a arrancar. Los dos primeros viven en la RAM del RTC sin
+// inicializar: sobreviven a un reinicio que no sea quitar la alimentacion.
+RTC_NOINIT_ATTR uint32_t g_diagMagic;
+RTC_NOINIT_ATTR uint32_t g_diagBoots;      // arranques desde el ultimo encendido
+uint8_t  g_diagReason = 0;                 // esp_reset_reason() de este arranque
+uint32_t g_diagExecStarts = 0;             // entradas a RUN (EDIT -> RUN)
+uint32_t g_diagLoads = 0;                  // cargas de un slot (panel o PORT_PROG_LOAD)
+uint32_t g_diagLightSleeps = 0;            // light sleeps con un programa dormido
+
+// Ahorro de energía pedido por el programa (PORT_POWER) y CPU dormida
+// (PORT_SLEEP) -- ver iomap.h. Se reinician en cada ejecución nueva.
+bool g_powerSave = false;
+bool g_cpuSleeping = false;
+unsigned long g_cpuWakeAt = 0;             // millis() en que sigue la CPU
+uint8_t g_timeRegs[TIME_REG_COUNT];        // hora congelada (PORT_TIME_CTRL)
+void noteActivity();                       // mas abajo, con la gestion de energia
+bool screenIsOn();
+
 void clearRuntimeOutputs() {
+    g_powerSave = false;
+    g_cpuSleeping = false;
+    memset(g_timeRegs, 0, sizeof(g_timeRegs));
     panel.resetPositions();
     memset(g_fb, 0, sizeof(g_fb));
     memset(g_text, 0, sizeof(g_text));
@@ -441,7 +467,11 @@ uint8_t portRead(uint16_t port) {
         return g_eeprom[port - PORT_EEPROM_BASE];
     if (port >= PORT_SLOT_INFO_BASE && port < PORT_SLOT_INFO_BASE + SLOT_META_SIZE)
         return g_slotInfo[port - PORT_SLOT_INFO_BASE];
+    if (port >= PORT_TIME_BASE && port < PORT_TIME_BASE + TIME_REG_COUNT)
+        return g_timeRegs[port - PORT_TIME_BASE];
     switch (port) {
+        case PORT_TIME_CTRL: return clockStatus();
+        case PORT_POWER:   return (g_powerSave ? 1 : 0) | (screenIsOn() ? 2 : 0);
         case PORT_DIR_POS: return panel.dirPos();
         case PORT_DIR_BTN: return panel.dirDown() ? 1 : 0;
         case PORT_DAT_POS: return panel.datPos();
@@ -484,6 +514,22 @@ void portWrite(uint16_t port, uint8_t value) {
         return;
     }
     if (port == PORT_LED) { g_led = (uint8_t)(value & 1); setLed(g_led); return; }
+    if (port == PORT_POWER) {
+        g_powerSave = (value & 1) != 0;
+        if (value & 2) noteActivity();      // encender la pantalla ya
+        return;
+    }
+    if (port == PORT_SLEEP) {
+        // la CPU para tras esta instruccion; loop() no la vuelve a correr
+        // hasta g_cpuWakeAt (ver ExecCont) y entretanto descansa
+        if (value) {
+            g_cpuSleeping = true;
+            g_cpuWakeAt = millis() + (unsigned long)value * 10;
+            cpu.requestYield();
+        }
+        return;
+    }
+    if (port == PORT_TIME_CTRL) { clockLatch(g_timeRegs); return; }
     if (port == PORT_PROG_LOAD) {
         // "salto" a otro programa: si el slot existe, sustituye la RAM
         // entera y reinicia la CPU (PC/SP/flags/registros) para que la
@@ -492,6 +538,7 @@ void portWrite(uint16_t port, uint8_t value) {
         // (slot vacio o fuera de 0..59) no se toca nada y sigue corriendo
         // el programa que hizo el OUT.
         const bool loadOk = flash.loadProgram((int)value, cpu.ram());
+        if (loadOk) ++g_diagLoads;
         g_lastLoadOk = loadOk ? 0 : 1;   // IN 0x0640 = 1 si FALLO (ver iomap.h)
         if (loadOk) {
             g_currentSlot = value;   // ver g_currentSlot arriba
@@ -648,7 +695,8 @@ bool      g_forceRender = false;
 void samplerCb(void*) {
     if (panel.update()) g_lastActivity = millis();
     uint32_t idle = millis() - g_lastActivity;
-    uint32_t next_ms = (g_execActive || idle < ACTIVE_WINDOW_MS) ? SAMPLE_ACTIVE_MS
+    // un programa en CONTINUO cuenta como "en uso", salvo en su modo ahorro
+    uint32_t next_ms = ((g_execActive && !g_powerSave) || idle < ACTIVE_WINDOW_MS) ? SAMPLE_ACTIVE_MS
                      : (idle < SCREEN_DIM_MS)                     ? SAMPLE_SCREENON_MS
                      :                                             SAMPLE_IDLE_MS;
     esp_timer_start_once(g_sampler, (uint64_t)next_ms * 1000);
@@ -674,6 +722,8 @@ void noteActivity() {
     applyScreenPower(SCR_FULL);
 }
 
+bool screenIsOn() { return g_scr != SCR_OFF; }
+
 // Fuerza un repintado completo de la OLED en la siguiente vuelta de loop(),
 // sin importar la vista actual -- para cuando oled.message() (provisioning)
 // ha escrito un texto transitorio directo al panel, sin pasar por g_fb/
@@ -685,6 +735,7 @@ void forceRedraw() {
 
 void loadSlot(uint8_t s) {
     if (flash.loadProgram((int)s, cpu.ram())) {
+        ++g_diagLoads;
         g_currentSlot = s;   // ver g_currentSlot arriba (EEPROM por slot)
         flash.readSlotMeta((int)s, g_currentMeta);
         cpu.reset();
@@ -812,10 +863,40 @@ void ensureRoomFor(uint16_t cursor, const ComposeState& st, uint8_t origLen) {
 //                                     solo sobre el trozo mandado)
 //     "COMPI ERR <motivo>\n"          error (slot/len fuera de rango o vacio)
 //
+// Ordenes cortas (las usa tools/compi.py para listar, copiar y restaurar):
+//     "COMPI HELLO\n"        -> "COMPI HI <slots> <version>\n" (version del
+//                               protocolo, COMPI_PROTO; para reconocer el
+//                               aparato al buscar el puerto)
+//     "COMPI LIST\n"         -> "COMPI SLOT <n> <cat> <nombre>\n" por cada
+//                               slot ocupado, luego "COMPI END <cuantos>\n"
+//     "COMPI SUM <slot>\n"   -> "COMPI OK <sum>\n" (checksum de la imagen
+//                               entera, sin mandarla) o "COMPI ERR empty"
+//     "COMPI EEDUMP <slot>\n"-> "COMPI READY 256\n", 256 bytes de su EEPROM,
+//                               "COMPI OK <sum>\n"
+//     "COMPI EELOAD <slot>\n"-> "COMPI READY\n"; el host manda 256 bytes;
+//                               "COMPI OK <sum>\n" (grabados) o ERR
+//     "COMPI DEL <slot>\n"   -> "COMPI OK 0\n": vacia el slot (no su EEPROM)
+//     "COMPI DIAG\n"         -> "COMPI DIAG <arranques> <motivo> <ms encendido>
+//                               <entradas a RUN> <cargas de slot> <light sleeps>
+//                               <sonido por BT> <estado BT> <BT conectado> <reloj>"
+//     "COMPI SOUND BT|BUZZER\n" -> salida del sonido, como el boton BOOT
+//                               (motivo = esp_reset_reason(); ver compi.py diag)
+//
+// Hora y red (protocolo 3, ver netclock.h):
+//     "COMPI TIME <epoch>\n" -> pone la hora (segundos UTC); "COMPI OK <epoch>"
+//     "COMPI WIFI <ssid> <clave>\n"  ssid y clave en HEXADECIMAL (pueden
+//                               llevar espacios); "-" como ssid = sin Wi-Fi.
+//                               Se guarda en la flash y sincroniza ya.
+//     "COMPI TZ <posix>\n"   -> zona horaria (p. ej. CET-1CEST,M3.5.0,M10.5.0/3)
+//     "COMPI SYNC\n"         -> sincroniza ya por Wi-Fi
+//     "COMPI NET\n"          -> "COMPI NET <estado> <epoch> <ssid hex|-> <tz> <usada hex|->"
+//                               (estado = bits de PORT_TIME_CTRL; usada = la
+//                               red, configurada o abierta, que dio la hora)
+//
 // Se sondea al principio de cada loop(). Las lineas que no empiezan por
-// "COMPI LOAD " o "COMPI DUMP " se ignoran (se puede seguir usando el
-// monitor serie).
+// "COMPI " se ignoran (se puede seguir usando el monitor serie).
 constexpr size_t COMPI_CHUNK = 1024;
+constexpr int COMPI_PROTO = 3;
 
 // --- Salud del canal USB (HWCDC, core de Arduino) ------------------------
 // Fallo real: si el host deja de leer a mitad de un envio largo (p.ej. otro
@@ -959,10 +1040,180 @@ void provisionDump(int slot, long len) {
     forceRedraw();
 }
 
+void diagBoot() {
+    if (g_diagMagic != 0xC0DE5EED) { g_diagMagic = 0xC0DE5EED; g_diagBoots = 0; }
+    ++g_diagBoots;
+    g_diagReason = (uint8_t)esp_reset_reason();
+}
+
+void provisionDiag() {
+    char m[96];
+    snprintf(m, sizeof(m), "COMPI DIAG %lu %u %lu %lu %lu %lu %u %u %u %u",
+             (unsigned long)g_diagBoots, (unsigned)g_diagReason, (unsigned long)millis(),
+             (unsigned long)g_diagExecStarts, (unsigned long)g_diagLoads,
+             (unsigned long)g_diagLightSleeps, g_soundBt ? 1u : 0u,
+             (unsigned)btmidiState(), btmidiConnected() ? 1u : 0u, (unsigned)clockStatus());
+    Serial.println(m);
+}
+
+void provisionHello() {
+    Serial.print("COMPI HI ");
+    Serial.print((unsigned)MAX_PROGRAM_SLOTS);
+    Serial.print(' ');
+    Serial.println(COMPI_PROTO);
+}
+
+void provisionList() {
+    uint8_t meta[SLOT_META_SIZE];
+    int count = 0;
+    for (int s = 0; s < (int)MAX_PROGRAM_SLOTS; ++s) {
+        if (!flash.readSlotMeta(s, meta)) continue;
+        char name[SLOT_META_SIZE];
+        memcpy(name, meta + 1, SLOT_META_SIZE - 1);
+        name[SLOT_META_SIZE - 1] = '\0';
+        char line[48];
+        snprintf(line, sizeof(line), "COMPI SLOT %d %u %s", s, (unsigned)meta[0], name);
+        Serial.println(line);
+        ++count;
+    }
+    Serial.print("COMPI END ");
+    Serial.println(count);
+}
+
+void provisionSum(int slot) {
+    if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS) { Serial.println("COMPI ERR header"); return; }
+    if (!flash.loadProgram(slot, g_provisionBuf)) { Serial.println("COMPI ERR empty"); return; }
+    uint32_t sum = 0;
+    for (size_t i = 0; i < PROGRAM_SIZE; ++i) sum += g_provisionBuf[i];
+    Serial.print("COMPI OK ");
+    Serial.println((unsigned long)sum);
+}
+
+void provisionEeDump(int slot) {
+    if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS ||
+        !flash.readEeprom(slot, g_provisionBuf)) {
+        Serial.println("COMPI ERR header");
+        return;
+    }
+    uint32_t sum = 0;
+    for (size_t i = 0; i < EEPROM_SLOT_SIZE; ++i) sum += g_provisionBuf[i];
+    Serial.print("COMPI READY ");
+    Serial.println((unsigned)EEPROM_SLOT_SIZE);
+    if (!usbWriteAll(g_provisionBuf, EEPROM_SLOT_SIZE)) return;
+    Serial.print("COMPI OK ");
+    Serial.println((unsigned long)sum);
+}
+
+void provisionEeLoad(int slot) {
+    if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS) { Serial.println("COMPI ERR header"); return; }
+    Serial.println("COMPI READY");
+    Serial.setTimeout(5000);   // 256 bytes caben de sobra en la cola de recepcion
+    size_t n = Serial.readBytes(g_provisionBuf, EEPROM_SLOT_SIZE);
+    Serial.setTimeout(1000);
+    if (n != EEPROM_SLOT_SIZE) {
+        Serial.print("COMPI ERR datos ");
+        Serial.println((unsigned long)n);
+        return;
+    }
+    uint32_t sum = 0;
+    for (size_t i = 0; i < EEPROM_SLOT_SIZE; ++i) sum += g_provisionBuf[i];
+    if (!flash.writeEeprom(slot, g_provisionBuf)) { Serial.println("COMPI ERR flash"); return; }
+    // el programa en curso trabaja sobre su copia en RAM (g_eeprom): si es
+    // el de este slot, la siguiente carga (OUT 0x0800) ya lee lo nuevo
+    Serial.print("COMPI OK ");
+    Serial.println((unsigned long)sum);
+}
+
+void provisionDel(int slot) {
+    if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS) { Serial.println("COMPI ERR header"); return; }
+    noteActivity();
+    oled.message("DELETING...");
+    flash.deleteProgram(slot);
+    if (ui.slot == (uint8_t)slot) prevSlot = 0xFF;
+    Serial.println("COMPI OK 0");
+    noteActivity();
+    forceRedraw();
+}
+
+// hexadecimal -> texto (para el ssid y la clave); false si no es hex valido
+static bool hexToStr(const char* hex, char* out, size_t cap) {
+    size_t n = strlen(hex);
+    if (n % 2 || n / 2 >= cap) return false;
+    for (size_t i = 0; i < n / 2; ++i) {
+        unsigned v;
+        if (sscanf(hex + 2 * i, "%2x", &v) != 1) return false;
+        out[i] = (char)v;
+    }
+    out[n / 2] = '\0';
+    return true;
+}
+
+static void saveNet(const char* ssid, const char* pass, const char* tz) {
+    uint8_t cfg[NET_CONFIG_SIZE];
+    netBuildConfig(cfg, ssid, pass, tz);
+    flash.writeNetConfig(cfg);
+    netApply(cfg);
+}
+
+static void provisionNet(const char* line) {
+    unsigned long epoch;
+    char a[160], b[160];
+    if (sscanf(line, "COMPI TIME %lu", &epoch) == 1) {
+        clockSetEpoch((uint32_t)epoch);
+        Serial.print("COMPI OK ");
+        Serial.println(epoch);
+    } else if (sscanf(line, "COMPI WIFI %159s %159s", a, b) >= 1) {
+        char ssid[33] = "", pass[65] = "";
+        if (strcmp(a, "-") != 0 &&
+            (!hexToStr(a, ssid, sizeof(ssid)) ||
+             (sscanf(line, "COMPI WIFI %*s %159s", b) == 1 && !hexToStr(b, pass, sizeof(pass))))) {
+            Serial.println("COMPI ERR header");
+            return;
+        }
+        // la zona se conserva
+        char tz[64];
+        strncpy(tz, netTz(), sizeof(tz) - 1); tz[sizeof(tz) - 1] = '\0';
+        saveNet(ssid, pass, tz);
+        clockSyncNow();
+        Serial.println("COMPI OK 0");
+    } else if (strncmp(line, "COMPI TZ ", 9) == 0) {
+        char ssidKeep[33], passKeep[65] = "";
+        uint8_t cfg[NET_CONFIG_SIZE];
+        flash.readNetConfig(cfg);
+        if (cfg[0] == NET_CONFIG_MAGIC) {
+            memcpy(ssidKeep, cfg + 1, 32); ssidKeep[32] = '\0';
+            memcpy(passKeep, cfg + 34, 64); passKeep[64] = '\0';
+        } else {
+            ssidKeep[0] = '\0';
+        }
+        saveNet(ssidKeep, passKeep, line + 9);
+        Serial.println("COMPI OK 0");
+    } else if (strcmp(line, "COMPI SYNC") == 0) {
+        clockSyncNow();
+        Serial.println("COMPI OK 0");
+    } else if (strcmp(line, "COMPI NET") == 0) {
+        Serial.print("COMPI NET ");
+        Serial.print(clockStatus());
+        Serial.print(' ');
+        Serial.print((unsigned long)clockEpoch());
+        Serial.print(' ');
+        const char* ss = netSsid();
+        if (!ss[0]) Serial.print('-');
+        for (; *ss; ++ss) { char h[3]; snprintf(h, sizeof(h), "%02x", (uint8_t)*ss); Serial.print(h); }
+        Serial.print(' ');
+        Serial.print(netTz());
+        Serial.print(' ');
+        const char* ls = netLastSsid();     // la que dio la hora
+        if (!ls[0]) Serial.print('-');
+        for (; *ls; ++ls) { char h[3]; snprintf(h, sizeof(h), "%02x", (uint8_t)*ls); Serial.print(h); }
+        Serial.println();
+    }
+}
+
 void provisionPoll() {
     if (!Serial.available()) return;
 
-    char line[96];
+    char line[256];
     size_t n = 0;
     unsigned long t0 = millis();
     while (millis() - t0 < 1000) {
@@ -992,6 +1243,23 @@ void provisionPoll() {
         provisionLoad(slot, len, meta);
         return;
     }
+    if (strcmp(line, "COMPI HELLO") == 0) { provisionHello(); return; }
+    if (strncmp(line, "COMPI TIME ", 11) == 0 || strncmp(line, "COMPI WIFI ", 11) == 0 ||
+        strncmp(line, "COMPI TZ ", 9) == 0 || strcmp(line, "COMPI SYNC") == 0 ||
+        strcmp(line, "COMPI NET") == 0) { provisionNet(line); return; }
+    if (strcmp(line, "COMPI LIST") == 0)  { provisionList();  return; }
+    if (strcmp(line, "COMPI DIAG") == 0)  { provisionDiag();  return; }
+    if (strcmp(line, "COMPI SOUND BT") == 0 || strcmp(line, "COMPI SOUND BUZZER") == 0) {
+        // como el boton BOOT (sin jingle) y se guarda igual
+        const bool bt = (line[12] == 'B' && line[13] == 'T');
+        if (bt != g_soundBt) { setSoundBt(bt); markSettingsDirty(); saveSettings(); }
+        Serial.println("COMPI OK 0");
+        return;
+    }
+    if (sscanf(line, "COMPI SUM %d", &slot) == 1)    { provisionSum(slot);    return; }
+    if (sscanf(line, "COMPI EEDUMP %d", &slot) == 1) { provisionEeDump(slot); return; }
+    if (sscanf(line, "COMPI EELOAD %d", &slot) == 1) { provisionEeLoad(slot); return; }
+    if (sscanf(line, "COMPI DEL %d", &slot) == 1)    { provisionDel(slot);    return; }
     if (sscanf(line, "COMPI DUMP %d %ld", &slot, &len) == 2) {
         provisionDump(slot, len);
         return;
@@ -1003,6 +1271,7 @@ void provisionPoll() {
 }
 
 void setup() {
+    diagBoot();
     // Lo PRIMERO de todo, antes de tocar la pantalla para nada (ni siquiera
     // oled.begin(), que ya puede dejar algo visible en la OLED): leer los
     // interruptores. panel.begin() no depende de Serial/Wire/OLED (el '165
@@ -1040,6 +1309,11 @@ void setup() {
     if (!oled.begin())  failBlink(200); // parpadeo lento = falla la OLED
     if (!flash.init())  failBlink(80);  // parpadeo rápido = falla la flash
     loadSettings();                     // brillo y salida del sonido guardados (antes de aplicar el contraste)
+    {
+        uint8_t net[NET_CONFIG_SIZE];
+        flash.readNetConfig(net);
+        clockBegin(net);                // zona horaria, y la hora por Wi-Fi si hay red
+    }
 
     // Arranque automatico: si el slot 0 tiene algo grabado (pensado para un
     // "sistema operativo" que arranque otros programas, ver PORT_PROG_LOAD
@@ -1094,6 +1368,7 @@ void loop() {
     // y se guarda). Con el sonido ya en el zumbador, un corte no hace nada.
     if (btmidiTakeLost() && g_soundBt && !g_muteJingleActive) toggleMute();
     tickSettingsSave();
+    clockTick();
 
     provisionPoll();
     // panel.update() lo hace el esp_timer (samplerCb), no loop().
@@ -1118,6 +1393,7 @@ void loop() {
     // empezar de cero: volver a EDITAR y otra vez a RUN, o pulsación larga
     // de ADDR en PASO.
     if (enterExec) {
+        ++g_diagExecStarts;
         cpu.reset();                       // los programas arrancan en PC=0
         clearRuntimeOutputs();
         running = abajo;                   // CONTINUO corre; PASO espera
@@ -1441,7 +1717,8 @@ void loop() {
     case View::ExecCont: {
         tickTimers();
         tickSound();
-        if (running && !cpu.halted()) {
+        if (g_cpuSleeping && (long)(millis() - g_cpuWakeAt) >= 0) g_cpuSleeping = false;
+        if (running && !cpu.halted() && !g_cpuSleeping) {
             // cpu.run(N) en vez de un bucle propio llamando a cpu.step(): al
             // estar run()/step() en el mismo archivo (cpu.cpp), el compilador
             // integra step() dentro del bucle de run() (visto con -O3, ver
@@ -1467,11 +1744,16 @@ void loop() {
     // --- gestión de energía ------------------------------------------
     // Un programa ejecutando en CONTINUO cuenta como "en uso" (no atenúa, no
     // duerme, muestreo rápido).
+    // En su modo ahorro (PORT_POWER), un programa SÍ atenúa y apaga la
+    // pantalla, y antes: a los PS_DIM_MS / PS_OFF_MS sin tocar el panel.
     g_execActive = (view == View::ExecCont && running && !cpu.halted());
-    const uint32_t idleMs = g_execActive ? 0 : (millis() - g_lastActivity);
+    const bool psExec = g_execActive && g_powerSave;
+    const uint32_t idleMs = (g_execActive && !g_powerSave) ? 0 : (millis() - g_lastActivity);
+    const uint32_t dimMs = psExec ? PS_DIM_MS : SCREEN_DIM_MS;
+    const uint32_t offMs = psExec ? PS_OFF_MS : SCREEN_OFF_MS;
 
-    applyScreenPower(idleMs < SCREEN_DIM_MS ? SCR_FULL
-                   : idleMs < SCREEN_OFF_MS ? SCR_DIM : SCR_OFF);
+    applyScreenPower(idleMs < dimMs ? SCR_FULL
+                   : idleMs < offMs ? SCR_DIM : SCR_OFF);
 
     if (view != View::ExecCont && (changed || g_forceRender)) {
         oled.render(cpu, ui);
@@ -1496,4 +1778,28 @@ void loop() {
         esp_light_sleep_start();
     }
 #endif
+    // Programa dormido (PORT_SLEEP): no hay nada que emular hasta
+    // g_cpuWakeAt. Con la pantalla apagada y su modo ahorro, light sleep a
+    // tramos de SAMPLE_IDLE_MS (el panel se sigue muestreando al despertar);
+    // si no, se cede la CPU un milisegundo (la tarea inactiva la para).
+    // No se duerme del todo con sonido sonando, Bluetooth o Wi-Fi activos,
+    // ni con un host de serie conectado (igual que arriba).
+    if (g_execActive && g_cpuSleeping) {
+        const bool deep = psExec && g_scr == SCR_OFF && !Serial && !g_sndHz &&
+                          !g_muteJingleActive && !g_soundBt && !clockBusy();
+#ifndef COMPI_NO_LIGHT_SLEEP
+        if (deep) {
+            long left = (long)(g_cpuWakeAt - millis());
+            if (left > 0) {
+                uint32_t ms = (uint32_t)left < SAMPLE_IDLE_MS ? (uint32_t)left : SAMPLE_IDLE_MS;
+                setLed(false);
+                ++g_diagLightSleeps;
+                esp_sleep_enable_timer_wakeup((uint64_t)ms * 1000);
+                esp_light_sleep_start();
+                setLed(g_led);
+            }
+        } else
+#endif
+        delay(1);
+    }
 }

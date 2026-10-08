@@ -77,9 +77,9 @@
 ;  NEW SONG solo tocan la RAM. Como se graba la RAM entera, al volver a
 ;  arrancar el programa tambien se recupera la cancion de trabajo que habia
 ;  en ese momento.
-;  OJO: volver a ENVIAR play.bin desde el ordenador (compi_send) sustituye
-;  el slot entero y las canciones se pierden. Para conservarlas, antes:
-;     python3 tools/compi_recv.py --port /dev/ttyACM0 --slot 22 -o copia.bin
+;  Reenviar el programa desde el ordenador NO borra las canciones: la
+;  directiva .persist marca su zona (0x4000-0xC7FF) y tools/compi.py send la
+;  copia del slot antes de grabar (con --no-persist, se borran).
 ;  Se graba en su propio slot, sea cual sea (PORT_CUR_SLOT): se puede mover.
 ;
 ;  Ensamblar y enviar al slot 22:
@@ -94,6 +94,8 @@
     .name "PLAY"
 
     .category PROGRAM
+    .persist 0x4000, 0xC800   ; banco, longitudes y cancion de trabajo: reenviar
+                              ; el programa con tools/compi.py send los conserva
     .org 0x0000
 
 ; --- puertos ---------------------------------------------------------------

@@ -13,11 +13,13 @@ namespace compi {
 //   0x0600 .. 0x0603   encoders y pulsadores (solo IN)
 //   0x0610             LED de a bordo
 //   0x0611             número aleatorio (generador por hardware del ESP32)
+//   0x0612 .. 0x0613   ahorro de energía del programa, y dormir la CPU
 //   0x0620 .. 0x0629   temporizadores
 //   0x0630 .. 0x0634   sonido (piezo / Bluetooth MIDI)
 //   0x0640 .. 0x0643   carga/grabado de programas, consulta de slots, slot en curso
 //   0x0650 .. 0x0652   configuración (brillo de pantalla, activar/desactivar sonido, grabar)
 //   0x0660 .. 0x066E   metadatos (categoría + nombre) del slot consultado
+//   0x0670 .. 0x067E   hora real (Wi-Fi/NTP o puesta desde el PC)
 //   0x0700 .. 0x07FF   EEPROM del slot en curso (256 bytes persistentes)
 //   0x0800 .. 0x0801   EEPROM: cargar/grabar de verdad en la flash
 //   resto              IN -> 0 ; OUT -> nada
@@ -124,6 +126,36 @@ constexpr uint16_t PORT_LED = 0x0610;
 // repita). OUT: no hace nada. Sustituye a los LFSR que cada juego sembraba
 // a mano con la posición de un encoder.
 constexpr uint16_t PORT_RANDOM = 0x0611;
+
+// --- Ahorro de energía del programa (0x0612 .. 0x0613) ---------------
+// Mientras un programa corre en CONTINUO, el aparato cuenta como "en uso":
+// pantalla a pleno brillo, panel muestreado cada 2 ms, nunca duerme. Un
+// programa que pasa horas encendido (p. ej. una mascota virtual) puede
+// pedir lo contrario, y además ceder la CPU en vez de esperar dando vueltas:
+//
+//   0x0612 PORT_POWER  OUT bit 0 = 1: modo ahorro. La pantalla se atenúa a
+//                      los PS_DIM_MS sin tocar el panel y se apaga a los
+//                      PS_OFF_MS; el panel se muestrea más despacio. Girar
+//                      o pulsar algo la vuelve a encender (y el programa
+//                      recibe ese giro/pulsación como siempre: puede mirar
+//                      el bit 1 de IN antes, para no tomarlo como orden).
+//                      OUT bit 1 = 1: enciende la pantalla ya (como si se
+//                      hubiera tocado el panel), p. ej. para avisar.
+//                      IN bit 0 = modo ahorro, bit 1 = pantalla encendida
+//                      (aunque sea atenuada). Vuelve a 0 al arrancar una
+//                      ejecución.
+//   0x0613 PORT_SLEEP  OUT n: la CPU emulada se para n x 10 ms (0 = nada)
+//                      y sigue en la instrucción siguiente. Mientras, el
+//                      firmware no gasta (y con la pantalla apagada y el
+//                      modo ahorro, el ESP32 entra en light sleep). Los
+//                      temporizadores, el sonido y el panel siguen. Es la
+//                      forma de esperar sin gastar batería: en vez de un
+//                      bucle IN/CMP/JMPNZ sobre un temporizador. Solo en
+//                      CONTINUO (en PASO no para). IN: 0.
+constexpr uint16_t PORT_POWER = 0x0612;
+constexpr uint16_t PORT_SLEEP = 0x0613;
+constexpr uint32_t PS_DIM_MS = 5000;
+constexpr uint32_t PS_OFF_MS = 10000;
 
 // --- Temporizadores (10 puertos, 0x0620 .. 0x0629) -------------------
 // OUT carga el temporizador con un valor (0-255). A partir de ahí decrece
@@ -237,6 +269,32 @@ constexpr uint16_t PORT_PROG_SAVE = 0x0641;
 constexpr uint16_t PORT_SLOT_QUERY = 0x0642;
 constexpr uint16_t PORT_CUR_SLOT   = 0x0643;
 constexpr uint16_t PORT_SLOT_INFO_BASE = 0x0660;
+
+// --- Hora real (0x0670 .. 0x067E) ---------------------------------------
+// La da el Wi-Fi por NTP (la red configurada con compi.py wifi o, si no,
+// cualquier red abierta; se conecta un momento al arrancar y cada 12 h, y
+// apaga la radio) o el PC por
+// el USB (compi.py time). Sin ninguna, no hay hora: el aparato no tiene pila
+// que la conserve apagado. Ver netclock.h.
+//
+//   0x0670 PORT_TIME_CTRL  OUT (cualquier valor): congela la hora de ahora
+//                          en los registros 0x0671..0x067E, para leerlos
+//                          todos de la MISMA hora (sin que cambie el
+//                          minuto entre una lectura y otra).
+//                          IN: estado. bit 0 = hay hora, bit 1 = vino del
+//                          Wi-Fi, bit 2 = conectando ahora, bit 3 = hay una
+//                          red Wi-Fi configurada.
+//   0x0671..0x0674  IN: segundos desde 1-1-1970 UTC (epoch), byte bajo primero
+//   0x0675 segundo, 0x0676 minuto, 0x0677 hora (0..23) -- hora LOCAL
+//   0x0678 dia (1..31), 0x0679 mes (1..12), 0x067A año - 2000
+//   0x067B dia de la semana (0 = domingo)
+//   0x067C..0x067E  IN: minutos locales desde el 1-1-2020 00:00 (24 bits,
+//                   byte bajo primero): para contar cuanto ha pasado sin
+//                   hacer divisiones (sirve hasta el año 2051).
+//   Todos a 0 si no hay hora. Los registros solo cambian con OUT 0x0670.
+constexpr uint16_t PORT_TIME_CTRL  = 0x0670;
+constexpr uint16_t PORT_TIME_BASE  = 0x0671;   // 14 registros: ver clockLatch()
+constexpr uint8_t  TIME_REG_COUNT  = 14;
 
 // --- Configuración del propio aparato (0x0650 .. 0x0652) --------------
 // Ajustes globales del aparato (brillo y sonido). Cualquier programa puede

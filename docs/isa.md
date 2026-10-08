@@ -315,6 +315,8 @@ de periféricos en `0x0600`–`0x0801`.
 | `0x0603` | IN | Encoder DATA: bit 0 = pulsado. |
 | `0x0610` | E/S | **LED** azul de a bordo: `OUT` bit 0 = 1 lo enciende. `IN` = eco. |
 | `0x0611` | IN | **Número aleatorio**: un byte nuevo en cada lectura (generador por hardware del ESP32). |
+| `0x0612` | E/S | **Ahorro de energía**: `OUT` bit 0 = 1 → la pantalla se atenúa a los 5 s sin tocar el panel y se apaga a los 10 s (el panel se muestrea más despacio); bit 1 = 1 → enciende la pantalla ya. `IN` bit 0 = modo ahorro, bit 1 = pantalla encendida. Vuelve a 0 al arrancar una ejecución. |
+| `0x0613` | OUT | **Dormir**: la CPU se para `n` × 10 ms y sigue en la instrucción siguiente. Mientras, el aparato no gasta (con la pantalla apagada y el modo ahorro, el ESP32 entra en reposo). Temporizadores, sonido y panel siguen. |
 | `0x0620` … `0x0629` | E/S | **Temporizadores** t0…t9. `OUT` arma con 0–255; decrece solo hasta 0. `IN` lee el valor actual. |
 | `0x0630` | E/S | **Sonido** – frecuencia, byte bajo (solo se engancha). |
 | `0x0631` | E/S | **Sonido** – frecuencia, byte alto; al escribirlo suena `Hz = alto·256 + bajo` (0 = silencio). |
@@ -329,6 +331,10 @@ de periféricos en `0x0600`–`0x0801`.
 | `0x0651` | E/S | **Sonido** activado (≠0) / silenciado (0). `OUT` solo desde el slot 0; `IN` = 1 si está activado. |
 | `0x0652` | OUT | **Grabar ajustes** (brillo y sonido) en la flash, si han cambiado. Solo desde el slot 0. |
 | `0x0660` … `0x066E` | IN | **Metadatos del slot consultado**: `0x0660` = categoría (2 juego, 3 programa, 4 utilidad, 5 demo, 6 documentación, 1 sistema; `0xFF` = ninguna), `0x0661`… = nombre ASCII (hasta 14, relleno con 0). Los pone el ensamblador (`.name`, `.category`). |
+| `0x0670` | E/S | **Hora real**: `OUT` congela la hora de ahora en `0x0671`–`0x067E` (para leerlas todas del mismo instante). `IN` = estado: bit 0 hay hora, bit 1 vino del Wi-Fi, bit 2 conectando, bit 3 hay red configurada. |
+| `0x0671` … `0x0674` | IN | **Hora real**: segundos desde 1970 (UTC), byte bajo primero. |
+| `0x0675` … `0x067B` | IN | **Hora real, local**: segundo, minuto, hora, día, mes, año − 2000, día de la semana (0 = domingo). |
+| `0x067C` … `0x067E` | IN | **Hora real**: minutos locales desde el 1-1-2020 (24 bits): para contar cuánto ha pasado sin dividir. |
 | `0x0700` … `0x07FF` | E/S | **EEPROM** del slot en curso: búfer de 256 bytes en RAM (instantáneo). |
 | `0x0800` | E/S | **EEPROM**: `OUT` carga el búfer desde la flash. `IN` = 1 si falló. |
 | `0x0801` | E/S | **EEPROM**: `OUT` graba el búfer en la flash. `IN` = 1 si salió bien. |
@@ -387,7 +393,7 @@ duración del ANTERIOR en vez de la suya. Patrón correcto:
 
 **Carga y grabado de programas** (`0x0640`–`0x0641`): dan acceso a los
 mismos 60 slots de la flash (`storage.h`, `MAX_PROGRAM_SLOTS`) que usan el
-panel físico y `compi_send.py`/`compi_recv.py`, pero desde el propio programa
+panel físico y `tools/compi.py`, pero desde el propio programa
 en ejecución — sirve para hacer un "menú" en un slot (típicamente el 0) que
 liste y arranque otros: `OUT (0x0640),reg` con el número de slot salta a él
 (carga sus 64 KiB en la RAM de la CPU y la reinicia, y de paso deja
@@ -396,6 +402,28 @@ arranca no herede nada del que lo cargó); `OUT (0x0641),reg` graba la RAM
 actual en el slot dado y sigue ejecutando el mismo programa.
 Igual que el resto de puertos, un slot vacío o un número ≥ 60 simplemente no
 hace nada, no cuelga ni corrompe memoria.
+
+**Ahorro de energía y dormir** (`0x0612`–`0x0613`): un programa en marcha
+cuenta como "en uso" (pantalla a tope, el panel leído cada 2 ms). Uno que pase
+horas encendido, como `tama.asm`, puede pedir el modo ahorro (`OUT
+(0x0612),reg` con 1) y, en vez de esperar dando vueltas en un bucle sobre un
+temporizador, dormir: `MOV AL,#5` + `OUT (0x0613),AL` para 50 ms sin gastar.
+Con la pantalla apagada, el primer giro o pulsación la enciende, y el
+programa lo recibe igual: puede mirar el bit 1 de `IN (0x0612)` para no
+tomarlo como una orden.
+
+**Hora real** (`0x0670`–`0x067E`): la pone el Wi-Fi por NTP (la red que se le
+haya dado con `tools/compi.py wifi` o, si no, cualquier red abierta: se
+conecta un momento al arrancar y cada 12 h, y apaga la radio) o el PC por el USB (`tools/compi.py`, de paso en
+cualquier orden, o `compi.py time`). Sin ninguna de las dos no hay hora:
+el aparato no tiene pila. Patrón:
+```
+    OUT (0x0670),AL    ; congelar la hora de ahora
+    IN  AL,(0x0670)
+    AND AL,#1
+    JMPZ sin_hora      ; bit 0 = 0: no hay hora
+    IN  AL,(0x0677)    ; hora local (0..23)
+```
 
 **Temporizadores** (`0x0620`–`0x0629`): 10 cuentas atrás. Cada `t_i` baja 1
 cada `1 << i` ms → t0 = 1 ms/paso, t1 = 2, t2 = 4, t3 = 8, t4 = 16, t5 = 32,

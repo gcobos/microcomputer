@@ -55,6 +55,8 @@ class Ports:
         self.dat_btn = 0
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
         self.snd_vel = 100   # 0x0634: velocidad MIDI (solo Bluetooth en el aparato)
+        self.power = 0       # 0x0612: modo ahorro (bit 0) -- aqui solo se recuerda
+        self.time_regs = [0] * 14   # 0x0671..0x067E (los congela OUT 0x0670)
         self.snd_hz = 0
         self.now_ns = 0
         self.instr_ns = instr_ns
@@ -143,6 +145,12 @@ class Ports:
             return self.current_slot
         if port == 0x0611:
             return self.rng.randrange(256)
+        if port == 0x0612:
+            return (self.power & 1) | 2          # la pantalla del simulador nunca se apaga
+        if port == 0x0670:
+            return 0x01 if self.epoch0 is not None else 0
+        if 0x0671 <= port < 0x0671 + 14:
+            return self.time_regs[port - 0x0671]
         if 0x0660 <= port < 0x0660 + 15:
             return self.slot_info[port - 0x0660]
         if port == 0x0650:
@@ -195,6 +203,17 @@ class Ports:
         if port == 0x0610:
             self.led = val & 1
             return
+        if port == 0x0612:
+            self.power = val & 1
+            return
+        if port == 0x0613:
+            # dormir: el tiempo simulado salta n x 10 ms (los temporizadores
+            # lo ven en el siguiente tick), sin ejecutar nada entretanto
+            self.now_ns += val * 10_000_000
+            return
+        if port == 0x0670:
+            self._latch_time()
+            return
         if port == 0x0640:
             self._prog_load(val)
             return
@@ -229,6 +248,26 @@ class Ports:
         if port == 0x0801:
             self._eep_save()
             return
+
+    # hora real simulada (0x0670..0x067E): epoch0 = la hora al arrancar el
+    # simulador (la del PC, o --epoch; None = sin hora, --no-time); avanza
+    # con el tiempo simulado
+    epoch0 = None
+
+    def _latch_time(self):
+        import time as _t
+        if self.epoch0 is None:
+            self.time_regs = [0] * 14
+            return
+        e = int(self.epoch0 + self.now_ns // 1_000_000_000)
+        lt = _t.localtime(e)
+        import datetime as _d
+        days = (_d.date(lt.tm_year, lt.tm_mon, lt.tm_mday) - _d.date(2020, 1, 1)).days
+        lmin = days * 1440 + lt.tm_hour * 60 + lt.tm_min
+        self.time_regs = [e & 255, (e >> 8) & 255, (e >> 16) & 255, (e >> 24) & 255,
+                          lt.tm_sec, lt.tm_min, lt.tm_hour, lt.tm_mday, lt.tm_mon,
+                          lt.tm_year - 2000, (lt.tm_wday + 1) % 7,
+                          lmin & 255, (lmin >> 8) & 255, (lmin >> 16) & 255]
 
     def _eep_path(self):
         if self.slots_dir is None:
@@ -307,6 +346,8 @@ class Ports:
             self.timer_set_ns[i] = self.now_ns
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
         self.snd_vel = 100   # 0x0634: velocidad MIDI (solo Bluetooth en el aparato)
+        self.power = 0       # 0x0612: modo ahorro (bit 0) -- aqui solo se recuerda
+        self.time_regs = [0] * 14   # 0x0671..0x067E (los congela OUT 0x0670)
         self._snd(0)
         # brillo y sonido: preferencias de TODO el aparato -- NO se tocan al
         # cargar otro programa, igual que main.cpp (ver iomap.h).
@@ -691,6 +732,11 @@ def main(argv=None):
     ap.add_argument("--frame-every", type=int, default=0,
                     help="vuelca la pantalla cada N instrucciones")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--epoch", type=int,
+                    help="hora real al arrancar (segundos UTC) para 0x0670..; "
+                         "por defecto, la del PC")
+    ap.add_argument("--no-time", action="store_true",
+                    help="sin hora real (como el aparato sin Wi-Fi ni PC)")
     ap.add_argument("--slot", type=int, default=0,
                     help="slot 'en curso' para los puertos de EEPROM "
                          "(0x0700-0x0801); por defecto 0")
@@ -704,6 +750,8 @@ def main(argv=None):
         image = f.read()
 
     ports = Ports(instr_ns=args.instr_ns, slots_dir=args.slots_dir)
+    import time as _time
+    ports.epoch0 = None if args.no_time else (args.epoch if args.epoch is not None else int(_time.time()))
     ports.current_slot = args.slot
     cpu = Cpu(image, ports)
     events = load_script(args.script)

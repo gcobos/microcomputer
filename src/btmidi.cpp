@@ -78,6 +78,8 @@ const char* btmidiName() { return g_name; }
 
 bool btmidiConnected() { return g_connected; }
 
+uint8_t btmidiState() { return g_state; }
+
 bool btmidiTakeLost() {
     if (!g_lost) return false;
     g_lost = false;

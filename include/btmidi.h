@@ -27,6 +27,9 @@ void btmidiTick();
 
 bool btmidiConnected();
 
+// 0 = parado, 1 = buscando otros compi, 2 = anunciandose / listo (diagnostico)
+uint8_t btmidiState();
+
 // true UNA vez tras cortarse una conexión (el otro lado se ha ido): main.cpp
 // vuelve entonces al zumbador, como si se pulsara BOOT.
 bool btmidiTakeLost();
