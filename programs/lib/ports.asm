@@ -13,6 +13,8 @@ P_LED         = 0x0610   ; LED de a bordo (bit 0)
 P_RANDOM      = 0x0611   ; IN: byte aleatorio (generador por hardware)
 P_POWER       = 0x0612   ; OUT bit0 = modo ahorro, bit1 = encender pantalla; IN bit1 = encendida
 P_SLEEP       = 0x0613   ; OUT n: la CPU duerme n x 10 ms (esperar sin gastar)
+P_BAT_PCT     = 0x0614   ; IN: bateria 0..100 % (255 = aun sin medir)
+P_BAT_V       = 0x0615   ; IN: tension en pasos de 20 mV (>= 220: con USB)
 P_T0          = 0x0620   ; temporizadores: t_i baja 1 cada 2^i ms
 P_T3          = 0x0623   ;   8 ms/paso
 P_T4          = 0x0624   ;  16 ms/paso
@@ -26,6 +28,7 @@ P_SND_FREQ_HI = 0x0631
 P_SND_NOTE    = 0x0632   ; nota MIDI (0 = silencio)
 P_SND_DUR     = 0x0633   ; duracion automatica x10 ms (0 = sostenida)
 P_SND_VEL     = 0x0634   ; velocidad MIDI 1..127 (solo Bluetooth; pegajosa)
+P_SND_INSTR   = 0x0635   ; instrumento: 0 ORGAN, 1 PIANO, 2 GUITAR, 3 BELL
 P_PROG_LOAD   = 0x0640   ; OUT slot: cargar y saltar a ese programa
 P_PROG_SAVE   = 0x0641   ; OUT slot: grabar la RAM entera ahi
 P_SLOT_QUERY  = 0x0642   ; OUT slot: consultar sus metadatos; IN: 1 si usado

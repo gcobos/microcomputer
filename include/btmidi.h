@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 // Salida del sonido por Bluetooth (BLE MIDI), alternativa al zumbador: el
-// botón BOOT y SETTINGS de sisop eligen a dónde va (ver g_soundBt en
+// botón BOOT y SETTINGS de sisop eligen a dónde va (ver g_soundMode en
 // main.cpp). El aparato se anuncia como "compi-midiN": al arrancar el
 // Bluetooth busca BTMIDI_SCAN_S segundos otros compi-midiN anunciándose y se
 // queda con el número libre más bajo (0, 1, 2...). Uno que ya esté
@@ -21,11 +21,30 @@ constexpr uint8_t BTMIDI_CHANNEL  = 1;
 // no gasta RAM ni energía en la radio. Llamarla otra vez no hace nada.
 void btmidiBegin();
 
+// Apaga del todo la pila BLE y la radio (al volver al zumbador): el
+// controlador Bluetooth del C3, tal como viene compilado el core de Arduino,
+// no duerme la radio, y encendido gasta ~80 mA de mas. btmidiBegin() la
+// vuelve a arrancar.
+void btmidiEnd();
+
 // Una vez por vuelta de loop(): procesa lo que llegue (mantiene viva la
 // conexión). No hace nada si no se ha arrancado.
 void btmidiTick();
 
 bool btmidiConnected();
+
+// Intervalo de conexión BLE negociado, en µs (0 = sin conexión). El compi
+// pide 7,5 ms al conectar (o 7,5-15 si no); el ordenador decide (btmidi.cpp).
+uint16_t btmidiConnIntervalUs();
+
+// PRUEBA (COMPI BTITVL): pide otro intervalo, en unidades de 1,25 ms.
+void btmidiRequestInterval(uint16_t minItvl, uint16_t maxItvl);
+
+// Instrumento (Program Change General MIDI, 0..127) de las notas
+// siguientes: se envía justo antes de la próxima nota si es distinto del
+// último enviado (y otra vez tras cada conexión nueva). 0xFF = no enviar
+// nada (el sintetizador sigue con el suyo).
+void btmidiProgram(uint8_t prog);
 
 // 0 = parado, 1 = buscando otros compi, 2 = anunciandose / listo (diagnostico)
 uint8_t btmidiState();

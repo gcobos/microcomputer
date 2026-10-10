@@ -315,13 +315,34 @@ class Link:
             self._send_line("COMPI DIAG")
             p = self._wait(["COMPI DIAG"], 5).split()
             keys = ("boots", "reason", "uptime_ms", "exec_starts", "loads", "light_sleeps",
-                    "sound_bt", "bt_state", "bt_connected", "clock")
-            return dict(zip(keys, (int(x) for x in p[2:12])))
+                    "sound_bt", "bt_state", "bt_connected", "clock", "bat_mv", "usb", "bt_itvl_us")
+            return dict(zip(keys, (int(x) for x in p[2:15])))
         return self._retry("diagnostico", go)
 
-    def set_sound(self, bt):
+    def tone(self, hz, duty, ms, decay=False):
+        """PRUEBA del timbre del zumbador: un tono con ese ciclo de trabajo
+        (0..1023 = 0..100 %); con decay, el ciclo baja hasta 0 (COMPI TONE)."""
         def go():
-            self._send_line("COMPI SOUND " + ("BT" if bt else "BUZZER"))
+            self._send_line(f"COMPI TONE {int(hz)} {int(duty)} {int(ms)} {1 if decay else 0}")
+            self._wait(["COMPI OK"], ms / 1000 + 3)
+        return self._retry("tocar un tono", go)
+
+    def note(self, instr, hz, ms):
+        """PRUEBA: una nota en el zumbador con el instrumento 0..3 (COMPI NOTE)."""
+        def go():
+            self._send_line(f"COMPI NOTE {int(instr)} {int(hz)} {int(ms)}")
+            self._wait(["COMPI OK"], ms / 1000 + 3)
+        return self._retry("tocar una nota", go)
+
+    def midi_test(self, n, ms):
+        """PRUEBA: n notas por Bluetooth MIDI cada ms milisegundos (COMPI MIDITEST)."""
+        self._send_line(f"COMPI MIDITEST {int(n)} {int(ms)}")
+        self._wait(["COMPI OK"], n * ms / 1000 + 5)
+
+    def set_sound(self, out):
+        """out: "bt", "buzzer" u "off" (silencio)."""
+        def go():
+            self._send_line("COMPI SOUND " + {"bt": "BT", "off": "OFF"}.get(out, "BUZZER"))
             self._wait(["COMPI OK"], 5)
         return self._retry("cambiar la salida del sonido", go)
 

@@ -55,6 +55,20 @@ txt_put3:
     CALL txt_put2
     RET
 
+; --- txt_putn: AL (0..255) sin ceros a la izquierda (1 a 3 cifras); avanza
+; CL. Altera AH, DX. -------------------------------------------------------
+txt_putn:
+    CMP AL,#100
+    JMPC txt_putn_2
+    JMP txt_put3
+txt_putn_2:
+    CMP AL,#10
+    JMPC txt_putn_1
+    JMP txt_put2
+txt_putn_1:
+    ADD AL,#'0'
+    JMP txt_putc
+
 ; --- txt_clear: borra todo el texto y sus atributos (0x0400-0x05FF) --------
 ; Altera AL, BX.
 txt_clear:

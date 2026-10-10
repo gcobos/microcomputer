@@ -14,6 +14,7 @@ namespace compi {
 //   0x0610             LED de a bordo
 //   0x0611             número aleatorio (generador por hardware del ESP32)
 //   0x0612 .. 0x0613   ahorro de energía del programa, y dormir la CPU
+//   0x0614 .. 0x0615   batería: % y tensión
 //   0x0620 .. 0x0629   temporizadores
 //   0x0630 .. 0x0634   sonido (piezo / Bluetooth MIDI)
 //   0x0640 .. 0x0643   carga/grabado de programas, consulta de slots, slot en curso
@@ -128,17 +129,19 @@ constexpr uint16_t PORT_LED = 0x0610;
 constexpr uint16_t PORT_RANDOM = 0x0611;
 
 // --- Ahorro de energía del programa (0x0612 .. 0x0613) ---------------
-// Mientras un programa corre en CONTINUO, el aparato cuenta como "en uso":
-// pantalla a pleno brillo, panel muestreado cada 2 ms, nunca duerme. Un
-// programa que pasa horas encendido (p. ej. una mascota virtual) puede
-// pedir lo contrario, y además ceder la CPU en vez de esperar dando vueltas:
+// Mientras un programa corre, la pantalla se atenúa y se apaga igual que en
+// edición (SCREEN_DIM_MS / SCREEN_OFF_MS sin tocar el panel; un giro o
+// pulsación la enciende) y el panel se muestrea más despacio si no se toca.
+// La CPU no duerme sola (el programa tiene que seguir corriendo). Un
+// programa que pasa horas encendido (p. ej. una mascota virtual) puede pedir
+// tiempos más cortos, y además ceder la CPU en vez de esperar dando vueltas:
 //
-//   0x0612 PORT_POWER  OUT bit 0 = 1: modo ahorro. La pantalla se atenúa a
-//                      los PS_DIM_MS sin tocar el panel y se apaga a los
-//                      PS_OFF_MS; el panel se muestrea más despacio. Girar
-//                      o pulsar algo la vuelve a encender (y el programa
-//                      recibe ese giro/pulsación como siempre: puede mirar
-//                      el bit 1 de IN antes, para no tomarlo como orden).
+//   0x0612 PORT_POWER  OUT bit 0 = 1: modo ahorro. La pantalla se atenúa ya
+//                      a los PS_DIM_MS sin tocar el panel y se apaga a los
+//                      PS_OFF_MS (en vez de a los 20 / 45 s). Girar o pulsar
+//                      algo la vuelve a encender (y el programa recibe ese
+//                      giro/pulsación como siempre: puede mirar el bit 1 de
+//                      IN antes, para no tomarlo como orden).
 //                      OUT bit 1 = 1: enciende la pantalla ya (como si se
 //                      hubiera tocado el panel), p. ej. para avisar.
 //                      IN bit 0 = modo ahorro, bit 1 = pantalla encendida
@@ -154,6 +157,21 @@ constexpr uint16_t PORT_RANDOM = 0x0611;
 //                      CONTINUO (en PASO no para). IN: 0.
 constexpr uint16_t PORT_POWER = 0x0612;
 constexpr uint16_t PORT_SLEEP = 0x0613;
+
+// --- Batería (0x0614 .. 0x0615, solo IN) ---------------------------------
+// La mide el firmware cada 2 s (divisor 1:2 a GPIO3, ver docs/wiring.svg).
+// Con el USB enchufado y el interruptor en OFF, VSYS recibe ~4,7 V por el
+// diodo D1; en ON, el firmware lo da por USB si hay un ordenador conectado
+// y la batería está llena (ver batOnUsb() en main.cpp). Más de 4,4 V
+// (PORT_BAT_V >= 220) = alimentado por USB.
+//   0x0614 PORT_BAT_PCT  IN: carga aproximada, 0..100 % (curva de una LiPo
+//                        en reposo); 255 = aun sin medir.
+//   0x0615 PORT_BAT_V    IN: tensión en pasos de 20 mV (210 = 4,20 V); 0 =
+//                        aun sin medir.
+// Por debajo de 3,50 V el propio aparato avisa (icono de pila vacía arriba
+// a la derecha y tres pitidos); el aviso se quita por encima de 3,60 V.
+constexpr uint16_t PORT_BAT_PCT = 0x0614;
+constexpr uint16_t PORT_BAT_V   = 0x0615;
 constexpr uint32_t PS_DIM_MS = 5000;
 constexpr uint32_t PS_OFF_MS = 10000;
 
@@ -172,7 +190,7 @@ constexpr uint16_t PORT_TIMER_BASE = 0x0620;
 constexpr uint8_t  TIMER_COUNT     = 10;
 constexpr unsigned long TIMER_BASE_MS = 1;   // periodo de t0 (ajustable)
 
-// --- Sonido: zumbador piezo PASIVO en GPIO3 (0x0630 .. 0x0634) ------
+// --- Sonido: zumbador piezo PASIVO en GPIO2 (0x0630 .. 0x0634) ------
 // Tono de onda cuadrada generado por hardware (LEDC / tone()). Suena en
 // cuanto se escribe una frecuencia o una nota; 0 = silencio. Solo suena en
 // EJECUTAR + CONTINUO; se calla al (re)arrancar una ejecución, al pasar a
@@ -191,8 +209,19 @@ constexpr unsigned long TIMER_BASE_MS = 1;   // periodo de t0 (ajustable)
 //                            (btmidi.h): el zumbador suena siempre igual.
 //                            0 cuenta como 1. Pegajosa como 0x0633; vuelve a
 //                            SND_VEL_DEFAULT (100) al arrancar una ejecución.
+//   0x0635 PORT_SND_INSTR    instrumento 0..3 de las notas siguientes (se
+//                            queda con los 2 bits bajos): 0 ORGAN (constante,
+//                            el de siempre), 1 PIANO (se apaga en ~0,8 s),
+//                            2 GUITAR (~0,25 s), 3 BELL (~2 s). En el
+//                            zumbador es la envolvente (la intensidad baja
+//                            durante la nota); por Bluetooth MIDI, un Program
+//                            Change (órgano 19, piano 0, guitarra 24,
+//                            campanas 14) antes de la nota siguiente -- solo
+//                            si un programa lo escribe: sin escribirlo, el
+//                            sintetizador sigue con el suyo. Vuelve a 0 al
+//                            arrancar una ejecución.
 //
-//   IN 0x0630/0x0631/0x0632/0x0634 -> eco del último valor escrito.
+//   IN 0x0630/0x0631/0x0632/0x0634/0x0635 -> eco del último valor escrito.
 //   IN 0x0633 -> tiempo que queda, en unidades de 10 ms (0 = ya callado).
 constexpr uint16_t PORT_SND_BASE    = 0x0630;
 constexpr uint16_t PORT_SND_FREQ_LO = 0x0630;
@@ -200,7 +229,9 @@ constexpr uint16_t PORT_SND_FREQ_HI = 0x0631;
 constexpr uint16_t PORT_SND_NOTE    = 0x0632;
 constexpr uint16_t PORT_SND_DUR     = 0x0633;
 constexpr uint16_t PORT_SND_VEL     = 0x0634;
-constexpr uint8_t  SND_PORT_COUNT   = 5;
+constexpr uint16_t PORT_SND_INSTR   = 0x0635;
+constexpr uint8_t  SND_PORT_COUNT   = 6;
+constexpr uint8_t  SND_INSTR_COUNT  = 4;
 constexpr uint8_t  SND_VEL_DEFAULT  = 100;
 
 // --- Carga y grabado de programas (slots de la flash SPI, 0x0640/0x0641) --
@@ -329,9 +360,10 @@ constexpr uint8_t  TIME_REG_COUNT  = 14;
 //                                (storage.h SETTINGS_SIZE) con un OUT a
 //                                PORT_CFG_SAVE, y se recupera al arrancar.
 //   0x0651 PORT_CFG_SOUND_EN    OUT: salida del sonido: 0 = Bluetooth MIDI
-//                                (btmidi.h), distinto de 0 = el zumbador --
+//                                (btmidi.h), 2 = silencio, otro = el
+//                                zumbador --
 //                                MISMO interruptor general que el botón BOOT
-//                                del propio aparato (ver g_soundBt,
+//                                del propio aparato (ver g_soundMode,
 //                                main.cpp): es una preferencia
 //                                de sesión, no un ajuste de este programa en
 //                                concreto, así que NO se reinicia al
@@ -342,7 +374,9 @@ constexpr uint8_t  TIME_REG_COUNT  = 14;
 //                                vuelta al zumbador (pensado para que lo
 //                                note un humano, no para que lo dispare
 //                                código). IN: 1 si el sonido va al
-//                                zumbador ahora mismo, 0 si por Bluetooth. Igual que el
+//                                zumbador ahora mismo, 0 si por Bluetooth,
+//                                2 si en silencio (el Bluetooth no conectó
+//                                en 30 s y se apagó solo). Igual que el
 //                                brillo: SOLO el slot 0 puede cambiarlo
 //                                (además del botón BOOT), y se guarda en
 //                                la flash para sobrevivir a un reset (con

@@ -175,7 +175,7 @@ periféricos va en `0x06xx`.
   al (re)iniciar una ejecución. `IN` **no** toca flags: para un bucle de espera
   hay que `CMP reg,#0` antes del `JMPNZ`.
 - **Sonido** (`OUT`/`IN`): `PORT_SND_BASE` 0x0630..0x0634, zumbador piezo pasivo
-  en `PIN_BUZZER` (GPIO3). `0x0630`/`0x0631` = frecuencia de 16 bits (LO
+  en `PIN_BUZZER` (GPIO2). `0x0630`/`0x0631` = frecuencia de 16 bits (LO
   engancha, HI aplica `Hz=hi<<8|lo`); `0x0632` = nota MIDI 0–127 (`noteToHz()`,
   `440·2^((n-69)/12)`); `0x0633` = auto-apagado `valor·10 ms` (pegajoso);
   `0x0634` = velocidad MIDI 1–127 (`g_sndVel`, pegajosa, 100 al arrancar), que
@@ -208,12 +208,12 @@ periféricos va en `0x06xx`.
   por inactividad sigue igual, solo cambia a qué vuelve. Es una preferencia de
   TODO el aparato: **no** se reinicia en `clearRuntimeOutputs()` (arranque de
   ejecución nueva) -- bug real reportado, el brillo elegido en SETTINGS
-  (`sisop.asm`) se perdía al arrancar otro programa. `OUT 0x0651, v` = salida del sonido: zumbador (`v!=0`) o
-  Bluetooth MIDI (`v=0`). Es el mismo interruptor que el botón BOOT
-  (`g_soundBt`), pero sin su jingle de vuelta al zumbador (pensado para un
+  (`sisop.asm`) se perdía al arrancar otro programa. `OUT 0x0651, v` = salida del sonido: Bluetooth MIDI (`v=0`),
+  silencio (`v=2`) o zumbador (otro). Es el mismo interruptor que el botón BOOT
+  (`g_soundMode`), pero sin su jingle de vuelta al zumbador (pensado para un
   humano, no para código). Igual que el brillo, **no** se reinicia entre
   ejecuciones (es una preferencia del aparato). `IN` de cada uno: eco del
-  brillo actual, o 1/0 según el sonido vaya al zumbador o por Bluetooth.
+  brillo actual, o 1/0/2 según el sonido vaya al zumbador, por Bluetooth o esté en silencio.
 
   **Bluetooth MIDI** ([`src/btmidi.cpp`](../src/btmidi.cpp)): el aparato se
   anuncia por BLE como `compi-midiN`: al arrancar el Bluetooth busca 2 s otros
@@ -223,9 +223,15 @@ periféricos va en `0x06xx`.
   ordenador) se conecta y recibe cada tono como nota MIDI por el canal 1
   (velocidad 100). Un tono por frecuencia (`0x0630/31`) se manda como la nota
   más cercana, así que un barrido sale a semitonos. Sin nada conectado no
-  suena nada, así que hace las veces del antiguo MUTE. Si el otro lado corta
+  suena nada, y si en 30 s no se conecta nada, apaga la radio y el sonido queda en silencio de verdad (se guarda); para volver, BOOT una vez -> zumbador, otra -> Bluetooth (otros 30 s) (`tickBtTimeout()`). Si el otro lado corta
   la conexión, el compi vuelve solo al zumbador, igual que si se pulsara BOOT
-  (con su jingle, y queda guardado). La pila BLE (NimBLE
+  (con su jingle, y queda guardado). **Intervalo de conexión**: las
+  notas solo salen en cada "cita" BLE; Linux da 45 ms por defecto, y medido
+  en el PC (`compi.py miditest`: notas cada 125 ms) llegaban con una
+  desviación típica de 31 ms y hasta 132 ms de desfase (trompicones). Un
+  segundo después de conectar el compi pide 7,5 ms (y si no lo consigue,
+  7,5–15 ms): 5 ms de desviación típica, 15 ms como mucho. `compi.py diag`
+  enseña el intervalo negociado. La pila BLE (NimBLE
   1.4.x, con la librería BLE-MIDI) solo arranca la primera vez que se elige
   Bluetooth, o al encender si estaba elegido. Mientras no se usa, la radio
   no gasta. BLE-MIDI 2.2 necesita la API 1.x de NimBLE: con la 2.x compila,
@@ -272,8 +278,9 @@ y unas órdenes cortas:
   a RUN, cargas de slot, light sleeps de un programa, salida del sonido
   (Bluetooth o zumbador), estado del Bluetooth (parado / buscando / anunciándose),
   si hay algo conectado y el estado del reloj (`compi.py diag`). `COMPI SOUND
-  BT|BUZZER` cambia la salida del sonido como el botón BOOT, y se guarda
-  (`compi.py sound bt|buzzer`).
+  BT|BUZZER|OFF` cambia la salida del sonido como el botón BOOT, y se guarda
+  (`compi.py sound bt|buzzer|off`). En `diag`, la salida del sonido es 0
+  zumbador, 1 Bluetooth, 2 silencio.
 
 **Hora real (`netclock.cpp`).** `clockBegin()` enciende el Wi-Fi al
 arrancar, pide la hora por SNTP y lo apaga en cuanto la tiene. Prueba
@@ -286,10 +293,20 @@ y a los 30 min si no. `COMPI NET` dice qué red dio la hora. Entre medias la lle
 14 registros de `PORT_TIME_BASE` al hacer `OUT 0x0670`. El Wi-Fi suma unos
 400 KB de firmware; con la radio apagada no gasta.
 
-**Ahorro de energía de un programa (`PORT_POWER`/`PORT_SLEEP`).** En su modo
-ahorro, un programa en `ExecCont` deja de contar como "en uso" para
-`samplerCb()` y para la gestión de pantalla (atenúa a `PS_DIM_MS`, apaga a
-`PS_OFF_MS`). `OUT 0x0613,n` marca `g_cpuSleeping` hasta `g_cpuWakeAt` y
+**Batería (`tickBattery()`).** Cada 2 s, 8 lecturas de `analogReadMilliVolts`
+en GPIO3 (divisor 1:2 desde VSYS, la entrada del regulador) × 2, suavizadas: `g_batMv`. Programas:
+`PORT_BAT_PCT` (curva de LiPo en reposo, `batPercent()`) y `PORT_BAT_V`
+(20 mV/paso). Por debajo de 3,50 V, `oled.setBatteryWarning(true)` (icono de
+pila vacía arriba a la derecha en todas las vistas; parpadea en `ExecCont`),
+enciende la pantalla y suena la melodía `BAT_JINGLE_HZ` (el mismo mecanismo
+que la de volver al zumbador, `startJingle()`); se quita por encima de 3,60 V.
+Con el USB y el interruptor en OFF, VSYS recibe ≈ 4,7 V por el diodo D1: más de 4,4 V = USB. En ON, VSYS es la batería: `batOnUsb()` lo da por USB si `HWCDC::isPlugged()` (hay un ordenador mandando tramas USB) y la batería pasa de 4,15 V; entonces `PORT_BAT_V` devuelve al menos 220. `COMPI DIAG` añade el campo `usb` (0/1).
+
+**Ahorro de energía de un programa (`PORT_POWER`/`PORT_SLEEP`).** Un programa
+en `ExecCont` no cuenta como "en uso": `samplerCb()` y la gestión de pantalla
+miran solo cuánto hace que no se toca el panel, igual que en edición
+(atenúa a `SCREEN_DIM_MS`, apaga a `SCREEN_OFF_MS`). En su modo ahorro,
+antes: `PS_DIM_MS` / `PS_OFF_MS`. `OUT 0x0613,n` marca `g_cpuSleeping` hasta `g_cpuWakeAt` y
 llama a `cpu.requestYield()` para que `run()` vuelva ya; mientras, `loop()`
 no ejecuta CPU y al final cede con `delay(1)` o, con la pantalla apagada,
 `esp_light_sleep_start()` a tramos de `SAMPLE_IDLE_MS`.

@@ -2138,6 +2138,27 @@ rd_stat:
     LDA AL,[s_gen]
     MOV CX,#0x0408
     CALL txt_put3
+    ; la bateria: su %, o "USB" si esta enchufado (mas de 4,4 V)
+    IN  AL,(P_BAT_V)
+    CMP AL,#0
+    JMPZ rs_time             ; aun sin medir
+    PUSH AL
+    MOV CX,#0x0601
+    MOV BX,#s_batt
+    CALL txt_puts
+    POP AL
+    MOV CX,#0x0608
+    CMP AL,#220
+    JMPC rs_bpct
+    MOV BX,#s_usb
+    CALL txt_puts
+    JMP rs_time
+rs_bpct:
+    IN  AL,(P_BAT_PCT)
+    CALL txt_putn
+    MOV AL,#'%'
+    CALL txt_putc
+rs_time:
     ; la hora (si el aparato la tiene)
     OUT (P_TIME),AL
     IN  AL,(P_TIME)
@@ -3681,6 +3702,8 @@ t_weight:  .asciiz "WEIGHT"
 s_grams:   .asciiz " G"
 t_gen:     .asciiz "GEN"
 s_time:    .asciiz "TIME"
+s_batt:    .asciiz "BATT"
+s_usb:     .asciiz "USB"
 s_hungry:  .asciiz "HUNGRY"
 s_happyt:  .asciiz "HAPPY"
 s_disct:   .asciiz "DISCIPLINE"

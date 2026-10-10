@@ -6,7 +6,7 @@ por el USB. Atajo de `tools/compi.py send` (ver ahi el detalle):
     python3 tools/compi_send.py --slot 4 programs/demo.bin   # un .bin pide --slot
 
 --port es opcional: el puerto se busca solo. Si el .asm declara zonas
-.persist (los datos del programa, p. ej. las canciones de play.asm), se
+.persist (los datos del programa, p. ej. las canciones de musicmaker.asm), se
 conservan las que ya hay en el aparato; --no-persist las borra.
 
 Necesita pyserial  (pip install pyserial).

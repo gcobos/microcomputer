@@ -471,12 +471,13 @@ t2p4: .asciiz "ENCODERS 0600-0603\n0600 IN: ADDR pos\n(0-255, wraps)\n0601 IN: A
 t2p5: .asciiz "LED & RANDOM\n0610 IO: onboard LED\nbit0=1 lights it,\nIN reads it back.\n0611 IN: a new\nrandom byte on each\nread (hardware RNG)"
 t2ph: .asciiz "POWER 0612-0613\n0612 bit0=1: power\nsave: screen off at\n10s idle. bit1=wake\n0613 OUT n: CPU\nsleeps n*10 ms\n(wait, no battery)"
 t2pi: .asciiz "REAL TIME 0670-067E\n0670 OUT: freeze;\nIN bit0: have time\n0671-4 UTC seconds\n0675-B s,m,h,d,mo,\nyr-2000,wday local\n067C-E mins frm 2020"
+t2pj: .asciiz "BATTERY 0614-0615\n0614 IN: charge %\n(0-100, 255=none)\n0615 IN: volts in\n20mV steps; >=220\nmeans USB power.\n<3.50V: warns"
 t2pg: .asciiz "TIMERS 0620-0629\n10 countdown timers\nOUT sets 0-255.\nt_i: -1 every 1<<i\nms, stops at 0.\nIN reads the value\n(doesn't set Z)"
 t2p6: .asciiz "SOUND 0630-0634\n0630/31: freq lo/hi\n(16-bit, hi triggers)\n0632: MIDI note\n(69=440Hz). 0633:\nauto-off x10ms. 0634\nBT velocity 1-127"
 t2p7: .asciiz "SOUND ORDER WARNING\nAlways write 0633\n(duration) BEFORE\n0632/0631 (note or\nfreq): duration is\nsticky but not\nretroactive"
 t2p8: .asciiz "PROGRAM LOAD/SAVE\n0640 OUT slot: load\n+reset CPU & outputs\nIN=1: last load fail\n0641 OUT slot: save\nRAM, keep running\nIN=1: last save ok"
 t2p9: .asciiz "CONFIG 0650-0652\n0650 bright. 0-255\n0651 0=Bluetooth,\n!0=buzzer (sound)\n0652 OUT: save both\nOUT: slot 0 only\n(sisop). IN=value"
-t2pa: .asciiz "PORT TABLE (1/2)\n0000-03FF graphics\n0400-04FF text\n0500-05FF text attrs\n0600-0603 encoders\n0610-13 LED,rnd,pwr\n0620-0629 timers"
+t2pa: .asciiz "PORT TABLE (1/2)\n0000-03FF graphics\n0400-04FF text\n0500-05FF text attrs\n0600-0603 encoders\n0610-15 LED,rnd,pwr\n0620-0629 timers"
 t2pb: .asciiz "PORT TABLE (2/2)\n0630-0634 sound\n0640-0643 programs\n0650-0652 config\n0660-066E slot info\n0670-067E real time\n0700-0801 EEPROM"
 t2pc: .asciiz "EEPROM 0700-07FF\n256 bytes per slot\nthat survive power\noff. 0700+i: byte i\nof a RAM buffer,\ninstant. Never-saved\nbytes read as 0xFF"
 t2pd: .asciiz "EEPROM 0800/0801\n0800 OUT: buffer <-\nflash (this slot)\n0801 OUT: buffer ->\nflash (ms, erases)\nIN 0800=1: failed\nIN 0801=1: saved ok"
@@ -502,14 +503,14 @@ t4p6: .asciiz "ExecCont\nBoth encoders and\nboth buttons pass\nstraight through 
 t4p7: .asciiz "RUN/RESET RULES\nStart of RUN or\nADDR-long in STEP:\nfull reset (PC,SP,\nscreen,snd,timers).\nSTEP<->CONT and\nEDIT keep the PC"
 
 ; --- tablas de paginas por tema ----------------------------------------------
-T2_PAGES: .dw t2p0, t2pa, t2pb, t2p1, t2p2, t2p3, t2p4, t2p5, t2ph, t2pg, t2p6, t2p7, t2p8, t2pe, t2pf, t2pi, t2p9, t2pc, t2pd
+T2_PAGES: .dw t2p0, t2pa, t2pb, t2p1, t2p2, t2p3, t2p4, t2p5, t2ph, t2pj, t2pg, t2p6, t2p7, t2p8, t2pe, t2pf, t2pi, t2p9, t2pc, t2pd
 T3_PAGES: .dw t3p0, t3p1, t3p2, t3p3, t3p4, t3p5, t3p6, t3p7, t3p8, t3p9
 T4_PAGES: .dw t4p0, t4p1, t4p2, t4p3, t4p4, t4p5, t4p6, t4p7
 
 ; --- tablas de nivel superior (indexadas por numero de tema 0..NUM_TOPICS-1) -
 NUM_TOPICS = 3
 TOPIC_NAMES:       .dw tn2_name, tn3_name, tn4_name
-TOPIC_PAGE_COUNTS: .db 19, 10, 8
+TOPIC_PAGE_COUNTS: .db 20, 10, 8
 TOPIC_PAGE_TABLES: .dw T2_PAGES, T3_PAGES, T4_PAGES
 
 ; ============================================================================

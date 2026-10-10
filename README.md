@@ -86,7 +86,7 @@ comprueba con checksum.
   categoría), `recv`, `backup`/`restore` (todos los slots, sus nombres y sus
   EEPROM; restore se salta lo que ya está igual) y `rm`. `send` **conserva
   los datos del programa**: las zonas que el `.asm` declara con `.persist`
-  (p. ej. las canciones de `play.asm`) se leen del slot antes de grabar.
+  (p. ej. las canciones de `musicmaker.asm`) se leen del slot antes de grabar.
   Usa [`tools/compilink.py`](tools/compilink.py) (búsqueda del puerto,
   reintentos, protocolo; el firmware lo atiende en `provisionPoll()`, ver
   `specs.txt` §7).
@@ -109,7 +109,7 @@ y apaga la radio (y repite cada 12 h): a la red guardada con
 `python3 tools/compi.py wifi MiRed` (pide la clave; se guarda en la flash)
 o, si no hay o no va, a cualquier red abierta que encuentre. Sin Wi-Fi, cualquier orden de
 `compi.py` le pone la hora y la zona horaria del PC de paso. `compi.py net`
-enseña el estado. `compi.py sound bt|buzzer` cambia la salida del sonido
+enseña el estado. `compi.py sound bt|buzzer|off` cambia la salida del sonido
 (como el botón BOOT) y `compi.py diag` dice si el Bluetooth MIDI está
 encendido y conectado, reinicios, etc. La usan `reloj.asm` (se pone en hora solo) y `tama.asm`
 (la mascota vive aunque el aparato esté apagado).

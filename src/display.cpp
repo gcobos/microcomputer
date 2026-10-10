@@ -98,10 +98,41 @@ bool OledPanel::begin() {
     display_.setTextColor(SH110X_WHITE);
     display_.setTextSize(1);
     display_.cp437(true);
+    bus_ = xSemaphoreCreateMutex();
+    // Prioridad 2 (loop() va a 1): en cuanto el I2C acaba un trozo, la tarea
+    // manda el siguiente; mientras espera al periférico, corre loop().
+    xTaskCreate(txTaskFn, "oled_tx", 3072, this, 2, &txTask_);
     return true;
 }
 
+void OledPanel::txTaskFn(void* arg) {
+    OledPanel* self = static_cast<OledPanel*>(arg);
+    for (;;) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        self->lock();
+        self->display_.display();
+        self->unlock();
+        self->txBusy_ = false;
+    }
+}
+
+void OledPanel::lock()   { if (bus_) xSemaphoreTake(bus_, portMAX_DELAY); }
+void OledPanel::unlock() { if (bus_) xSemaphoreGive(bus_); }
+
+void OledPanel::waitIdle() {
+    while (txBusy_) vTaskDelay(1);
+    lock();
+    unlock();
+}
+
 void OledPanel::render(const Cpu& cpu, const UiState& ui) {
+    waitIdle();                            // el búfer aún se está mandando
+    lock();
+    renderView(cpu, ui);
+    unlock();
+}
+
+void OledPanel::renderView(const Cpu& cpu, const UiState& ui) {
     if (ui.view == View::EditPrg) renderEditPrg(cpu, ui);
     else                          renderEditMem(cpu, ui); // EditMem o ExecPaso
 }
@@ -196,6 +227,7 @@ void OledPanel::renderEditMem(const Cpu& cpu, const UiState& ui) {
         snprintf(buf, sizeof(buf), "PC %04X  SP %04X %s", pc, cpu.sp(), fl);
         display_.print(buf);
     }
+    drawBatteryWarning(false);
     display_.display();
 }
 
@@ -240,10 +272,12 @@ void OledPanel::renderEditPrg(const Cpu& cpu, const UiState& ui) {
 
     display_.setCursor(0, (int16_t)(SCREEN_HEIGHT - ROW_H));
     display_.print(F("ADDR=slot DATA:turn/go"));
+    drawBatteryWarning(false);
     display_.display();
 }
 
-void OledPanel::renderFramebuffer(const uint8_t* fb, const uint8_t* text, const uint8_t* attr, bool halted) {
+bool OledPanel::renderFramebuffer(const uint8_t* fb, const uint8_t* text, const uint8_t* attr, bool halted) {
+    if (txBusy_) return false;             // aún se manda el anterior
     // clearDisplay() (no memset a pelo): además de poner el búfer a 0, marca
     // TODA la pantalla como "sucia" (window_x1/y1/x2/y2 = pantalla entera).
     // La librería (Adafruit_GrayOLED) solo manda por I2C esa ventana en
@@ -293,22 +327,46 @@ void OledPanel::renderFramebuffer(const uint8_t* fb, const uint8_t* text, const 
         display_.setCursor(SCREEN_WIDTH - 27, 1);
         display_.print(F("HALT"));
     }
-    display_.display();
+    drawBatteryWarning(true);
+    if (!txTask_) { display_.display(); return true; }
+    txBusy_ = true;
+    xTaskNotifyGive(txTask_);              // el I2C, en la tarea (ver txTaskFn)
+    return true;
+}
+
+// Pila vacía (16x9) arriba a la derecha, con su recuadro negro alrededor
+// para que se vea sobre cualquier cosa; parpadea (se repinta varias veces
+// por segundo con un programa en marcha; en las vistas de edición, fija).
+void OledPanel::drawBatteryWarning(bool blink) {
+    if (!batWarn_) return;
+    const int16_t x = SCREEN_WIDTH - 18, y = 0;
+    display_.fillRect(x - 1, y, 19, 11, SH110X_BLACK);
+    if (blink && ((millis() / 500) & 1)) return;
+    display_.drawRect(x, y + 1, 15, 9, SH110X_WHITE);     // cuerpo
+    display_.fillRect(x + 15, y + 3, 2, 5, SH110X_WHITE);  // borne
+    display_.fillRect(x + 2, y + 3, 2, 5, SH110X_WHITE);   // un poquito de carga
 }
 
 void OledPanel::message(const char* text) {
+    waitIdle();
+    lock();
     display_.clearDisplay();
     display_.setCursor(0, (int16_t)(SCREEN_HEIGHT / 2 - ROW_H / 2));
     display_.print(text);
     display_.display();
+    unlock();
 }
 
 void OledPanel::power(bool on) {
+    lock();
     display_.oled_command(on ? SH110X_DISPLAYON : SH110X_DISPLAYOFF);
+    unlock();
 }
 
 void OledPanel::contrast(uint8_t level) {
+    lock();
     display_.setContrast(level);
+    unlock();
 }
 
 // contrastFromSettings() == contrast(): DOS intentos de bajar más el brillo,
@@ -322,7 +380,9 @@ void OledPanel::contrast(uint8_t level) {
 //      granulado), no solo el brillo. Se descartó por eso.
 // Con las dos vías descartadas, PORT_CFG_BRIGHTNESS es solo SET_CONTRAST.
 void OledPanel::contrastFromSettings(uint8_t level) {
+    lock();
     display_.setContrast(level);
+    unlock();
 }
 
 } // namespace compi

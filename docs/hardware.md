@@ -33,13 +33,13 @@ El SuperMini expone 13 GPIO: **IO0–IO10, IO20, IO21**.
 | Pines | Motivo |
 |---|---|
 | GPIO18, GPIO19 | USB nativo del C3; **no salen a los pads del SuperMini** |
-| GPIO2 | *strapping* |
+| GPIO2 | *strapping*, pero se usa para el zumbador piezo (sección 9): el piezo no conduce en continua y no lo fuerza a 0 al arrancar |
 | GPIO8 | *strapping*, pero se usa para el LED azul de a bordo (OK como salida) |
 | GPIO9 | *strapping*, pero se usa como botón BOOT reutilizado (ver abajo) |
 | GPIO11–GPIO17 | flash SPI interna del módulo |
 
 Libres: **GPIO0, 1, 3, 4, 5, 6, 7, 10, 20, 21** (10 pines). El diseño los usa
-todos: GPIO3 = zumbador piezo (sección 9).
+todos: GPIO3 = medida de la batería (sección 10), y el zumbador va en GPIO2.
 
 ### GPIO9 / botón BOOT: doble uso (bootloader + zumbador/Bluetooth)
 
@@ -56,8 +56,7 @@ sondea lo primero en cada vuelta de `loop()`, antes de mirar el interruptor
 de modo. Antirrebote por tiempo (`BOOT_BTN_DEBOUNCE_MS`); al volver al
 zumbador suena un jingle de 2 notas no bloqueante (`tickMuteJingle()`) para
 confirmarlo. Por Bluetooth el aparato se anuncia como `compi-midi0` (o 1, 2... si hay otros cerca; BLE MIDI, ver
-[firmware.md](firmware.md)); sin nada conectado no suena nada, así que
-también sirve para silenciarlo. Si el ordenador o el móvil cortan la conexión,
+[firmware.md](firmware.md)); si en 30 s no se conecta nada, apaga la radio y el sonido queda en silencio de verdad (se guarda); para volver, BOOT una vez → zumbador, otra → Bluetooth (otros 30 s). Si el ordenador o el móvil cortan la conexión,
 vuelve solo al zumbador. Se recuerda al apagar (de fábrica, el
 zumbador).
 
@@ -82,7 +81,8 @@ pines por defecto del C3; el driver de la flash los toma solo.
 |---|---|---|---|
 | 0  | 74HC165 CP (reloj) | salida | pin 2 (CLK) |
 | 1  | 74HC165 Q7 (datos serie) | entrada | pin 9 (Q7) |
-| 3  | Sonido (tono PWM/LEDC) | salida | zumbador piezo pasivo → GND (sección 9) |
+| 2  | Sonido (tono PWM/LEDC) | salida | zumbador piezo pasivo → GND (sección 9) |
+| 3  | Medida de la batería (ADC1 canal 3) | entrada analógica | punto medio del divisor 2 × 100 kΩ desde VSYS (sección 10) |
 | 4  | SPI SCK | salida | flash pin 6 (CLK) |
 | 5  | SPI MISO | entrada | flash pin 2 (DO) **+ `[10 kΩ]` a 3V3** |
 | 6  | SPI MOSI | salida | flash pin 5 (DI) |
@@ -266,10 +266,11 @@ Fuera del arranque, el LED lo controla el programa emulado con `OUT (0x0610),reg
 | 1 | módulo OLED SH1106 128×64 I2C |
 | 1 | módulo flash SPI W25Q32 / 25Q32FVSIG (Winbond, 4 MiB) |
 | 10 | resistencias 10 kΩ, 1/4 W (8 pull-ups de entrada + /CS y MISO de la flash) |
-| ~3 | condensadores cerámicos 100 nF, 50 V, X7R (desacoplo: 74HC165, flash; el de la OLED sobra si el módulo ya lo lleva) |
+| ~4 | condensadores cerámicos 100 nF, 50 V, X7R (desacoplo: 74HC165, flash; el de la OLED sobra si el módulo ya lo lleva; uno en paralelo con el piezo, sección 9) |
 | 1 | condensador cerámico 10 µF, ≥ 6,3 V, X5R/X7R (desacoplo de la flash, junto al de 100 nF) |
 | 1 | zumbador **piezo pasivo** (sección 9) |
 | 0–1 | resistencia 100 Ω, 1/4 W, en serie con el piezo (opcional) |
+| 2 | resistencias 100 kΩ, 1/4 W (divisor de medida de la batería; sección 10) |
 | 1 | batería LiPo 1S 3,7 V, conector JST-PH 2,0 (capacidad según la carcasa; sección 10) |
 | 1 | módulo cargador LiPo **TP4056 con protección** (DW01A + FS8205A), entrada USB-C o micro-USB (sección 10) |
 | 1 | interruptor SPST de alimentación general (corta la batería; sección 10) |
@@ -294,7 +295,7 @@ batería (sección 10).
 
 ---
 
-## 9. Sonido — zumbador piezo pasivo (GPIO3)
+## 9. Sonido — zumbador piezo pasivo (GPIO2)
 
 Salida de sonido del ordenador emulado (puertos `0x0630`–`0x0634`, ver
 `specs.txt` §8). El firmware genera un tono de onda cuadrada con `tone()`
@@ -306,12 +307,21 @@ solo daría un pitido de frecuencia fija.
 
 | Piezo | Va a |
 |---|---|
-| una pata | GPIO3 (opcional: `[100 Ω]` en serie) |
+| una pata | GPIO2 (opcional: `[100 Ω]` en serie) |
 | otra pata | GND |
+| entre las dos patas | condensador cerámico `100 nF` (en paralelo con el piezo) |
 
+- GPIO2 es pin de arranque (en el reset debe leerse en alto), pero un piezo
+  no deja pasar corriente continua: no lo baja a 0. Antes iba en GPIO3, que
+  ahora mide la batería (sección 10).
 - Un piezo es capacitivo (unos nF): la corriente media es despreciable y se
   puede atacar **directo** desde el GPIO. La resistencia de 100 Ω solo limita el
   pico de conmutación y suaviza el "clic"; opcional.
+- El condensador de 100 nF en paralelo con el piezo quita el siseo flojo que
+  se oye mientras la radio está activa (Wi-Fi al sincronizar la hora tras el
+  arranque, o Bluetooth MIDI): los picos de corriente de la radio mueven un
+  poco la alimentación y la masa, y el piezo los hace audibles. Con la de
+  100 Ω forma un paso bajo de unos 16 kHz, así que las notas no cambian.
 - Más volumen: transistor NPN (2N3904) con `[1 kΩ]` en la base, emisor a GND,
   colector a la pata del piezo, la otra pata a 3V3, y un diodo (1N4148) en
   paralelo con el piezo. Solo hace falta si se cambia el piezo por un altavoz.
@@ -331,69 +341,69 @@ batería LiPo con su cargador, para uso portátil. Ver el bloque
 
 ### Cadena de alimentación
 
+En la SuperMini, el pin **5V** de la cabecera es directamente el **VBUS** del
+USB-C; de ahí, un diodo Schottky de fábrica (D1) lleva a **VSYS**, que es la
+entrada del regulador de 3,3 V. El interruptor de encendido es **SPDT** y
+elige qué alimenta VSYS: la batería **o** el USB, nunca los dos a la vez.
+
 ```
-                    diodo de fabrica de la SuperMini, cátodo reubicado
-USB-C SuperMini (VBUS) ------------------|>|------------------> IN+/IN- (TP4056)
-                                                                       |
-LiPo 1S 3,7V --B+/B---------------------------------------------------+
-                                                                       |
-                                                              OUT+/OUT- (TP4056)
-                                                                       |
-                                                          interruptor -+-> 5V/VBUS (SuperMini)
+pin 5V (VBUS) --+-------------------------------------> IN+ (TP4056)
+                |
+                +--|>|-- D1 (de fábrica) ----- OFF --+
+                                                     |  interruptor SPDT
+LiPo 1S --B+/B- (TP4056) OUT+ ---------------- ON  --+
+                                                     |
+                                     común ----------+--> VSYS (regulador 3,3 V)
+                                                     +--> divisor 100k/100k (GPIO3)
 ```
 
 | Bloque | Nota |
 |---|---|
 | Batería LiPo 1S | 3,0–4,2 V, capacidad según la carcasa (p. ej. 500–1200 mAh). Conector JST-PH 2,0. |
-| Cargador **TP4056 con protección** | Módulo con **DW01A** (protección de sobre/infra-carga y cortocircuito) + **FS8205A** (doble MOSFET). Sin el DW01A/FS8205A el TP4056 pelado NO protege la celda — usar siempre la versión "con protección". **No usa su propio conector USB-C/micro-USB**: `IN+`/`IN−` se alimentan desde el USB-C de la propia SuperMini (ver "Modificación" abajo) — un solo cable USB-C programa y carga a la vez. |
-| Interruptor SPST | En serie entre `OUT+` del cargador y el pin **5V/VBUS** de la SuperMini. Apaga el aparato sin desconectar la batería del cargador (sigue cargando con el interruptor en OFF). |
+| Cargador **TP4056 con protección** | Módulo con **DW01A** (protección de sobre/infra-carga y cortocircuito) + **FS8205A** (doble MOSFET). Sin el DW01A/FS8205A el TP4056 pelado NO protege la celda — usar siempre la versión "con protección". **No usa su propio conector USB-C/micro-USB**: `IN+`/`IN−` se alimentan del pin 5V (VBUS) de la SuperMini — un solo cable USB-C programa y carga a la vez. |
+| Interruptor **SPDT** | Común a **VSYS** (y al divisor); posición **ON** a `OUT+` (batería); posición **OFF** al cátodo de D1 (USB). Tiene que ser *break-before-make* (lo normal en los deslizantes): no debe unir ON y OFF ni un instante. |
 
-### Modificación: cargar por el mismo USB-C de la SuperMini
+### Modificación: sacar D1 y llevar VSYS al interruptor
 
-La SuperMini trae de fábrica un diodo entre el `VBUS` de su propio USB-C y su
-pin `5V` — protege al **host USB** (el ordenador) por si además hay una fuente
-de 5V externa puesta en ese pin cuando se enchufa el cable: sin el diodo, esa
-tensión externa podría verse empujada de vuelta hacia el puerto del ordenador.
+VSYS no sale a ningún pin de la cabecera; el único punto accesible es el pad
+del cátodo de D1.
 
-Para que ese mismo USB-C también cargue la batería, **no se quita ese diodo**
-(sería quitar justo la protección que le da sentido) — se reaprovecha:
+1. Desuelda D1 de la placa (es un Schottky SMD; la raya blanca marca el
+   cátodo). Comprueba con el polímetro qué pad es cada uno: el de VBUS tiene
+   continuidad con el pin 5V; el otro es VSYS.
+2. Ánodo de D1 al pin **5V** (VBUS) — o al pad VBUS, que es la misma red.
+3. Cátodo de D1 (raya) al terminal **OFF** del interruptor.
+4. Terminal **ON** del interruptor a `OUT+` del TP4056.
+5. **Común** del interruptor al pad **VSYS**, y de ahí también la parte de
+   arriba del divisor de medida.
+6. `IN+` del TP4056 al pin 5V (VBUS); `IN−`, `OUT−` y GND comunes.
 
-1. Localiza el diodo (continuidad/modo diodo con el polímetro, trazando desde
-   el pin `VBUS` del conector USB-C hasta él, para identificar ánodo y cátodo
-   con certeza antes de tocar nada).
-2. Desuelda **solo su cátodo** (el extremo que iba hacia el pin `5V`/entrada
-   del regulador) y llévalo, con un cable, a `IN+` del TP4056. El ánodo se
-   deja intacto — sigue conectado al `VBUS` real del conector.
-3. `IN−` del TP4056 a GND común.
-4. Añade un cable nuevo, **sin diodo**, desde `OUT+` del TP4056 hasta el punto
-   donde antes llegaba el cátodo (el pin `5V`/entrada del regulador, el mismo
-   de siempre — vía el interruptor, sin cambios ahí).
+**`OUT+` (= `B+`, la batería) y el cátodo de D1 nunca deben unirse**, ni
+`OUT+` ir al pin 5V: el USB cargaría la batería directamente por D1, sin
+pasar por el cargador (el TP4056 la daría por llena y la batería solo la
+protegería el DW01A, a ~4,3 V). Antes de enchufar, con el polímetro:
+en ON, sin continuidad del pin 5V (punta roja) a `B+` (negra); en OFF, sin
+continuidad entre VSYS y `B+`.
 
-Con esto: el diodo sigue haciendo exactamente su trabajo original (bloquear
-que lo que sea que haya en el lado `IN+` — VBUS o una fuga interna del TP4056
-desde la batería — llegue hasta el conector y de ahí al host), y de paso dejan
-de existir un camino directo sin supervisar entre el USB y la batería: la
-única forma en que el USB llega a cargar la celda es atravesando el propio
-chip del TP4056. Usa un diodo **Schottky** (p. ej. 1N5819/SS14, caída
-~0,2–0,3 V) si el original no lo es — con un diodo de silicio normal
-(~0,6–0,7 V) el TP4056 puede quedarse sin margen para regular bien hasta los
-4,2 V de corte.
+Cómo funciona:
+
+| | Sin USB | Con USB |
+|---|---|---|
+| **ON** | funciona con batería, sin diodo (medida exacta) | funciona desde `OUT+` y el TP4056 carga a la vez; no llega a marcar "llena" (el consumo del aparato no le deja ver el final de carga) y mantiene la batería a 4,2 V |
+| **OFF** | todo apagado, batería aislada | funciona del USB por D1; el TP4056 carga la batería sola y termina bien — **la mejor posición para cargar** |
 
 Después de modificarlo, comprueba que programar/flashear
 (`tools/compi_send.py`, monitor serie) sigue funcionando igual — esta
-modificación no toca las líneas de datos USB (D+/D−), solo la alimentación,
-pero conviene confirmarlo en la placa real.
+modificación no toca las líneas de datos USB (D+/D−), solo la alimentación.
 
-### Por qué al pin 5V, no al 3V3
+### Por qué a VSYS, no al 3V3 ni al pin 5V
 
-La SuperMini ya tiene un regulador 5V→3,3V a bordo; el pin 3V3 es su
+La SuperMini ya tiene un regulador a 3,3 V a bordo; el pin 3V3 es su
 **salida** regulada. Meter la batería (hasta 4,2 V a tope de carga)
-directamente en el pin 3V3 sumaría esa tensión a la del regulador si además
-hay USB conectado (p. ej. para programar) — puede superar el máximo absoluto
-del ESP32-C3 (~3,6 V) y dañarlo. Entrando por **5V/VBUS** en cambio, el
-regulador de la placa solo ve, como mucho, la tensión de la propia batería
-(≤4,2 V) tanto si hay USB puesto (con la modificación de arriba, cargando a
-través del TP4056) como si no.
+directamente en el pin 3V3 la uniría a la salida del regulador si además hay
+USB conectado — puede superar el máximo absoluto del ESP32-C3 (~3,6 V) y
+dañarlo. El pin 5V tampoco vale: es VBUS (ver arriba). VSYS es la entrada del
+regulador, y el interruptor garantiza que solo le llega una fuente.
 
 El coste: el regulador de a bordo consume su propia corriente en reposo
 (algo de mA en muchos clones — medirlo) y tiene una caída de tensión
@@ -409,3 +419,25 @@ están bajo control del firmware.
 - `OUT−`/`B−` del cargador y el polo − de la batería van al GND común.
 - Condensador de 100 µF opcional en 5V/VBUS: colchón para los picos de
   corriente al despertar de *light sleep* o al escribir en la flash.
+
+### Medida de la batería (GPIO3)
+
+Un divisor de tensión de **2 × 100 kΩ** entre **VSYS** (el cátodo de D1,
+donde llega el interruptor) y GND, con el punto medio a **GPIO3** (ADC1
+canal 3). Ver [`wiring.svg`](wiring.svg).
+
+- En ON, VSYS es la batería, sin diodo: 3,0–4,2 V → 1,5–2,1 V en GPIO3,
+  dentro del rango del ADC (atenuación de 11 dB, hasta ~2,5 V).
+- En OFF con USB, VSYS recibe ≈ 4,7 V por D1 (≈ 2,35 V en GPIO3): más de
+  4,4 V = "alimentado por USB".
+- En ON con USB, VSYS es la batería cargándose. El firmware lo da por USB si
+  hay un ordenador al otro lado del USB (el puerto serie del USB está
+  activo) y la batería marca 100 %. No cubre la batería a medio cargar.
+- En OFF y sin USB el divisor no gasta nada; con tensión en VSYS, ~20 µA.
+- El firmware la mide cada 2 s (`tickBattery()` en `src/main.cpp`) y la da a
+  los programas en `PORT_BAT_PCT` (0x0614, %) y `PORT_BAT_V` (0x0615, pasos
+  de 20 mV). Por debajo de **3,50 V** avisa: icono de pila vacía arriba a la
+  derecha (encima de cualquier vista) y tres pitidos; el aviso se quita por
+  encima de 3,60 V. Por debajo de ~3,4 V el regulador de la SuperMini se
+  queda sin margen y la pantalla empieza a fallar (parpadeos).
+- `compi.py diag` enseña la tensión (o "USB").

@@ -55,7 +55,9 @@ class Ports:
         self.dat_btn = 0
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
         self.snd_vel = 100   # 0x0634: velocidad MIDI (solo Bluetooth en el aparato)
+        self.snd_instr = 0   # 0x0635: instrumento 0..3
         self.power = 0       # 0x0612: modo ahorro (bit 0) -- aqui solo se recuerda
+        self.bat_mv = 3900   # 0x0614/0x0615: bateria simulada (mV; > 4400 = USB)
         self.time_regs = [0] * 14   # 0x0671..0x067E (los congela OUT 0x0670)
         self.snd_hz = 0
         self.now_ns = 0
@@ -68,10 +70,10 @@ class Ports:
         self.last_load_ok = 0
         self.last_save_ok = 0
         # configuracion (0x0650/0x0651, iomap.h) -- espejo de g_screenContrast/
-        # g_soundMuted en main.cpp. sound_muted empieza en False (sonido
-        # activado), igual que g_soundMuted en el firmware real.
+        # g_soundMode en main.cpp. sound_out es lo que lee el puerto 0x0651:
+        # 1 = zumbador (de fabrica), 0 = Bluetooth, 2 = silencio.
         self.brightness = 0xCF   # OLED_CONTRAST_FULL (main.cpp), valor de arranque
-        self.sound_muted = False
+        self.sound_out = 1
         # EEPROM por slot (0x0700..0x07FF bufer, 0x0800 cargar, 0x0801 grabar
         # -- iomap.h). Lo no grabado nunca se lee como 0xFF (flash borrada),
         # igual que en el aparato. `current_slot` = el slot "en curso" (el
@@ -125,6 +127,8 @@ class Ports:
             return self.snd_dur
         if port == 0x0634:
             return self.snd_vel
+        if port == 0x0635:
+            return self.snd_instr
         if port == 0x0600:
             return self.dir_pos
         if port == 0x0601:
@@ -147,6 +151,10 @@ class Ports:
             return self.rng.randrange(256)
         if port == 0x0612:
             return (self.power & 1) | 2          # la pantalla del simulador nunca se apaga
+        if port == 0x0614:
+            return _bat_percent(self.bat_mv)
+        if port == 0x0615:
+            return min(255, (self.bat_mv + 10) // 20)
         if port == 0x0670:
             return 0x01 if self.epoch0 is not None else 0
         if 0x0671 <= port < 0x0671 + 14:
@@ -156,7 +164,7 @@ class Ports:
         if port == 0x0650:
             return self.brightness
         if port == 0x0651:
-            return 0 if self.sound_muted else 1
+            return self.sound_out
         if 0x0700 <= port < 0x0800:
             return self.eeprom[port - 0x0700]
         if port == 0x0800:
@@ -200,6 +208,9 @@ class Ports:
         if port == 0x0634:
             self.snd_vel = 1 if val == 0 else min(val, 127)
             return
+        if port == 0x0635:
+            self.snd_instr = val & 3
+            return
         if port == 0x0610:
             self.led = val & 1
             return
@@ -231,7 +242,7 @@ class Ports:
             return
         if port == 0x0651:
             if self.current_slot == 0:
-                self.sound_muted = (val == 0)
+                self.sound_out = val if val in (0, 2) else 1
             return
         if port == 0x0652:
             # PORT_CFG_SAVE: en el aparato graba brillo/mute en la flash; el
@@ -346,7 +357,9 @@ class Ports:
             self.timer_set_ns[i] = self.now_ns
         self.snd_lo = self.snd_hi = self.snd_note = self.snd_dur = 0
         self.snd_vel = 100   # 0x0634: velocidad MIDI (solo Bluetooth en el aparato)
+        self.snd_instr = 0   # 0x0635: instrumento 0..3
         self.power = 0       # 0x0612: modo ahorro (bit 0) -- aqui solo se recuerda
+        self.bat_mv = 3900   # 0x0614/0x0615: bateria simulada (mV; > 4400 = USB)
         self.time_regs = [0] * 14   # 0x0671..0x067E (los congela OUT 0x0670)
         self._snd(0)
         # brillo y sonido: preferencias de TODO el aparato -- NO se tocan al
@@ -399,6 +412,18 @@ class Ports:
         if row >= 8 or col >= 21:
             return None
         return row * 21 + col
+
+
+def _bat_percent(mv):
+    # misma curva que batPercent() en src/main.cpp
+    MV = [3300, 3500, 3600, 3700, 3750, 3800, 3900, 4000, 4080, 4150]
+    PCT = [0, 5, 12, 30, 40, 50, 65, 80, 90, 100]
+    if mv <= MV[0]:
+        return 0
+    for i in range(1, 10):
+        if mv <= MV[i]:
+            return PCT[i - 1] + (PCT[i] - PCT[i - 1]) * (mv - MV[i - 1]) // (MV[i] - MV[i - 1])
+    return 100
 
 
 def _note_hz(note):

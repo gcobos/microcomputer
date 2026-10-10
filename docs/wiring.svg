@@ -18,7 +18,8 @@
     .wire{fill:none;stroke-width:2}
     .p3{stroke:#cc2222} .gnd{stroke:#222} .spi{stroke:#1a7f37}
     .i2c{stroke:#8250df} .ctl{stroke:#d97706} .in{stroke:#0969da}
-    .snd{stroke:#0891b2} .v5{stroke:#be185d}
+    .snd{stroke:#0891b2} .v5{stroke:#be185d} .bat{stroke:#65a30d}
+    .batt{fill:#4d7c0f;font-size:10px;font-weight:600}
     .chip{fill:#eef2ff;stroke:#334155;stroke-width:1.5}
     .chip2{fill:#f0fdf4;stroke:#334155;stroke-width:1.5}
     .dev{fill:#fff7ed;stroke:#334155;stroke-width:1.5}
@@ -40,12 +41,12 @@
   <text x="1490" y="73" class="sig" text-anchor="end">Muñón rojo "3V3" = red +3V3 común (sin cable hasta el riel) · "GND" todas comunes</text>
 
   <!-- ESP32-C3 SuperMini -->
-  <rect class="chip" x="70" y="150" width="185" height="480" rx="6"/>
+  <rect class="chip" x="70" y="150" width="185" height="520" rx="6"/>
   <text x="162" y="140" class="ttl" text-anchor="middle">ESP32-C3 SuperMini</text>
   <line class="wire p3"  x1="200" y1="150" x2="200" y2="126"/><text x="200" y="120" class="p3t" text-anchor="middle">3V3</text>
   <line class="wire v5"  x1="250" y1="150" x2="250" y2="126"/><text x="250" y="120" class="v5t" text-anchor="middle">5V</text>
-  <text x="262" y="120" class="sig" fill="#be185d">batería, opcional — ver abajo (su propio USB-C también carga, ver nota)</text>
-  <line class="wire gnd" x1="120" y1="630" x2="120" y2="1140"/><text x="127" y="662" class="sig">GND</text>
+  <text x="262" y="120" class="sig" fill="#be185d">= VBUS del USB-C · batería o USB entran a VSYS por el interruptor, ver abajo</text>
+  <line class="wire gnd" x1="120" y1="670" x2="120" y2="1140"/><text x="127" y="686" class="sig">GND</text>
 
   <line class="wire spi" x1="255" y1="200" x2="287" y2="200"/><text class="pin" x="249" y="203" text-anchor="end">IO4</text><text class="sig" x="264" y="194">SCK</text>
   <line class="wire spi" x1="255" y1="235" x2="287" y2="235"/><text class="pin" x="249" y="238" text-anchor="end">IO5</text><text class="sig" x="264" y="229">MISO</text>
@@ -56,7 +57,9 @@
   <line class="wire ctl" x1="255" y1="460" x2="287" y2="460"/><text class="pin" x="249" y="463" text-anchor="end">IO0</text><text class="sig" x="264" y="451">165 CP</text>
   <line class="wire ctl" x1="255" y1="500" x2="287" y2="500"/><text class="pin" x="249" y="503" text-anchor="end">IO1</text><text class="sig" x="264" y="491">165 Q7</text>
   <line class="wire ctl" x1="255" y1="540" x2="287" y2="540"/><text class="pin" x="249" y="543" text-anchor="end">IO10</text><text class="sig" x="264" y="531">165 PL</text>
-  <line class="wire snd" x1="255" y1="575" x2="287" y2="575"/><text class="pin" x="249" y="578" text-anchor="end">IO3</text><text class="sig" x="264" y="566">tono (PWM/LEDC) &#8594; piezo</text>
+  <line class="wire snd" x1="255" y1="575" x2="287" y2="575"/><text class="pin" x="249" y="578" text-anchor="end">IO2</text><text class="sig" x="264" y="566">tono (PWM/LEDC) &#8594; piezo</text>
+  <line class="wire bat" x1="255" y1="645" x2="259" y2="645"/><text class="pin" x="249" y="648" text-anchor="end">IO3</text>
+  <text class="batt" x="262" y="649">BAT</text>
   <text class="pin" x="249" y="612" text-anchor="end">IO8</text><text class="sig" x="264" y="612">LED azul de a bordo (activo bajo) &#8212; no hace falta LED externo</text>
 
   <!-- Flash -->
@@ -103,18 +106,26 @@
   <!-- zumbador piezo pasivo (salida de sonido) -->
   <rect class="dev" x="150" y="694" width="185" height="54" rx="5"/>
   <text x="242" y="688" class="ttl" text-anchor="middle" font-size="12">Zumbador piezo PASIVO</text>
-  <text class="pin" x="287" y="713" text-anchor="middle">+</text>
+  <text class="pin" x="310" y="713" text-anchor="middle">+</text>
   <text class="pin" x="164" y="740">&#8722;</text>
-  <!-- + : de IO3, por 100 ohm (opcional), baja al terminal + -->
-  <path class="wire snd" d="M287,575 V622 M287,656 V694"/>
-  <use xlink:href="#res" transform="translate(287,622)"/>
-  <text x="299" y="645" font-size="9.5" font-weight="600" fill="#0891b2">100 &#8486; opc.</text>
+  <!-- + : de IO2, por 100 ohm (opcional), baja al terminal + -->
+  <path class="wire snd" d="M287,575 H310 V624 M310,658 V694"/>
+  <use xlink:href="#res" transform="translate(310,624)"/>
+  <text x="322" y="647" font-size="9.5" font-weight="600" fill="#0891b2">100 &#8486; opc.</text>
+  <!-- 100 nF en paralelo con el piezo (de + a GND): filtra el ruido de la radio del ESP32 -->
+  <circle class="dot" cx="310" cy="676" r="3"/>
+  <path class="wire snd" d="M310,676 H368 V694"/>
+  <line x1="358" y1="694" x2="378" y2="694" stroke="#334155" stroke-width="2.2"/>
+  <line x1="358" y1="700" x2="378" y2="700" stroke="#334155" stroke-width="2.2"/>
+  <path class="wire gnd" d="M368,700 V716"/>
+  <use xlink:href="#gnd" transform="translate(368,716)"/>
+  <text x="321" y="671" font-size="9.5" font-weight="600" fill="#0891b2">100 nF</text>
   <!-- - : del terminal -, por la izquierda, al bajante de GND del ESP32 -->
   <path class="wire gnd" d="M150,736 H120"/>
   <circle class="dot" cx="120" cy="736" r="3"/>
-  <text class="sig" x="150" y="776">tono cuadrado por hardware &#8212; tone() / LEDC</text>
-  <text class="sig" x="150" y="790">solo suena en CONTINUO &#183; puertos 0x0630&#8211;0x0633</text>
-  <text class="sig" x="150" y="804">PASIVO: un buzzer activo solo dar&#237;a un pitido fijo</text>
+  <text class="sig" x="150" y="776">tono cuadrado por hardware &#8212; tone() / LEDC &#183; 100 nF: quita el ruido del Wi-Fi/BT</text>
+  <text class="sig" x="150" y="790">solo suena en CONTINUO &#183; puertos 0x0630&#8211;0x0634 &#183; IO2: pin de arranque,</text>
+  <text class="sig" x="150" y="804">pero el piezo no lo baja a 0 (no conduce en continua) &#183; PASIVO: un buzzer activo solo dar&#237;a un pitido fijo</text>
 
   <!-- 74HC165 -->
   <rect class="chip" x="475" y="415" width="220" height="310" rx="6"/>
@@ -191,21 +202,30 @@
 
   <!-- ================= ALIMENTACIÓN POR BATERÍA (opcional) ================= -->
   <text x="40" y="822" class="ttl" font-size="12.5">MODIFICACIÓN: el USB-C de la SuperMini también carga (ver docs/hardware.md &#167;10)</text>
-  <text x="40" y="838" class="sig">Diodo de fábrica VBUS&#8594;5V de la SuperMini: su cátodo se lleva a IN+ del TP4056 (no al pin 5V).</text>
-  <text x="40" y="851" class="sig">Sigue protegiendo al host USB igual que antes; ya no hace falta el USB-C/microUSB propio del TP4056.</text>
+  <text x="40" y="838" class="sig">En la SuperMini: pin 5V = VBUS (USB-C) &#8594; diodo de fábrica D1 (Schottky) &#8594; VSYS = entrada del regulador 3,3 V.</text>
+  <text x="40" y="851" class="sig">D1 se desuelda y se monta fuera, misma orientación; su cátodo (raya) va al terminal OFF del interruptor, no al pad VSYS.</text>
 
-  <text x="300" y="898" class="v5t" text-anchor="middle">VBUS</text>
-  <text x="330" y="898" class="sig" fill="#be185d">USB-C propio de la SuperMini (mismo diodo, cátodo reubicado)</text>
-  <line class="wire v5" x1="300" y1="904" x2="300" y2="925"/>
-  <use xlink:href="#diode_v" transform="translate(300,925)"/>
-  <line class="wire v5" x1="300" y1="939" x2="300" y2="1019"/>
+  <!-- VBUS: pin 5V de la cabecera, directo del USB-C -->
+  <text x="132" y="899" class="v5t">pin 5V = VBUS</text>
+  <text x="132" y="912" class="sig" fill="#be185d">(USB-C de la SuperMini)</text>
+  <line class="wire v5" x1="215" y1="895" x2="600" y2="895"/>
+  <circle class="dot" cx="300" cy="895" r="3"/>
+  <line class="wire v5" x1="300" y1="895" x2="300" y2="1019"/>
+
+  <!-- D1: VBUS (anodo) -> VSYS (catodo) -->
+  <line class="wire v5" x1="600" y1="895" x2="600" y2="960"/>
+  <use xlink:href="#diode_v" transform="translate(600,960)"/>
+  <text class="pin" x="612" y="966">D1 (el de fábrica, Schottky)</text>
+  <text class="sig" x="612" y="979">raya (cátodo) &#8594; OFF del interruptor</text>
+  <path class="wire v5" d="M600,974 V994 H526 V1005"/>
 
   <use xlink:href="#gnd" transform="translate(380,913)"/>
   <line class="wire gnd" x1="380" y1="925" x2="380" y2="1019"/>
 
   <text x="40" y="955" class="ttl">ALIMENTACIÓN POR BATERÍA (opcional)</text>
-  <text x="40" y="972" class="sig">El interruptor corta solo la salida hacia el pin 5V (alimentar el aparato); la carga por IN+/IN&#8722;</text>
-  <text x="40" y="985" class="sig">de arriba sigue funcionando igual con el interruptor en OFF -- solo deja de alimentar, no de cargar.</text>
+  <text x="40" y="971" class="sig">ON: batería &#8594; VSYS (con USB, el TP4056 carga a la vez).</text>
+  <text x="40" y="983" class="sig">OFF: USB &#8594; D1 &#8594; VSYS; la batería solo carga.</text>
+  <text x="40" y="996" class="sig" fill="#be185d" font-weight="700">&#161;Batería y D1 nunca a la vez en VSYS!</text>
 
   <!-- batería -->
   <rect class="dev" x="40" y="1019" width="150" height="85" rx="5"/>
@@ -226,22 +246,41 @@
   <text class="pin" x="233" y="1038">B+</text>
   <text class="pin" x="233" y="1093">B&#8722;</text>
   <text class="sig" x="256" y="1067">DW01A + FS8205A (protección batería)</text>
-  <text class="sig" x="256" y="1080">IN+/IN&#8722;: desde el USB-C (arriba)</text>
+  <text class="sig" x="256" y="1080">IN+: del pin 5V (VBUS), sin diodo</text>
   <text class="pin" x="457" y="1038" text-anchor="end">OUT+</text>
   <text class="pin" x="457" y="1093" text-anchor="end">OUT&#8722;</text>
   <line class="wire v5"  x1="465" y1="1034" x2="490" y2="1034"/>
   <line class="wire gnd" x1="465" y1="1089" x2="465" y2="1140"/>
 
-  <!-- interruptor de alimentación general -->
+  <!-- interruptor SPDT: común -> VSYS; ON = OUT+ (batería), OFF = cátodo de D1 (USB) -->
+  <line class="wire v5"  x1="465" y1="1034" x2="523" y2="1034"/>
   <g stroke="#334155" stroke-width="1.6" fill="none">
-    <g transform="translate(490,1034)"><circle cx="0" cy="0" r="3"/><circle cx="44" cy="0" r="3"/><line x1="3" y1="0" x2="14" y2="0"/><line x1="33" y1="0" x2="41" y2="0"/><line x1="14" y1="-2" x2="35" y2="-13"/></g>
+    <circle cx="526" cy="1034" r="3"/><circle cx="526" cy="1008" r="3"/><circle cx="570" cy="1034" r="3"/>
+    <line x1="567" y1="1033" x2="531" y2="1029"/>
   </g>
-  <text class="pin" x="497" y="1018">interruptor ON/OFF</text>
-  <text class="sig" x="497" y="1062">(solo corta la batería;</text>
-  <text class="sig" x="497" y="1075">el USB no pasa por aquí)</text>
-  <line class="wire v5" x1="534" y1="1034" x2="570" y2="1034"/>
-  <text class="v5t" x="576" y="1038">5V</text>
-  <text class="sig" x="600" y="1038" fill="#be185d">&#8594; SuperMini (mismo nombre arriba)</text>
+  <text class="pin" x="518" y="1050" text-anchor="end">ON</text>
+  <text class="pin" x="518" y="1004" text-anchor="end">OFF</text>
+  <text class="pin" x="566" y="1050">común</text>
+  <text class="sig" x="490" y="1066">interruptor SPDT (común &#8594; VSYS):</text>
+  <text class="sig" x="490" y="1079">ON = batería · OFF = USB por D1</text>
+  <line class="wire v5" x1="573" y1="1034" x2="690" y2="1034"/>
+  <text class="v5t" x="618" y="1028">VSYS</text>
+  <text class="sig" x="700" y="1030" fill="#be185d">VSYS &#8594; regulador 3,3 V de la SuperMini (pad donde estaba el cátodo de D1)</text>
+
+  <!-- divisor de medida de la bateria: VSYS -> 100k -> BAT (IO3) -> 100k -> GND -->
+  <circle class="dot" cx="690" cy="1034" r="3"/>
+  <line class="wire v5" x1="690" y1="1034" x2="690" y2="1066"/>
+  <use xlink:href="#res" transform="translate(690,1066)"/><text class="p3t" x="700" y="1084" fill="#334155">100k</text>
+  <line class="wire bat" x1="690" y1="1100" x2="690" y2="1104"/>
+  <circle class="dot" cx="690" cy="1102" r="3"/>
+  <line class="wire bat" x1="690" y1="1102" x2="730" y2="1102"/><text class="batt" x="734" y="1106">BAT</text>
+  <use xlink:href="#res" transform="translate(690,1104)"/><text class="p3t" x="700" y="1122" fill="#334155">100k</text>
+  <line class="wire gnd" x1="690" y1="1138" x2="690" y2="1140"/>
+  <text class="ttl" x="1020" y="1058" font-size="12">Medida de la bater&#237;a (divisor 1:2)</text>
+  <text class="sig" x="1020" y="1074">"BAT" = IO3 (arriba). Mide VSYS. En ON, bater&#237;a</text>
+  <text class="sig" x="1020" y="1087">3,0&#8211;4,2 V &#8594; 1,5&#8211;2,1 V en IO3. OFF + USB:</text>
+  <text class="sig" x="1020" y="1100">&#8776; 4,7 V (&gt; 4,4 V = "USB"; ON + USB: Serial + 100 %).</text>
+  <text class="sig" x="1020" y="1113">OFF y sin USB no gasta; con tensión, ~20 &#181;A.</text>
 
   <!-- legend -->
   <rect x="1160" y="150" width="330" height="273" rx="6" fill="#ffffff" stroke="#cbd5e1"/>
@@ -249,13 +288,14 @@
   <g class="lbl">
     <line class="wire p3"  x1="1178" y1="193" x2="1210" y2="193"/><text x="1220" y="197">+3V3 (todas comunes)</text>
     <line class="wire gnd" x1="1178" y1="214" x2="1210" y2="214"/><text x="1220" y="218">GND (todas comunes)</text>
-    <line class="wire snd" x1="1178" y1="235" x2="1210" y2="235"/><text x="1220" y="239">Sonido — piezo pasivo (IO3)</text>
+    <line class="wire snd" x1="1178" y1="235" x2="1210" y2="235"/><text x="1220" y="239">Sonido — piezo pasivo (IO2)</text>
     <line class="wire spi" x1="1178" y1="256" x2="1210" y2="256"/><text x="1220" y="260">SPI &#8212; SCK / MISO / MOSI / CS</text>
     <line class="wire i2c" x1="1178" y1="277" x2="1210" y2="277"/><text x="1220" y="281">I2C &#8212; SDA / SCL</text>
     <line class="wire ctl" x1="1178" y1="298" x2="1210" y2="298"/><text x="1220" y="302">74HC165 &#8212; PL / CP / Q7</text>
     <line class="wire in"  x1="1178" y1="319" x2="1210" y2="319"/><text x="1220" y="323">Entradas del panel (D0–D7)</text>
-    <line class="wire v5"  x1="1178" y1="340" x2="1210" y2="340"/><text x="1220" y="344">5V — batería, opcional (§ abajo)</text>
+    <line class="wire v5"  x1="1178" y1="340" x2="1210" y2="340"/><text x="1220" y="344">VBUS / VSYS — alimentación (§ abajo)</text>
   </g>
+  <line class="wire bat" x1="1350" y1="174" x2="1382" y2="174"/><text x="1392" y="178" class="lbl" font-size="11">BAT (IO3)</text>
   <use xlink:href="#resr" transform="translate(1178,361)"/><text x="1220" y="365" class="lbl">Pull-up 10 k&#8486; a 3V3 (Dk, /CS, MISO)</text>
   <use xlink:href="#gnd" transform="translate(1190,377)"/><text x="1220" y="385" class="lbl">Símbolo de masa</text>
   <text x="1178" y="403" class="sig" font-size="11">Cruce sin punto ● = sin conexión. 74HC165, no HCT.</text>

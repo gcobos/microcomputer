@@ -486,18 +486,21 @@ MAPA DE PUERTOS
   0x0611            PORT_RANDOM    byte aleatorio nuevo en cada lectura (esp_random) (IN)
   0x0612            PORT_POWER     modo ahorro del programa (bit 0) / encender pantalla (bit 1); IN bit1 = encendida
   0x0613            PORT_SLEEP     OUT n: la CPU duerme n x 10 ms (esperar sin gastar)
+  0x0614            PORT_BAT_PCT   IN: batería 0..100 % (255 = aún sin medir)
+  0x0615            PORT_BAT_V     IN: tensión en pasos de 20 mV (>= 220 = con USB)
   0x0620 .. 0x0629  PORT_TIMER_BASE+i   10 temporizadores descendentes  (OUT arma; IN lee)
   0x0630            PORT_SND_FREQ_LO   sonido: byte bajo de la frecuencia  (OUT engancha)
   0x0631            PORT_SND_FREQ_HI   sonido: byte alto; al escribir aplica Hz=hi<<8|lo
   0x0632            PORT_SND_NOTE      sonido: nota MIDI 0..127 (0 = silencio)
   0x0633            PORT_SND_DUR       sonido: duración auto = valor * 10 ms (0 = sostenida)
   0x0634            PORT_SND_VEL       sonido: velocidad MIDI 1..127 (solo Bluetooth; pegajosa)
+  0x0635            PORT_SND_INSTR     sonido: instrumento 0 ORGAN, 1 PIANO, 2 GUITAR, 3 BELL
   0x0640            PORT_PROG_LOAD     carga un slot de flash en la RAM y reinicia la CPU (OUT slot; IN = 1 si el ultimo intento fallo)
   0x0641            PORT_PROG_SAVE     graba la RAM actual en un slot de flash (OUT slot; IN = 1 si la ultima grabacion salio bien)
   0x0642            PORT_SLOT_QUERY    OUT slot: lee nombre/categoría a 0x0660..; IN = 1 si ese slot tiene programa
   0x0643            PORT_CUR_SLOT      slot del que se cargó el programa en curso (IN)
   0x0650            PORT_CFG_BRIGHTNESS  brillo de pantalla 0..255 (OUT solo desde el slot 0; IN eco)
-  0x0651            PORT_CFG_SOUND_EN    activa/desactiva el sonido, igual que BOOT (OUT solo desde el slot 0; IN 1=activado)
+  0x0651            PORT_CFG_SOUND_EN    salida del sonido, igual que BOOT: 1 zumbador, 0 Bluetooth, 2 silencio (OUT solo desde el slot 0)
   0x0652            PORT_CFG_SAVE        OUT: graba brillo y sonido en la flash si cambiaron (solo slot 0)
   0x0660 .. 0x066E  PORT_SLOT_INFO_BASE  categoría + nombre (14 B) del slot consultado (IN)
   0x0670            PORT_TIME_CTRL     hora real: OUT congela; IN estado (bit0 hay hora, bit1 Wi-Fi, bit2 conectando, bit3 red)
@@ -585,13 +588,13 @@ LED DE A BORDO (puerto PORT_LED = 0x0610)
   mucho se suprime el log de arranque por UART.
 
 AHORRO DE ENERGÍA Y DORMIR (puertos 0x0612 / 0x0613)
-  Un programa en CONTINUO cuenta como "en uso": pantalla a pleno brillo,
-  panel muestreado cada 2 ms, sin light sleep. Para uno que pasa horas
-  encendido (tama.asm):
-    0x0612  PORT_POWER   OUT bit 0 = modo ahorro: la pantalla se atenúa a los
-                         PS_DIM_MS (5 s) sin tocar el panel y se apaga a los
-                         PS_OFF_MS (10 s); el muestreo del panel baja como en
-                         reposo. Un giro o pulsación la enciende (el programa
+  Con un programa en CONTINUO, la pantalla se atenúa y se apaga igual que en
+  edición (SCREEN_DIM_MS = 20 s, SCREEN_OFF_MS = 45 s sin tocar el panel) y el
+  muestreo del panel baja si no se toca; la CPU no hace light sleep (el
+  programa sigue corriendo). Para uno que pasa horas encendido (tama.asm):
+    0x0612  PORT_POWER   OUT bit 0 = modo ahorro: la pantalla se atenúa ya a
+                         los PS_DIM_MS (5 s) y se apaga a los PS_OFF_MS
+                         (10 s). Un giro o pulsación la enciende (el programa
                          también lo recibe; puede mirar el bit 1 de IN antes).
                          OUT bit 1 = encender la pantalla ya (noteActivity).
                          IN: bit 0 modo ahorro, bit 1 pantalla encendida.
@@ -667,8 +670,8 @@ TEMPORIZADORES (puertos 0x0620 .. 0x0629, PORT_TIMER_BASE = 0x0620)
   temporizador se pone al día: descuenta todos los pasos transcurridos de
   una vez (nunca por debajo de 0).
 
-SONIDO (puertos 0x0630 .. 0x0634, PORT_SND_BASE = 0x0630)
-  Zumbador PIEZO PASIVO en GPIO3. El firmware genera un tono de onda cuadrada
+SONIDO (puertos 0x0630 .. 0x0635, PORT_SND_BASE = 0x0630)
+  Zumbador PIEZO PASIVO en GPIO2. El firmware genera un tono de onda cuadrada
   por hardware con tone() (LEDC del ESP32-C3); no consume tiempo de CPU.
 
     0x0630  PORT_SND_FREQ_LO  OUT: engancha el byte bajo de la frecuencia (Hz).
@@ -690,6 +693,15 @@ SONIDO (puertos 0x0630 .. 0x0634, PORT_SND_BASE = 0x0630)
                               Pegajosa como DUR; 100 al (re)arrancar. La misma
                               nota con otra velocidad se vuelve a tocar.
                               IN: eco.
+    0x0635  PORT_SND_INSTR    OUT: instrumento de las notas siguientes (2 bits
+                              bajos): 0 ORGAN, 1 PIANO, 2 GUITAR, 3 BELL. En
+                              el zumbador (LEDC directo, BUZZ_CH en main.cpp)
+                              el ciclo de trabajo baja en linea recta del 50 %
+                              a 0 durante la nota, en 0 (constante) / 800 /
+                              250 / 2000 ms (tickBuzz); por Bluetooth MIDI, un
+                              Program Change (19 / 0 / 24 / 14) antes de la
+                              nota siguiente, solo si un programa lo escribe.
+                              0 al (re)arrancar. IN: eco.
 
   OJO CON EL ORDEN: 0x0633 (DUR) hay que escribirlo SIEMPRE antes que 0x0632/
   0x0631 (NOTE/FREQ_HI). sndApply() arma el apagado automático con el valor
@@ -703,17 +715,19 @@ SONIDO (puertos 0x0630 .. 0x0634, PORT_SND_BASE = 0x0630)
   Suena SOLO en RUN + CONTINUOUS. Se calla (y se ponen los 4 registros a 0)
   al (re)arrancar una ejecución, al pasar a STEP o EDIT, y al llegar a HALT.
   tickSound() corre una vez por vuelta de loop() (aplica el auto-apagado).
-  El piezo pasivo va directo entre GPIO3 y GND (opcional 100 Ω en serie).
+  El piezo pasivo va directo entre GPIO2 y GND (opcional 100 Ω en serie).
 
   SALIDA DEL SONIDO: ZUMBADOR / BLUETOOTH (botón BOOT, GPIO9, ver
   docs/hardware.md). Cambia a dónde va el sonido sin tocar el estado emulado:
   el programa en curso sigue escribiendo/leyendo estos 4 puertos con total
   normalidad. soundOutOn/soundOutOff (main.cpp) lo mandan al zumbador
-  (tone()/noTone()) o, con g_soundBt, como nota MIDI por Bluetooth LE
+  (tone()/noTone()) o, con g_soundMode = Bluetooth, como nota MIDI por Bluetooth LE
   (src/btmidi.cpp: el aparato se anuncia como "compi-midiN" -- N, el
   primer número que no use otro compi cercano --, canal 1, velocidad
   100; una frecuencia sale como la nota MIDI más cercana). Sin nada
-  conectado por Bluetooth no suena nada: hace las veces del antiguo MUTE.
+  conectado por Bluetooth no suena nada; si en 30 s no conecta nada, apaga
+  la radio y queda en silencio de verdad (tickBtTimeout(), se guarda): BOOT
+  una vez -> zumbador, otra -> Bluetooth (otros 30 s).
   Si el sintetizador corta la conexión, vuelve solo al zumbador (como una
   pulsación de BOOT: jingle incluido, y se guarda; btmidiTakeLost()). De
   fábrica, el zumbador. La pila BLE solo arranca la primera vez que se elige
@@ -774,7 +788,7 @@ CARGA Y GRABADO DE PROGRAMAS (puertos 0x0640 / 0x0641)
                              menús solo.
     0x0643  PORT_CUR_SLOT   IN: slot del que se cargó el programa en curso
                              (para que un programa se grabe a sí mismo, p. ej.
-                             play.asm con sus canciones).
+                             musicmaker.asm con sus canciones).
     0x0660  categoría (0xFF ninguna, 1 SYSTEM, 2 GAME, 3 PROGRAM, 4 UTILITY,
             5 DEMO, 6 DOCS); 0x0661..0x066E nombre ASCII, relleno con 0.
 
@@ -820,7 +834,7 @@ CONFIGURACIÓN DEL APARATO (puertos 0x0650 / 0x0651 / 0x0652)
                                   IN: eco del último valor escrito.
     0x0651  PORT_CFG_SOUND_EN    OUT: 0 = Bluetooth MIDI, !=0 = zumbador --
                                   MISMO interruptor general que el botón BOOT
-                                  (g_soundBt, main.cpp). Es una preferencia
+                                  (g_soundMode, main.cpp). Es una preferencia
                                   de sesión, no un ajuste de "este programa":
                                   NO se reinicia al arrancar una ejecución
                                   nueva (igual que pulsar BOOT a mano tampoco
@@ -921,12 +935,16 @@ PINES USADOS (constantes en src/main.cpp)
                           con eso, asi que sigue sirviendo igual de bien
                           para la recuperacion manual de flasheo (mantenerlo
                           pulsado al enchufar).
+  IO2   PIN_BUZZER        Zumbador piezo pasivo (tone()/LEDC). Strapping, pero
+                          el piezo no conduce en continua: no lo baja a 0.
+  IO3   PIN_BAT_SENSE     Medida de la batería: punto medio del divisor
+                          2 x 100 kΩ desde VSYS (ADC1 canal 3).
   IO10  PIN_HC165_LOAD    74HC165 PL (carga paralela, activo bajo)
   IO20  PIN_I2C_SDA       OLED SDA
   IO21  PIN_I2C_SCL       OLED SCL
 
 PINES PROHIBIDOS
-  IO2              strapping.
+  (IO2 es strapping, pero se usa para el zumbador: ver arriba.)
   IO8             strapping también, pero se usa para el LED de a bordo (OK).
   IO11..IO17       flash SPI interna del módulo.
   IO18, IO19       USB nativo (no salen a los pads del SuperMini).
@@ -948,8 +966,7 @@ OLED (SH1106 128x64 I2C)
   (NO Adafruit_SSD1306).
 
 LED DE FALLO
-  IO3 -> ánodo LED -> 330 Ω -> GND. El "LED" de a bordo es un WS2812 y no
-  vale para digitalWrite().
+  El LED azul de a bordo, en IO8 (ver PINES USADOS).
 
 
 --------------------------------------------------------------------------------
@@ -1437,11 +1454,12 @@ MENSAJE A PANTALLA COMPLETA — message(texto)
   PIN_LED / PIN_LED_ACTIVE_LOW  src/main.cpp   IO8 / true  (LED de a bordo)
   PORT_LED          include/iomap.h    0x0610
   PORT_TIMER_BASE / TIMER_COUNT / TIMER_BASE_MS  include/iomap.h  0x0620 / 10 / 1 ms
-  PORT_SND_BASE / SND_PORT_COUNT  include/iomap.h    0x0630 / 4  (piezo en GPIO3)
+  PORT_SND_BASE / SND_PORT_COUNT  include/iomap.h    0x0630 / 5  (piezo en GPIO2)
   ATTR_PORT_BASE / ATTR_PORT_SPAN  include/iomap.h   0x0500 / 0x0100
   ATTR_INVERSE/BLINK/UNDERLINE/STRIKE/SUBSCRIPT/SUPERSCRIPT/ROT_MASK  include/iomap.h  bits 0-7
   FONT5X7 / FONT5X7_FIRST / FONT5X7_LAST  include/font5x7.h  0x20 / 0x7F
-  PIN_BUZZER        src/main.cpp        IO3
+  PIN_BUZZER        src/main.cpp        IO2
+  PIN_BAT_SENSE     src/main.cpp        IO3 (divisor 1:2 de VSYS)
   SPI de la flash   src/spi_flash_storage.cpp   8 MHz, MODE0
 
 
@@ -1519,11 +1537,11 @@ portRead(port):  port < 1024 -> g_fb[port] ; celda de texto -> g_text[i] ;
   0x0610 -> g_led ; 0x0620..0629 -> g_timer[i] ;
   0x0630..0634 -> eco de sonido (DUR = tiempo restante) ;
   0x0640 -> g_lastLoadOk ; 0x0641 -> g_lastSaveOk ;
-  0x0650 -> g_screenContrast ; 0x0651 -> !g_soundBt ; resto -> 0.
+  0x0650 -> g_screenContrast ; 0x0651 -> 1 zumbador, 0 Bluetooth, 2 silencio (g_soundMode) ; resto -> 0.
 portWrite(port, v):  port < 1024 -> g_fb[port] = v ; celda de texto -> g_text[i] = v ;
   celda de atributos -> g_attr[i] = v ;
   0x0610 -> LED ; 0x0620..0629 -> arma el temporizador ;
-  0x0630..0634 -> sonido (0x0631 y 0x0632 aplican el tono; 0x0634 = velocidad MIDI) ;
+  0x0630..0634 -> sonido (0x0631 y 0x0632 aplican el tono; 0x0634 = velocidad MIDI, 0x0635 = instrumento) ;
   0x0640 -> flash.loadProgram(v, cpu.ram()) + cpu.reset() + clearRuntimeOutputs() si sale bien ;
   0x0641 -> flash.saveProgram(v, cpu.ram()) ;
   0x0650 -> g_screenContrast = v ; oled.contrast(v) ;
@@ -1604,9 +1622,13 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   quepa holgado. La RAM queda 100% para el programa.
 - El framebuffer del dispositivo (g_fb) NO está en la RAM de la CPU. Un
   programa que quiera leer lo que ha dibujado usa IN, no LDA.
-- En CONTINUOUS la OLED se refresca cada FB_FLUSH_MS; durante el volcado (~30 ms
-  de I2C) la CPU no avanza, así que el rendimiento efectivo es ~40%. Subir
-  FB_FLUSH_MS da más CPU al programa a costa de refresco.
+- En CONTINUOUS la OLED se refresca cada FB_FLUSH_MS. Componer el fotograma
+  es rápido; el envío por I2C (~25-30 ms) lo hace una tarea aparte
+  (OledPanel::txTaskFn, display.h) mientras la CPU emulada y el sonido siguen:
+  antes, durante el volcado no avanzaba nada, el programa perdía ~25 % del
+  tiempo y las notas acababan hasta 30 ms tarde al azar. Lo demás que toca
+  la pantalla espera a que acabe el envío en curso (mutex), y antes de un
+  light sleep también (waitIdle).
 - El framebuffer y la capa de texto se borran en cada (re)inicio de ejecución
   (entrar en RUN o RESET en STEP).
 - PANTALLA: gráficos (0x0000..0x03FF), texto (0x0400..0x04FF) y atributos de
@@ -1630,10 +1652,10 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   reg,src / reg,#imm / reg,[addr] / reg,[r16]. `MOV reg,#imm` se codifica
   como LDI (2 B) en vez de ALUI (3 B).
 - En el ESP32-C3 SuperMini el USB nativo ocupa IO18/IO19; el I2C va en IO20/21.
-- SONIDO: zumbador piezo PASIVO en GPIO3 (el último pin que quedaba libre),
+- SONIDO: zumbador piezo PASIVO en GPIO2 (GPIO3 mide la batería),
   atacado directo (el piezo es capacitivo, corriente media despreciable). El
   tono lo genera tone()/LEDC por hardware, así que no roba tiempo a la CPU
-  emulada ni depende del modelo de ejecución por lotes. Puertos 0x0630..0x0634:
+  emulada ni depende del modelo de ejecución por lotes. Puertos 0x0630..0x0635:
   frecuencia de 16 bits, nota MIDI (lo más fácil de usar con OUT), duración
   automática y velocidad MIDI (solo por Bluetooth). Solo suena en CONTINUOUS; se calla en STEP/EDIT y al HALT. Con un
   piezo pasivo se pueden tocar melodías; un buzzer ACTIVO solo daría un pitido

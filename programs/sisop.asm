@@ -136,6 +136,8 @@ ml_datbtn:
 ml_settings:
     CALL settings_dial_dat
     CALL settings_press_dat
+    CALL settings_sound
+    CALL settings_battery
 
 ml_dirbtn:
     ; --- pulsador DIRECCION: vuelve a la lista de carpetas --------------
@@ -397,9 +399,9 @@ settings_press_dat:
     JMPNZ spd_ret           ; ya estaba pulsado -- no es un flanco nuevo
 
     IN  AL,(P_CFG_SOUND_EN)
-    CMP AL,#0
-    JMPZ spd_on
-    MOV AL,#0
+    CMP AL,#1
+    JMPNZ spd_on            ; Bluetooth o silencio -> zumbador (como BOOT)
+    MOV AL,#0               ; zumbador -> Bluetooth
     JMP spd_apply
 spd_on:
     MOV AL,#1
@@ -701,21 +703,78 @@ redraw_settings:
     MOV CX,#0x0301
     CALL txt_puts
 
-    IN  AL,(P_CFG_SOUND_EN)
-    CMP AL,#0
-    JMPZ rs_snd_off
-    MOV BX,#s_sound_on
-    JMP rs_snd_puts
-rs_snd_off:
-    MOV BX,#s_sound_off
-rs_snd_puts:
-    MOV CX,#0x0501
-    CALL txt_puts
+    MOV AL,#255             ; ningun valor real -> fuerza pintar el sonido
+    STA [snd_shown],AL
+    CALL settings_sound
 
     MOV BX,#s_set_back
     MOV CX,#0x0701
     CALL txt_puts
     CALL redraw_bright
+    MOV AL,#253             ; ningun valor real -> fuerza pintar la bateria
+    STA [bat_shown],AL
+    CALL settings_battery
+    RET
+
+; --- settings_sound: "SOUND: BUZZER/BLUETOOTH" en la fila 5. Se llama en
+; cada vuelta y solo repinta si cambia: asi tambien se ve el cambio hecho con
+; el boton BOOT del ESP32, no solo el de pulsar DATOS aqui.
+settings_sound:
+    IN  AL,(P_CFG_SOUND_EN)
+    LDA BL,[snd_shown]
+    CMP AL,BL
+    JMPZ ss_ret
+    STA [snd_shown],AL
+    MOV BX,#s_sound_off     ; 0 = Bluetooth
+    CMP AL,#0
+    JMPZ ss_puts
+    MOV BX,#s_sound_mute    ; 2 = silencio
+    CMP AL,#2
+    JMPZ ss_puts
+    MOV BX,#s_sound_on      ; 1 = zumbador
+ss_puts:
+    MOV CX,#0x0501
+    CALL txt_puts
+ss_ret:
+    RET
+
+; --- settings_battery: "BATTERY nnn%" (o USB / ---) en la fila 6 de
+; SETTINGS. Se llama en cada vuelta, pero solo repinta si el valor cambia
+; (el firmware lo mide cada 2 s). bat_shown: 0..100 = %, 254 = USB,
+; 255 = aun sin medir.
+settings_battery:
+    IN  AL,(P_BAT_V)
+    CMP AL,#220
+    JMPC sb_pct             ; < 220 (4,40 V): bateria
+    MOV AL,#254             ; red de 5 V con USB
+    JMP sb_cmp
+sb_pct:
+    IN  AL,(P_BAT_PCT)
+sb_cmp:
+    LDA BL,[bat_shown]
+    CMP AL,BL
+    JMPZ sb_ret
+    STA [bat_shown],AL
+    MOV CX,#0x0601
+    CMP AL,#254
+    JMPZ sb_usb
+    CMP AL,#255
+    JMPZ sb_none
+    MOV BX,#s_bat
+    CALL txt_puts
+    LDA AL,[bat_shown]
+    CALL txt_putn
+    MOV BX,#s_bat_pct
+    CALL txt_puts
+    RET
+sb_usb:
+    MOV BX,#s_bat_usb
+    CALL txt_puts
+    RET
+sb_none:
+    MOV BX,#s_bat_none
+    CALL txt_puts
+sb_ret:
     RET
 
 ; --- read_ptr16: BX = base de una tabla de punteros de 16 bits; CL = indice
@@ -748,7 +807,12 @@ s_set_help1:      .asciiz "TURN: BRIGHTNESS"
 s_set_help2:      .asciiz "PRESS: BUZZER/BT"
 s_sound_on:       .asciiz "SOUND: BUZZER   "
 s_sound_off:      .asciiz "SOUND: BLUETOOTH"
+s_sound_mute:     .asciiz "SOUND: OFF      "
 s_set_back:       .asciiz "DIR: BACK"
+s_bat:            .asciiz "BATTERY "
+s_bat_pct:        .asciiz "%  "     ; borra lo que sobre de un valor mas largo
+s_bat_usb:        .asciiz "BATTERY USB "
+s_bat_none:       .asciiz "BATTERY --- "
 
 ; --- carpetas (indice "real" 0..6, ver FOLDER_OTHER/SETTINGS_FOLDER) ------
 f0_name: .asciiz "GAMES"
@@ -776,6 +840,8 @@ tmp0:             .space 1
 sdd_cnt:          .space 1     ; detentes pendientes de settings_dial_dat
 bv_pv:            .space 1
 bv_buf:           .asciiz "BRIGHT 000"
+bat_shown:        .space 1
+snd_shown:        .space 1     ; lo que muestra la fila SOUND (ver settings_sound)     ; lo que muestra la fila BATTERY (ver settings_battery)
 i:                .space 1
 nb_lo:            .space 1
 nb_hi:            .space 1

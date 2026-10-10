@@ -18,7 +18,7 @@ Sintaxis = la del desensamblador (src/disasm.cpp) + etiquetas y directivas.
     .category GAME     ; GAME PROGRAM UTILITY DEMO DOCS SYSTEM (o un numero)
     .persist 0x4000, 0xC800  ; zona de RAM [inicio, fin) donde el programa
                        ; guarda datos que deben sobrevivir a reenviarlo
-                       ; (p.ej. las canciones de play.asm): tools/compi.py
+                       ; (p.ej. las canciones de musicmaker.asm): tools/compi.py
                        ; send la copia del slot antes de grabar. Puede haber
                        ; varias; no puede solaparse con el programa
     .include "text.asm"  ; inserta otro fichero aqui (busca junto al que lo

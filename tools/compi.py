@@ -4,7 +4,7 @@
     python3 tools/compi.py list                     # slots ocupados, con nombre
     python3 tools/compi.py send programs/pong.asm   # ensambla y graba en su .slot
     python3 tools/compi.py send prog.bin --slot 30  # un .bin necesita --slot
-    python3 tools/compi.py recv 22 -o play.bin      # saca un slot a un fichero
+    python3 tools/compi.py recv 22 -o musicmaker.bin      # saca un slot a un fichero
     python3 tools/compi.py backup                   # copia de TODO (programas,
                                                     # nombres y EEPROM)
     python3 tools/compi.py restore backups/compi-20261008-101500
@@ -21,7 +21,7 @@ orden le pone la del PC de paso. Todo lo que va y viene se comprueba con
 su checksum.
 
 send CONSERVA LOS DATOS del programa: si el .asm declara zonas .persist (p.
-ej. las canciones de play.asm) y en el slot ya esta ese mismo programa (mismo
+ej. las canciones de musicmaker.asm) y en el slot ya esta ese mismo programa (mismo
 nombre), primero lee esas zonas del aparato y las mete en la imagen nueva.
 --no-persist las borra; --keep 0x4000-0xC7FF hace lo mismo a mano (p. ej.
 para un .bin).
@@ -41,6 +41,7 @@ import datetime
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import casm  # noqa: E402
@@ -323,18 +324,116 @@ def cmd_diag(args):
     say(f"light sleeps de un programa:        {d['light_sleeps']}")
     if "sound_bt" in d:
         bt = ["parado", "buscando otros compi", "anunciandose"][d["bt_state"]] if d["bt_state"] < 3 else d["bt_state"]
-        say(f"salida del sonido:                  {'Bluetooth MIDI' if d['sound_bt'] else 'zumbador'}")
-        say(f"Bluetooth:                          {bt}" + ("  · CONECTADO" if d["bt_connected"] else ""))
+        out = {0: "zumbador", 1: "Bluetooth MIDI", 2: "silencio (el Bluetooth no conecto)"}.get(d["sound_bt"], d["sound_bt"])
+        say(f"salida del sonido:                  {out}")
+        itvl = f" (intervalo {d['bt_itvl_us'] / 1000:.1f} ms)" if d.get("bt_itvl_us") else ""
+        say(f"Bluetooth:                          {bt}" + ("  · CONECTADO" + itvl if d["bt_connected"] else ""))
         c = d["clock"]
         say(f"reloj:                              {'con hora' if c & 1 else 'sin hora'}"
             + ("  · Wi-Fi buscando/conectando" if c & 4 else ""))
+    if d.get("bat_mv"):
+        mv = d["bat_mv"]
+        if mv > 4400:
+            say(f"alimentacion:                       USB ({mv / 1000:.2f} V en VSYS)")
+        elif d.get("usb"):
+            say(f"alimentacion:                       USB, bateria llena ({mv / 1000:.2f} V)")
+        else:
+            aviso = "  · BATERIA BAJA" if mv < 3500 else ""
+            say(f"bateria:                            {mv / 1000:.2f} V{aviso}")
+    return 0
+
+
+def cmd_tone(args):
+    """Un tono suelto con el ciclo de trabajo dado (en %)."""
+    with Link(args.port, auto_time=False) as link:
+        link.tone(args.hz, round(args.duty * 1023 / 100), args.ms, args.decay)
+    return 0
+
+
+def cmd_tonetest(args):
+    """Demostracion: el mismo arpegio con varios ciclos de trabajo, y con
+    decaimiento, para oir en el piezo si cambia el timbre."""
+    notes = [523, 659, 784, 1047]                       # DO5 MI5 SOL5 DO6
+    tests = [("50 % (como ahora)", 50, False), ("25 %", 25, False),
+             ("12,5 %", 12.5, False), ("6 %", 6, False),
+             ("50 % con decaimiento", 50, True), ("25 % con decaimiento", 25, True)]
+    with Link(args.port, auto_time=False) as link:
+        for label, pct, decay in tests:
+            say(label)
+            for _ in range(2):
+                for hz in notes:
+                    link.tone(hz, round(pct * 1023 / 100), args.ms, decay)
+                    time.sleep(0.03)
+            time.sleep(0.6)
+    return 0
+
+
+INSTR_NAMES = ["ORGAN", "PIANO", "GUITAR", "BELL"]
+
+
+def cmd_instrtest(args):
+    """Los 4 instrumentos del zumbador (PORT_SND_INSTR) con la misma melodia."""
+    tune = [(523, 300), (659, 300), (784, 300), (1047, 900)]   # DO5 MI5 SOL5 DO6
+    with Link(args.port, auto_time=False) as link:
+        for i, name in enumerate(INSTR_NAMES):
+            if args.instr is not None and i != args.instr:
+                continue
+            say(f"{i} {name}")
+            for hz, ms in tune:
+                link.note(i, hz, ms)
+            time.sleep(0.5)
+    return 0
+
+
+def cmd_miditest(args):
+    """Mide en ESTE ordenador (Linux, ALSA: aseqdump) cuanto se desordenan
+    las notas del Bluetooth MIDI al llegar: el compi las manda exactamente
+    cada --ms; aqui se apunta la hora de llegada de cada una."""
+    import re
+    import statistics
+    import subprocess
+    import threading
+    out = subprocess.run(["aconnect", "-l"], capture_output=True, text=True).stdout
+    m = re.search(r"client (\d+): 'compi-midi\d+'", out)
+    if not m:
+        say("compi: no veo ningun compi-midi en ALSA (aconnect -l): ¿esta conectado por Bluetooth?")
+        return 1
+    with Link(args.port, auto_time=False) as link:
+        d = link.diag()
+        if not d.get("bt_connected"):
+            say("compi: el aparato no tiene el Bluetooth conectado")
+            return 1
+        proc = subprocess.Popen(["stdbuf", "-oL", "aseqdump", "-p", m.group(1) + ":0"],
+                                stdout=subprocess.PIPE, text=True, bufsize=1)
+        times = []
+
+        def reader():
+            for line in proc.stdout:
+                if "Note on" in line and "velocity 100" in line:
+                    times.append(time.monotonic())
+        threading.Thread(target=reader, daemon=True).start()
+        time.sleep(0.5)
+        link.midi_test(args.n, args.ms)
+        time.sleep(0.5)
+        proc.terminate()
+    if len(times) < 3:
+        say(f"compi: solo llegaron {len(times)} notas")
+        return 1
+    dev = [(t - times[0]) * 1000 - i * args.ms for i, t in enumerate(times)]
+    mean = statistics.mean(dev)
+    dev = [x - mean for x in dev]
+    gaps = [(b - a) * 1000 for a, b in zip(times, times[1:])]
+    say(f"intervalo BLE: {d.get('bt_itvl_us', 0) / 1000:.1f} ms")
+    say(f"{len(times)} de {args.n} notas; separacion {min(gaps):.0f}..{max(gaps):.0f} ms "
+        f"(enviadas cada {args.ms}); desviacion tipica {statistics.pstdev(dev):.1f} ms, "
+        f"max {max(abs(x) for x in dev):.1f} ms")
     return 0
 
 
 def cmd_sound(args):
     with Link(args.port, auto_time=False) as link:
-        link.set_sound(args.out == "bt")
-    say("sonido por " + ("Bluetooth MIDI" if args.out == "bt" else "el zumbador"))
+        link.set_sound(args.out)
+    say({"bt": "sonido por Bluetooth MIDI", "off": "sonido en silencio"}.get(args.out, "sonido por el zumbador"))
     return 0
 
 
@@ -388,8 +487,20 @@ def main(argv=None):
 
     sub.add_parser("net", help="hora, red Wi-Fi y zona horaria del aparato")
     sub.add_parser("diag", help="reinicios, su motivo, tiempo encendido... del aparato")
-    p = sub.add_parser("sound", help="salida del sonido: bt (Bluetooth MIDI) o buzzer")
-    p.add_argument("out", choices=["bt", "buzzer"])
+    p = sub.add_parser("tone", help="PRUEBA: un tono en el zumbador con otro ciclo de trabajo")
+    p.add_argument("hz", type=int)
+    p.add_argument("duty", type=float, help="ciclo de trabajo en %% (50 = el de siempre)")
+    p.add_argument("ms", type=int)
+    p.add_argument("--decay", action="store_true", help="el ciclo baja hasta 0 durante la nota")
+    p = sub.add_parser("tonetest", help="PRUEBA: el mismo arpegio con varios ciclos de trabajo")
+    p.add_argument("--ms", type=int, default=250, help="duracion de cada nota")
+    p = sub.add_parser("instrtest", help="PRUEBA: los 4 instrumentos del zumbador")
+    p.add_argument("instr", type=int, nargs="?", help="solo este (0..3)")
+    p = sub.add_parser("miditest", help="PRUEBA: mide en este PC la regularidad del Bluetooth MIDI")
+    p.add_argument("--n", type=int, default=60, help="notas")
+    p.add_argument("--ms", type=int, default=125, help="cada cuantos ms las manda el compi")
+    p = sub.add_parser("sound", help="salida del sonido: bt (Bluetooth MIDI), buzzer u off (silencio)")
+    p.add_argument("out", choices=["bt", "buzzer", "off"])
     sub.add_parser("time", help="pone la hora del PC en el aparato")
     sub.add_parser("sync", help="que el aparato pida ya la hora por Wi-Fi")
     p = sub.add_parser("wifi", help="red Wi-Fi para la hora (sin nombre: quitarla)")
@@ -408,7 +519,7 @@ def main(argv=None):
                 "recv": cmd_recv, "backup": cmd_backup, "restore": cmd_restore,
                 "rm": cmd_rm, "net": cmd_net, "time": cmd_time, "wifi": cmd_wifi,
                 "tz": cmd_tz, "sync": cmd_sync, "diag": cmd_diag,
-                "sound": cmd_sound}[args.cmd](args)
+                "sound": cmd_sound, "tone": cmd_tone, "tonetest": cmd_tonetest, "instrtest": cmd_instrtest, "miditest": cmd_miditest}[args.cmd](args)
     except CompiError as e:
         print(f"compi: {e}", file=sys.stderr)
         return 1

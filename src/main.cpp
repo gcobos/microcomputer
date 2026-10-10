@@ -40,11 +40,18 @@ constexpr uint8_t PIN_I2C_SCL  = 21;
 constexpr uint8_t PIN_LED = 8;
 constexpr bool PIN_LED_ACTIVE_LOW = true;
 
-// Zumbador piezo PASIVO en GPIO3 (único pin libre). Tono por hardware (tone()).
-constexpr uint8_t PIN_BUZZER = 3;
+// Zumbador piezo PASIVO en GPIO2 (pin de arranque, pero el piezo no
+// conduce en continua: no lo baja a 0). Tono por hardware: el LEDC del
+// ESP32 directamente (BUZZ_CH), no tone(), para poder variar la intensidad
+// durante la nota (instrumentos, ver buzzOn/tickBuzz).
+constexpr uint8_t PIN_BUZZER = 2;
+
+// Medida de la batería: divisor 1:2 (2 x 100 kΩ) desde VSYS (entrada del
+// regulador: la batería tras el interruptor, o el USB por D1) a GPIO3 (ADC1 canal 3). Ver docs/wiring.svg.
+constexpr uint8_t PIN_BAT_SENSE = 3;
 
 // Botón BOOT (GPIO9) reutilizado para elegir la salida del sonido
-// (zumbador / Bluetooth MIDI, ver g_soundBt), disponible EN
+// (zumbador / Bluetooth MIDI, ver g_soundMode), disponible EN
 // TODO MOMENTO sin importar qué programa corre ni en qué modo esté el
 // panel (por eso se sondea en loop() antes de cualquier otra cosa, nunca
 // dentro del switch(view) de más abajo). docs/hardware.md lo marca como
@@ -59,12 +66,10 @@ constexpr unsigned long BOOT_BTN_DEBOUNCE_MS = 30;
 // EJECUCIÓN + CONTINUO: instrucciones por vuelta de loop() y refresco del
 // framebuffer.
 constexpr int EXEC_BATCH = 4000;
-// Cada volcado a la OLED bloquea ~30 ms de I2C; con 50 ms de periodo eso deja
-// el "duty cycle" de cómputo en solo ~40% (ver specs.txt §16). Subir el
-// periodo reparte ese coste fijo entre más tiempo: a 100 ms, ~30 ms
-// bloqueado de cada 100 = ~70% de cómputo (casi el doble que antes) a costa
-// de refrescar la pantalla a la mitad de frecuencia (más "a saltos" en
-// animaciones rápidas como cubo.asm). Medido con programs/benchmark.asm.
+// Cada volcado a la OLED son ~30 ms de I2C. Antes bloqueaba la emulación (a
+// 50 ms de periodo, solo ~40% de cómputo; por eso se subió a 125 ms). Ahora
+// el envío lo hace una tarea aparte (OledPanel::txTaskFn) y la emulación y
+// el sonido siguen mientras tanto; el periodo se ha dejado igual.
 constexpr unsigned long FB_FLUSH_MS = 125;
 
 // EditMem: umbral para distinguir pulsación corta (insertar NOP) de larga
@@ -145,7 +150,7 @@ uint8_t g_led = 0;                          // estado del LED (puerto PORT_LED)
 // para que un programa pueda pedir su propio brillo sin desmontar el ahorro
 // de energía automático (que sigue atenuando/apagando por inactividad igual
 // que siempre, solo que "pleno" pasa a ser este valor). Arranca al de
-// fábrica y PERSISTE desde ahí para todo el aparato, igual que g_soundBt:
+// fábrica y PERSISTE desde ahí para todo el aparato, igual que g_soundMode:
 // NO se reinicia en cada arranque de ejecución nueva (clearRuntimeOutputs).
 uint8_t g_screenContrast = OLED_CONTRAST_FULL;
 uint8_t g_timer[TIMER_COUNT] = {0};         // temporizadores (puertos 0x0620+)
@@ -156,18 +161,27 @@ uint8_t  g_sndLo = 0, g_sndHi = 0;          // frecuencia enganchada (bytes)
 uint8_t  g_sndNote = 0;                     // última nota MIDI escrita (eco de IN)
 uint8_t  g_sndDurUnits = 0;                 // duración auto en unidades de 10 ms
 uint8_t  g_sndVel = SND_VEL_DEFAULT;        // velocidad MIDI (solo Bluetooth)
+uint8_t  g_sndInstr = 0;                    // instrumento (PORT_SND_INSTR)
 uint16_t g_sndHz = 0;
 unsigned long g_sndOffAt = 0;               // millis() en que callar; 0 = sostenido
 
-// Salida del sonido (botón BOOT, ver PIN_BOOT_BTN): false = el zumbador
-// (de fábrica), true = Bluetooth MIDI (btmidi.h) y el zumbador callado. Sin
-// nada conectado por Bluetooth no suena nada: hace las veces del antiguo
-// MUTE. El programa en curso sigue escribiendo en los puertos de sonido con
-// total normalidad, solo cambia a dónde va (soundOutOn/soundOutOff).
-bool g_soundBt = false;
+// Salida del sonido (botón BOOT, ver PIN_BOOT_BTN): el zumbador (de
+// fábrica), Bluetooth MIDI (btmidi.h, el zumbador callado) o silencio de
+// verdad (ni zumbador ni radio). Al silencio solo se llega solo: si el
+// Bluetooth no consigue conectar en BT_CONNECT_TIMEOUT_MS (ver
+// tickBtTimeout), para no dejar la radio gastando ~80 mA para nada. El
+// programa en curso sigue escribiendo en los puertos de sonido con total
+// normalidad, solo cambia a dónde va (soundOutOn/soundOutOff).
+constexpr uint8_t SND_OUT_BUZZER = 0;
+constexpr uint8_t SND_OUT_BT     = 1;
+constexpr uint8_t SND_OUT_OFF    = 2;
+uint8_t g_soundMode = SND_OUT_BUZZER;
+constexpr unsigned long BT_CONNECT_TIMEOUT_MS = 30000;
+unsigned long g_btStartMs = 0;              // millis() al encender el Bluetooth
+bool g_btEverConnected = false;             // ya conecto desde que se encendio
 
 // --- Ajustes globales persistentes (brillo + salida del sonido) ---------
-// g_screenContrast y g_soundBt son del APARATO, no del programa: solo
+// g_screenContrast y g_soundMode son del APARATO, no del programa: solo
 // los cambian SETTINGS de sisop (slot 0, puertos PORT_CFG_*) y el boton
 // BOOT. Se guardan en la flash (storage.h SETTINGS_SIZE) para sobrevivir a
 // un reset o a apagarlo, y se cargan en setup(). Para no gastar la flash
@@ -175,9 +189,8 @@ bool g_soundBt = false;
 // (g_settingsDirty) y se graba de una vez cuando sisop sale de SETTINGS
 // (OUT a PORT_CFG_SAVE), o, para el boton BOOT, al acabar su jingle
 // (g_bootSavePending, ver tickSettingsSave).
-// Formato: [0] = SETTINGS_MAGIC, [1] = brillo, [2] = 1 si sale por Bluetooth
-// (antes "1 si muteado": un aparato que estaba muteado arranca en Bluetooth,
-// que sin nada conectado tambien calla).
+// Formato: [0] = SETTINGS_MAGIC, [1] = brillo, [2] = salida del sonido
+// (g_soundMode: 0 zumbador, 1 Bluetooth, 2 silencio).
 constexpr uint8_t SETTINGS_MAGIC = 0x5E;
 bool g_settingsDirty    = false;
 bool g_bootSavePending  = false;
@@ -193,9 +206,15 @@ unsigned long g_bootBtnLastChangeMs = 0;
 // tocan el zumbador (ver tickMuteJingle) para que no compita con el propio
 // sonido del programa: al terminar la melodia retoma el tono en marcha.
 constexpr uint16_t MUTE_JINGLE_HZ[2] = {880, 1175};   // La5, Re6 -- subida alegre
+constexpr uint16_t BAT_JINGLE_HZ[3] = {1400, 1000, 700};   // batería baja: bajando
 constexpr unsigned long MUTE_JINGLE_NOTE_MS = 110;
+// g_muteJingleActive = suena una melodía del propio aparato (la de volver al
+// zumbador o la de batería baja): el sonido del programa no toca el zumbador
 bool g_muteJingleActive = false;
-uint8_t g_muteJingleStep = 0;                // 0 = sonando nota 1, 1 = sonando nota 2
+bool g_jingleIsMute = false;                 // es la de volver al zumbador (BOOT)
+const uint16_t* g_jingleHz = nullptr;
+uint8_t g_jingleLen = 0;
+uint8_t g_muteJingleStep = 0;                // nota que suena
 unsigned long g_muteJingleNoteEndMs = 0;
 
 // Carga/grabado de programas desde el propio programa (puertos 0x0640/41).
@@ -255,34 +274,90 @@ void resetTimers() {
     for (uint8_t i = 0; i < TIMER_COUNT; ++i) { g_timer[i] = 0; g_timerLast[i] = now; }
 }
 
-// --- Sonido (piezo pasivo en PIN_BUZZER, puertos 0x0630..0x0633) -----
+// --- Zumbador: LEDC directo, con envolvente por instrumento ---------------
+// El piezo apenas cambia de timbre con el ciclo de trabajo (probado: 50, 25,
+// 12,5 %), pero bajarlo durante la nota suena a nota que se apaga. Cada
+// instrumento es un tiempo de caida: el ciclo baja en linea recta del 50 %
+// a 0 en ese tiempo (0 = constante). La envolvente la avanza tickBuzz() en
+// cada vuelta de loop(), sin bloquear la emulacion. El pin queda unido al
+// canal desde setup() (buzzSetup); callado = ciclo 0 = pin a 0.
+constexpr uint8_t  BUZZ_CH = 2;
+constexpr uint32_t BUZZ_DUTY_FULL = 512;    // 50 % con 10 bits
+constexpr uint16_t INSTR_DECAY_MS[SND_INSTR_COUNT] = {0, 800, 250, 2000};
+constexpr uint8_t  INSTR_MIDI[SND_INSTR_COUNT]     = {19, 0, 24, 14};
+uint16_t g_buzzHz = 0;                      // 0 = callado
+uint8_t  g_buzzInstr = 0;
+uint32_t g_buzzDuty = 0;
+unsigned long g_buzzStartMs = 0;
+
+void buzzSetup() {
+    ledcSetup(BUZZ_CH, 1000, 10);
+    ledcAttachPin(PIN_BUZZER, BUZZ_CH);
+    ledcWrite(BUZZ_CH, 0);
+}
+
+void buzzOn(uint16_t hz, uint8_t instr) {
+    ledcWriteTone(BUZZ_CH, hz);             // reconfigura la frecuencia (10 bits)
+    ledcWrite(BUZZ_CH, BUZZ_DUTY_FULL);
+    g_buzzHz = hz;
+    g_buzzInstr = instr < SND_INSTR_COUNT ? instr : 0;
+    g_buzzDuty = BUZZ_DUTY_FULL;
+    g_buzzStartMs = millis();
+}
+
+void buzzOff() {
+    ledcWrite(BUZZ_CH, 0);
+    g_buzzHz = 0;
+    g_buzzDuty = 0;
+}
+
+void tickBuzz() {
+    if (!g_buzzHz) return;
+    const uint16_t decay = INSTR_DECAY_MS[g_buzzInstr];
+    if (!decay) return;
+    const unsigned long el = millis() - g_buzzStartMs;
+    const uint32_t duty = el >= decay ? 0 : BUZZ_DUTY_FULL * (decay - el) / decay;
+    if (duty != g_buzzDuty) { ledcWrite(BUZZ_CH, duty); g_buzzDuty = duty; }
+}
+
+// --- Sonido (piezo pasivo en PIN_BUZZER, puertos 0x0630..0x0635) -----
 uint16_t noteToHz(uint8_t note) {
     if (note == 0 || note > 127) return 0;            // 0 = silencio
     float hz = 440.0f * powf(2.0f, ((int)note - 69) / 12.0f);   // 69 = LA4
     return (uint16_t)lroundf(hz);
 }
 
-// Salida fisica del sonido emulado: al zumbador o, con g_soundBt, como
+// Salida fisica del sonido emulado: al zumbador o, en SND_OUT_BT, como
 // nota MIDI por Bluetooth (la frecuencia, a la nota mas cercana: un barrido
-// de frecuencia sale a semitonos). Mientras suena el jingle del BOOT, nada.
+// de frecuencia sale a semitonos). En silencio o mientras suena el jingle
+// del BOOT, nada.
 void soundOutOn(uint16_t hz) {
     if (g_muteJingleActive) return;
-    if (g_soundBt) btmidiNote(hzToMidi(hz), g_sndVel);
-    else tone(PIN_BUZZER, hz);
+    if (g_soundMode == SND_OUT_BT) btmidiNote(hzToMidi(hz), g_sndVel);
+    else if (g_soundMode == SND_OUT_BUZZER) buzzOn(hz, g_sndInstr);
 }
 
 void soundOutOff() {
     if (g_muteJingleActive) return;
-    if (g_soundBt) btmidiNote(0);
-    else noTone(PIN_BUZZER);
+    if (g_soundMode == SND_OUT_BT) btmidiNote(0);
+    else if (g_soundMode == SND_OUT_BUZZER) buzzOff();
 }
 
 // Cambia la salida del sonido; el tono en marcha (si lo hay) pasa a la nueva
-void setSoundBt(bool bt) {
-    if (bt == g_soundBt) return;
+void setSoundMode(uint8_t mode) {
+    if (mode > SND_OUT_OFF) mode = SND_OUT_BUZZER;
+    if (mode == g_soundMode) return;
     if (g_sndHz) soundOutOff();
-    g_soundBt = bt;
-    if (bt) btmidiBegin();
+    const bool wasBt = (g_soundMode == SND_OUT_BT);
+    g_soundMode = mode;
+    // la radio Bluetooth solo encendida mientras se usa: gasta ~80 mA
+    if (mode == SND_OUT_BT) {
+        btmidiBegin();
+        g_btStartMs = millis();
+        g_btEverConnected = false;
+    } else if (wasBt) {
+        btmidiEnd();
+    }
     if (g_sndHz) soundOutOn(g_sndHz);
 }
 
@@ -307,51 +382,145 @@ void tickSound() {
 void resetSound() {
     g_sndLo = g_sndHi = g_sndNote = g_sndDurUnits = 0;
     g_sndVel = SND_VEL_DEFAULT;
+    g_sndInstr = 0;
+    btmidiProgram(0xFF);                     // el sintetizador sigue con el suyo
     sndApply(0);
 }
 
 // --- Jingle de "sonido reactivado" (ver g_muteJingleActive más arriba) ---
-void startMuteJingle() {
+void startJingle(const uint16_t* hz, uint8_t n, bool isMute) {
     g_muteJingleActive = true;
+    g_jingleIsMute = isMute;
+    g_jingleHz = hz;
+    g_jingleLen = n;
     g_muteJingleStep = 0;
-    tone(PIN_BUZZER, MUTE_JINGLE_HZ[0]);
+    buzzOn(hz[0], 0);
     g_muteJingleNoteEndMs = millis() + MUTE_JINGLE_NOTE_MS;
 }
+
+void startMuteJingle() { startJingle(MUTE_JINGLE_HZ, 2, true); }
 
 // Llamada una vez por vuelta de loop(), SIEMPRE (igual que tickBootButton) --
 // avanza el jingle un paso sin bloquear nunca la emulación de la CPU.
 void tickMuteJingle() {
     if (!g_muteJingleActive) return;
     if ((long)(millis() - g_muteJingleNoteEndMs) < 0) return;
-    if (g_muteJingleStep == 0) {
-        g_muteJingleStep = 1;
-        tone(PIN_BUZZER, MUTE_JINGLE_HZ[1]);
+    if (g_muteJingleStep + 1 < g_jingleLen) {
+        ++g_muteJingleStep;
+        buzzOn(g_jingleHz[g_muteJingleStep], 0);
         g_muteJingleNoteEndMs = millis() + MUTE_JINGLE_NOTE_MS;
     } else {
-        noTone(PIN_BUZZER);
+        buzzOff();
         g_muteJingleActive = false;
         if (g_sndHz) soundOutOn(g_sndHz);   // retoma el tono del programa, si lo hay
     }
 }
 
+// --- Batería (PIN_BAT_SENSE): tensión, % y aviso de batería baja -----------
+// Cada BAT_PERIOD_MS, 8 lecturas del ADC (en mV ya calibrados) x 2 (divisor
+// 1:2), suavizadas. Por debajo de BAT_LOW_MV avisa (icono en pantalla y tres
+// pitidos, una vez); deja de avisar por encima de BAT_OK_MV. Con el USB
+// enchufado y el interruptor en OFF, VSYS recibe ~4,7 V por el diodo D1:
+// por encima de BAT_USB_MV, "alimentado por USB". Con el interruptor en ON,
+// VSYS es la bateria aunque haya USB: ver batOnUsb().
+constexpr unsigned long BAT_PERIOD_MS = 2000;
+constexpr uint16_t BAT_LOW_MV = 3500;
+constexpr uint16_t BAT_OK_MV  = 3600;
+constexpr uint16_t BAT_USB_MV = 4400;
+constexpr uint16_t BAT_FULL_MV = 4150;       // "100 %" para batOnUsb() (margen del ADC)
+// Correccion de ganancia (por mil) de la medida: tolerancia del divisor y del
+// ADC de ESTA placa, sacada de comparar con el polimetro (4,12 V reales en
+// B+ leian 4,05 V con el aparato en marcha). Incluye la caida por el consumo.
+constexpr uint32_t BAT_CAL_PERMILLE = 1017;
+uint16_t g_batMv = 0;                        // 0 = aun sin medir
+bool g_batLow = false;
+unsigned long g_batNextMs = 0;
+void noteActivity();
+void forceRedraw();
+
+// % de una LiPo, por tramos (aproximado). El tope es 4,15 V y no 4,20: se
+// mide siempre con el aparato en marcha, y una bateria llena no pasa de ahi.
+uint8_t batPercent(uint16_t mv) {
+    static const uint16_t MV[]  = {3300, 3500, 3600, 3700, 3750, 3800, 3900, 4000, 4080, 4150};
+    static const uint8_t  PCT[] = {   0,    5,   12,   30,   40,   50,   65,   80,   90,  100};
+    if (mv <= MV[0]) return 0;
+    for (int i = 1; i < 10; ++i) {
+        if (mv <= MV[i])
+            return (uint8_t)(PCT[i - 1] + (uint32_t)(PCT[i] - PCT[i - 1]) * (mv - MV[i - 1]) / (MV[i] - MV[i - 1]));
+    }
+    return 100;
+}
+
+// ¿Alimentado por USB? Con el interruptor en OFF, VSYS lo dice solo (mas de
+// BAT_USB_MV). En ON, VSYS es la bateria cargandose: se da por USB si hay un
+// ordenador al otro lado (tramas USB, HWCDC::isPlugged(), aunque no tenga
+// el puerto abierto) y la bateria esta llena. No es fiable del todo: un
+// cargador de pared no manda tramas, y a media carga no se distingue.
+bool batOnUsb() {
+    if (!g_batMv) return false;
+    return g_batMv > BAT_USB_MV || (HWCDC::isPlugged() && g_batMv >= BAT_FULL_MV);
+}
+
+void tickBattery() {
+    if ((long)(millis() - g_batNextMs) < 0) return;
+    g_batNextMs = millis() + BAT_PERIOD_MS;
+    uint32_t sum = 0;
+    for (int i = 0; i < 8; ++i) sum += analogReadMilliVolts(PIN_BAT_SENSE);
+    const uint16_t mv = (uint16_t)(sum / 8 * 2 * BAT_CAL_PERMILLE / 1000);
+    g_batMv = g_batMv ? (uint16_t)((g_batMv * 3u + mv) / 4u) : mv;
+    if (!g_batLow && g_batMv < BAT_LOW_MV) {
+        g_batLow = true;
+        oled.setBatteryWarning(true);
+        noteActivity();                       // que se vea el aviso
+        forceRedraw();
+        if (!g_muteJingleActive) startJingle(BAT_JINGLE_HZ, 3, false);
+    } else if (g_batLow && g_batMv > BAT_OK_MV) {
+        g_batLow = false;
+        oled.setBatteryWarning(false);
+        forceRedraw();
+    }
+}
+
 // --- Botón BOOT (GPIO9): alterna zumbador <-> Bluetooth, con antirrebote -
 void toggleMute() {
+    if (g_muteJingleActive && !g_jingleIsMute) {
+        // la de batería baja: se corta y el botón hace lo suyo normal
+        g_muteJingleActive = false;
+        buzzOff();
+    }
     if (g_muteJingleActive) {
         // pulsacion durante la propia melodia de vuelta al zumbador: la
         // corta y pasa de nuevo a Bluetooth directamente
         g_muteJingleActive = false;
-        noTone(PIN_BUZZER);
-        setSoundBt(true);
+        buzzOff();
+        setSoundMode(SND_OUT_BT);
         return;
     }
-    if (g_soundBt) {
-        setSoundBt(false);
+    // zumbador -> Bluetooth; Bluetooth o silencio -> zumbador
+    if (g_soundMode != SND_OUT_BUZZER) {
+        setSoundMode(SND_OUT_BUZZER);
         startMuteJingle();   // el zumbador avisa de que vuelve (ver tickMuteJingle)
     } else {
-        setSoundBt(true);
+        setSoundMode(SND_OUT_BT);
     }
     markSettingsDirty();
     g_bootSavePending = true;   // se graba al acabar el jingle (tickSettingsSave)
+}
+
+// Bluetooth encendido sin conseguir conectar en BT_CONNECT_TIMEOUT_MS: se
+// apaga la radio y el sonido queda en silencio de verdad (se guarda). Para
+// volver: BOOT una vez -> zumbador, otra -> Bluetooth (otros 30 s). Si ya
+// conecto alguna vez, un corte vuelve al zumbador (btmidiTakeLost en loop).
+void saveSettings();   // mas abajo, junto a loadSettings()
+void tickBtTimeout() {
+    if (g_soundMode != SND_OUT_BT) return;
+    if (btmidiConnected()) { g_btEverConnected = true; return; }
+    if (g_btEverConnected) return;
+    if (millis() - g_btStartMs < BT_CONNECT_TIMEOUT_MS) return;
+    setSoundMode(SND_OUT_OFF);
+    markSettingsDirty();
+    saveSettings();
+    forceRedraw();
 }
 
 // Llamada la PRIMERA en cada vuelta de loop(), antes de mirar el modo del
@@ -408,7 +577,7 @@ void clearRuntimeOutputs() {
     resetTimers();
     resetSound();
     // Brillo (PORT_CFG_BRIGHTNESS): NO se toca aquí -- es una preferencia de
-    // TODO el aparato, igual que la salida del sonido (g_soundBt). Un
+    // TODO el aparato, igual que la salida del sonido (g_soundMode). Un
     // programa nuevo hereda el brillo que hubiera puesto el anterior (p.ej.
     // sisop.asm -> SETTINGS -> arrancar un juego). Se reaplica con el valor
     // actual por si el atenuado automático lo había dejado en OLED_CONTRAST_DIM.
@@ -460,6 +629,7 @@ uint8_t portRead(uint16_t port) {
                 return units > 255 ? 255 : (uint8_t)units;
             }
             case PORT_SND_VEL:     return g_sndVel;
+            case PORT_SND_INSTR:   return g_sndInstr;
         }
         return 0;
     }
@@ -472,6 +642,12 @@ uint8_t portRead(uint16_t port) {
     switch (port) {
         case PORT_TIME_CTRL: return clockStatus();
         case PORT_POWER:   return (g_powerSave ? 1 : 0) | (screenIsOn() ? 2 : 0);
+        case PORT_BAT_PCT: return g_batMv ? batPercent(g_batMv) : 255;
+        case PORT_BAT_V: {
+            const unsigned v = (g_batMv + 10) / 20;
+            if (batOnUsb() && v < 220) return 220;   // USB (ver batOnUsb)
+            return (uint8_t)(v > 255 ? 255 : v);
+        }
         case PORT_DIR_POS: return panel.dirPos();
         case PORT_DIR_BTN: return panel.dirDown() ? 1 : 0;
         case PORT_DAT_POS: return panel.datPos();
@@ -483,7 +659,8 @@ uint8_t portRead(uint16_t port) {
         case PORT_CUR_SLOT:   return g_currentSlot;
         case PORT_RANDOM:     return (uint8_t)(esp_random() & 0xFF);
         case PORT_CFG_BRIGHTNESS: return g_screenContrast;
-        case PORT_CFG_SOUND_EN:   return g_soundBt ? 0 : 1;
+        case PORT_CFG_SOUND_EN:
+            return g_soundMode == SND_OUT_BT ? 0 : g_soundMode == SND_OUT_OFF ? 2 : 1;
         case PORT_EEPROM_LOAD:    return g_lastEepromLoadOk;
         case PORT_EEPROM_SAVE:    return g_lastEepromSaveOk;
         default:           return 0;
@@ -510,6 +687,9 @@ void portWrite(uint16_t port, uint8_t value) {
             case PORT_SND_DUR:     g_sndDurUnits = value; break;
             case PORT_SND_VEL:
                 g_sndVel = value == 0 ? 1 : (value > 127 ? 127 : value); break;
+            case PORT_SND_INSTR:   // para las notas siguientes (la que suena, igual)
+                g_sndInstr = value & (SND_INSTR_COUNT - 1);
+                btmidiProgram(INSTR_MIDI[g_sndInstr]); break;
         }
         return;
     }
@@ -603,13 +783,13 @@ void portWrite(uint16_t port, uint8_t value) {
     }
     if (port == PORT_CFG_SOUND_EN) {
         if (g_currentSlot != 0) return;   // igual que el brillo (ver arriba)
-        // Mismo interruptor general que el boton BOOT (g_soundBt): 0 =
-        // Bluetooth, distinto de 0 = zumbador. Sin el "jingle" del boton --
-        // eso es una cortesia pensada para que la note un humano, no para
-        // dispararla desde código.
-        bool bt = (value == 0);
-        if (bt != g_soundBt) markSettingsDirty();   // cambia de verdad
-        setSoundBt(bt);
+        // Mismo interruptor general que el boton BOOT (g_soundMode): 0 =
+        // Bluetooth, 2 = silencio, otro = zumbador. Sin el "jingle" del
+        // boton -- eso es una cortesia pensada para que la note un humano,
+        // no para dispararla desde código.
+        const uint8_t mode = value == 0 ? SND_OUT_BT : value == 2 ? SND_OUT_OFF : SND_OUT_BUZZER;
+        if (mode != g_soundMode) markSettingsDirty();   // cambia de verdad
+        setSoundMode(mode);
         return;
     }
 }
@@ -620,7 +800,7 @@ void loadSettings() {
     flash.readSettings(buf);
     if (buf[0] != SETTINGS_MAGIC) return;   // nunca grabados: los de fabrica
     g_screenContrast = buf[1];
-    setSoundBt(buf[2] != 0);   // arranca el Bluetooth si estaba elegido
+    setSoundMode(buf[2]);   // arranca el Bluetooth si estaba elegido
 }
 
 // Graba los ajustes si cambiaron desde la ultima vez (una pulsacion de
@@ -632,7 +812,7 @@ void saveSettings() {
     memset(buf, 0xFF, sizeof(buf));
     buf[0] = SETTINGS_MAGIC;
     buf[1] = g_screenContrast;
-    buf[2] = g_soundBt ? 1 : 0;
+    buf[2] = g_soundMode;
     flash.writeSettings(buf);
 }
 
@@ -695,8 +875,9 @@ bool      g_forceRender = false;
 void samplerCb(void*) {
     if (panel.update()) g_lastActivity = millis();
     uint32_t idle = millis() - g_lastActivity;
-    // un programa en CONTINUO cuenta como "en uso", salvo en su modo ahorro
-    uint32_t next_ms = ((g_execActive && !g_powerSave) || idle < ACTIVE_WINDOW_MS) ? SAMPLE_ACTIVE_MS
+    // un programa en marcha NO cuenta como "en uso": como en edicion, el
+    // ritmo depende solo de cuanto hace que no se toca el panel
+    uint32_t next_ms = (idle < ACTIVE_WINDOW_MS) ? SAMPLE_ACTIVE_MS
                      : (idle < SCREEN_DIM_MS)                     ? SAMPLE_SCREENON_MS
                      :                                             SAMPLE_IDLE_MS;
     esp_timer_start_once(g_sampler, (uint64_t)next_ms * 1000);
@@ -878,8 +1059,16 @@ void ensureRoomFor(uint16_t cursor, const ComposeState& st, uint8_t origLen) {
 //     "COMPI DEL <slot>\n"   -> "COMPI OK 0\n": vacia el slot (no su EEPROM)
 //     "COMPI DIAG\n"         -> "COMPI DIAG <arranques> <motivo> <ms encendido>
 //                               <entradas a RUN> <cargas de slot> <light sleeps>
-//                               <sonido por BT> <estado BT> <BT conectado> <reloj>"
+//                               <sonido por BT> <estado BT> <BT conectado> <reloj>
+//                               <bateria en mV (0 = sin medir)>"
 //     "COMPI SOUND BT|BUZZER\n" -> salida del sonido, como el boton BOOT
+//     "COMPI TONE hz duty ms decay\n" -> PRUEBA del timbre del zumbador:
+//                                     un tono con ese ciclo de trabajo
+//                                     (0..1023 = 0..100 %), bloqueante; con
+//                                     decay=1 el ciclo baja hasta 0 durante
+//                                     la nota (envolvente). Ver provisionTone
+//     "COMPI NOTE instr hz ms\n"      -> PRUEBA: una nota con el instrumento
+//                                     (0..3, PORT_SND_INSTR); bloqueante
 //                               (motivo = esp_reset_reason(); ver compi.py diag)
 //
 // Hora y red (protocolo 3, ver netclock.h):
@@ -1046,13 +1235,69 @@ void diagBoot() {
     g_diagReason = (uint8_t)esp_reset_reason();
 }
 
+// PRUEBA de timbres del zumbador (COMPI TONE): el canal del zumbador
+// (BUZZ_CH) con el ciclo de trabajo que se pida (10 bits: 512 = 50 %). Con
+// decay, el ciclo baja en linea recta hasta 0 durante la nota. Bloquea la
+// emulacion mientras suena (max 3 s). (Asi se vio que el ciclo apenas
+// cambia el timbre y que la caida si: de ahi los instrumentos.)
+void provisionTone(unsigned hz, unsigned duty, unsigned ms, bool decay) {
+    if (duty > 1023) duty = 1023;
+    if (ms > 3000) ms = 3000;
+    buzzOff();
+    if (hz >= 20 && hz <= 20000 && duty > 0 && ms > 0) {
+        ledcWriteTone(BUZZ_CH, hz);
+        ledcWrite(BUZZ_CH, duty);
+        const unsigned long t0 = millis();
+        unsigned long now;
+        while ((now = millis() - t0) < ms) {
+            if (decay) ledcWrite(BUZZ_CH, (uint32_t)duty * (ms - now) / ms);
+            delay(2);
+        }
+        buzzOff();
+    }
+    if (g_sndHz) soundOutOn(g_sndHz);          // el tono del programa, si sonaba
+    Serial.println("COMPI OK 0");
+}
+
+// PRUEBA de instrumentos (COMPI NOTE): una nota con la envolvente del
+// instrumento, como la tocaria un programa. Bloquea mientras suena.
+void provisionNote(unsigned instr, unsigned hz, unsigned ms) {
+    if (ms > 3000) ms = 3000;
+    if (hz >= 20 && hz <= 20000) {
+        buzzOn(hz, instr);
+        const unsigned long t0 = millis();
+        while (millis() - t0 < ms) { tickBuzz(); delay(2); }
+        buzzOff();
+    }
+    if (g_sndHz) soundOutOn(g_sndHz);
+    Serial.println("COMPI OK 0");
+}
+
+// PRUEBA del Bluetooth MIDI (COMPI MIDITEST): n notas (DO5/RE5
+// alternadas) exactamente cada ms milisegundos, para medir en el ordenador
+// cuanto se desordenan al llegar (tools/compi.py miditest). Bloqueante.
+void provisionMidiTest(unsigned n, unsigned ms) {
+    if (!btmidiConnected()) { Serial.println("COMPI ERR sin conexion Bluetooth"); return; }
+    if (n > 400) n = 400;
+    if (ms < 20) ms = 20;
+    const unsigned long t0 = millis() + 50;
+    for (unsigned i = 0; i < n; ++i) {
+        while ((long)(millis() - (t0 + (unsigned long)i * ms)) < 0) delay(1);
+        btmidiNote((i & 1) ? 74 : 72, 100);
+    }
+    delay(ms);
+    btmidiNote(0);
+    Serial.println("COMPI OK 0");
+}
+
 void provisionDiag() {
-    char m[96];
-    snprintf(m, sizeof(m), "COMPI DIAG %lu %u %lu %lu %lu %lu %u %u %u %u",
+    char m[128];
+    snprintf(m, sizeof(m), "COMPI DIAG %lu %u %lu %lu %lu %lu %u %u %u %u %u %u %u",
              (unsigned long)g_diagBoots, (unsigned)g_diagReason, (unsigned long)millis(),
              (unsigned long)g_diagExecStarts, (unsigned long)g_diagLoads,
-             (unsigned long)g_diagLightSleeps, g_soundBt ? 1u : 0u,
-             (unsigned)btmidiState(), btmidiConnected() ? 1u : 0u, (unsigned)clockStatus());
+             (unsigned long)g_diagLightSleeps, (unsigned)g_soundMode,
+             (unsigned)btmidiState(), btmidiConnected() ? 1u : 0u, (unsigned)clockStatus(),
+             (unsigned)g_batMv, batOnUsb() ? 1u : 0u, (unsigned)btmidiConnIntervalUs());
     Serial.println(m);
 }
 
@@ -1249,10 +1494,32 @@ void provisionPoll() {
         strcmp(line, "COMPI NET") == 0) { provisionNet(line); return; }
     if (strcmp(line, "COMPI LIST") == 0)  { provisionList();  return; }
     if (strcmp(line, "COMPI DIAG") == 0)  { provisionDiag();  return; }
-    if (strcmp(line, "COMPI SOUND BT") == 0 || strcmp(line, "COMPI SOUND BUZZER") == 0) {
+    {
+        unsigned hz, duty, ms, decay;
+        if (sscanf(line, "COMPI TONE %u %u %u %u", &hz, &duty, &ms, &decay) == 4) {
+            provisionTone(hz, duty, ms, decay != 0);
+            return;
+        }
+        if (sscanf(line, "COMPI NOTE %u %u %u", &decay, &hz, &ms) == 3) {
+            provisionNote(decay, hz, ms);
+            return;
+        }
+        if (sscanf(line, "COMPI MIDITEST %u %u", &hz, &ms) == 2) {
+            provisionMidiTest(hz, ms);
+            return;
+        }
+        if (sscanf(line, "COMPI BTITVL %u %u", &hz, &ms) == 2) {
+            btmidiRequestInterval((uint16_t)hz, (uint16_t)ms);
+            Serial.println("COMPI OK 0");
+            return;
+        }
+    }
+    if (strcmp(line, "COMPI SOUND BT") == 0 || strcmp(line, "COMPI SOUND BUZZER") == 0 ||
+        strcmp(line, "COMPI SOUND OFF") == 0) {
         // como el boton BOOT (sin jingle) y se guarda igual
-        const bool bt = (line[12] == 'B' && line[13] == 'T');
-        if (bt != g_soundBt) { setSoundBt(bt); markSettingsDirty(); saveSettings(); }
+        const uint8_t mode = strcmp(line + 12, "BT") == 0  ? SND_OUT_BT
+                           : strcmp(line + 12, "OFF") == 0 ? SND_OUT_OFF : SND_OUT_BUZZER;
+        if (mode != g_soundMode) { setSoundMode(mode); markSettingsDirty(); saveSettings(); }
         Serial.println("COMPI OK 0");
         return;
     }
@@ -1294,8 +1561,8 @@ void setup() {
     Serial.begin(115200);
     pinMode(PIN_LED, OUTPUT);
     setLed(false);                     // GPIO8 alto en el arranque (strapping OK)
-    pinMode(PIN_BUZZER, OUTPUT);
-    digitalWrite(PIN_BUZZER, LOW);     // piezo en reposo (tone() lo reconfigura)
+    analogSetPinAttenuation(PIN_BAT_SENSE, ADC_11db);   // hasta ~2,5 V (llegan 1,5-2,1)
+    buzzSetup();                       // piezo en reposo: LEDC con ciclo 0
     // Botón BOOT (GPIO9) como MUTE/UNMUTE general -- ver PIN_BOOT_BTN.
     // Pull-up interno: a nivel alto en reposo, a nivel bajo al pulsarlo.
     pinMode(PIN_BOOT_BTN, INPUT_PULLUP);
@@ -1362,11 +1629,15 @@ void loop() {
     // interruptor de modo, en cualquiera de las 4 vistas.
     tickBootButton();
     tickMuteJingle();
+    tickBuzz();
     btmidiTick();
     // Si el sintetizador corta la conexión con el sonido en Bluetooth, se
     // vuelve solo al zumbador -- lo mismo que pulsar BOOT (jingle incluido,
     // y se guarda). Con el sonido ya en el zumbador, un corte no hace nada.
-    if (btmidiTakeLost() && g_soundBt && !g_muteJingleActive) toggleMute();
+    // (en este orden: si suena una melodia, el aviso de corte espera a que acabe)
+    if (g_soundMode == SND_OUT_BT && !g_muteJingleActive && btmidiTakeLost()) toggleMute();
+    tickBtTimeout();
+    tickBattery();
     tickSettingsSave();
     clockTick();
 
@@ -1730,8 +2001,10 @@ void loop() {
         }
         if (cpu.halted() && g_sndHz) sndApply(0);   // silencio al llegar a HALT
         if (g_scr != SCR_OFF && (millis() - lastFlush) >= FB_FLUSH_MS) {
-            oled.renderFramebuffer(g_fb, g_text, g_attr, cpu.halted());
-            lastFlush = millis();
+            // no bloquea (ver display.h); si aún se manda el anterior, a la
+            // vuelta siguiente
+            if (oled.renderFramebuffer(g_fb, g_text, g_attr, cpu.halted()))
+                lastFlush = millis();
         }
         panel.takeDirPress();
         panel.takeDatPress();
@@ -1742,13 +2015,13 @@ void loop() {
     }
 
     // --- gestión de energía ------------------------------------------
-    // Un programa ejecutando en CONTINUO cuenta como "en uso" (no atenúa, no
-    // duerme, muestreo rápido).
-    // En su modo ahorro (PORT_POWER), un programa SÍ atenúa y apaga la
-    // pantalla, y antes: a los PS_DIM_MS / PS_OFF_MS sin tocar el panel.
+    // Con un programa en marcha, la pantalla se atenua y se apaga igual que
+    // en edicion (SCREEN_DIM_MS / SCREEN_OFF_MS sin tocar el panel); en su
+    // modo ahorro (PORT_POWER), antes: PS_DIM_MS / PS_OFF_MS. Un programa
+    // puede encenderla el mismo (PORT_POWER bit 1) para avisar.
     g_execActive = (view == View::ExecCont && running && !cpu.halted());
     const bool psExec = g_execActive && g_powerSave;
-    const uint32_t idleMs = (g_execActive && !g_powerSave) ? 0 : (millis() - g_lastActivity);
+    const uint32_t idleMs = millis() - g_lastActivity;
     const uint32_t dimMs = psExec ? PS_DIM_MS : SCREEN_DIM_MS;
     const uint32_t offMs = psExec ? PS_OFF_MS : SCREEN_OFF_MS;
 
@@ -1770,11 +2043,12 @@ void loop() {
     // fotograma en que se pulsa -- sin esta condición, el digitalWrite(LOW)
     // de aquí abajo cortaría la melodía nada más empezar a sonar.
     if (!g_execActive && idleMs >= LIGHT_SLEEP_MS && !Serial && !g_muteJingleActive) {
-        digitalWrite(PIN_BUZZER, LOW);
+        buzzOff();
         setLed(false);
         // Despierta con el timer (backstop) o con la propia alarma del sampler,
         // que corre justo al despertar y refresca el panel / g_lastActivity.
         esp_sleep_enable_timer_wakeup((uint64_t)SAMPLE_IDLE_MS * 1000);
+        oled.waitIdle();               // ningún volcado a medias
         esp_light_sleep_start();
     }
 #endif
@@ -1786,7 +2060,7 @@ void loop() {
     // ni con un host de serie conectado (igual que arriba).
     if (g_execActive && g_cpuSleeping) {
         const bool deep = psExec && g_scr == SCR_OFF && !Serial && !g_sndHz &&
-                          !g_muteJingleActive && !g_soundBt && !clockBusy();
+                          !g_muteJingleActive && g_soundMode != SND_OUT_BT && !clockBusy();
 #ifndef COMPI_NO_LIGHT_SLEEP
         if (deep) {
             long left = (long)(g_cpuWakeAt - millis());
@@ -1795,6 +2069,7 @@ void loop() {
                 setLed(false);
                 ++g_diagLightSleeps;
                 esp_sleep_enable_timer_wakeup((uint64_t)ms * 1000);
+                oled.waitIdle();               // ningún volcado a medias
                 esp_light_sleep_start();
                 setLed(g_led);
             }

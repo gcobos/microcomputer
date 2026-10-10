@@ -315,7 +315,9 @@ de periféricos en `0x0600`–`0x0801`.
 | `0x0603` | IN | Encoder DATA: bit 0 = pulsado. |
 | `0x0610` | E/S | **LED** azul de a bordo: `OUT` bit 0 = 1 lo enciende. `IN` = eco. |
 | `0x0611` | IN | **Número aleatorio**: un byte nuevo en cada lectura (generador por hardware del ESP32). |
-| `0x0612` | E/S | **Ahorro de energía**: `OUT` bit 0 = 1 → la pantalla se atenúa a los 5 s sin tocar el panel y se apaga a los 10 s (el panel se muestrea más despacio); bit 1 = 1 → enciende la pantalla ya. `IN` bit 0 = modo ahorro, bit 1 = pantalla encendida. Vuelve a 0 al arrancar una ejecución. |
+| `0x0612` | E/S | **Ahorro de energía**: con cualquier programa en marcha la pantalla se atenúa a los 20 s sin tocar el panel y se apaga a los 45 s (como en edición). `OUT` bit 0 = 1 → antes: a los 5 s y a los 10 s; bit 1 = 1 → enciende la pantalla ya. `IN` bit 0 = modo ahorro, bit 1 = pantalla encendida. Vuelve a 0 al arrancar una ejecución. |
+| `0x0614` | IN | **Batería**: carga aproximada 0–100 % (255 = aún sin medir). |
+| `0x0615` | IN | **Batería**: tensión en pasos de 20 mV (210 = 4,20 V); 220 o más = alimentado por USB. Por debajo de 3,50 V el aparato avisa solo (icono de pila vacía y tres pitidos). |
 | `0x0613` | OUT | **Dormir**: la CPU se para `n` × 10 ms y sigue en la instrucción siguiente. Mientras, el aparato no gasta (con la pantalla apagada y el modo ahorro, el ESP32 entra en reposo). Temporizadores, sonido y panel siguen. |
 | `0x0620` … `0x0629` | E/S | **Temporizadores** t0…t9. `OUT` arma con 0–255; decrece solo hasta 0. `IN` lee el valor actual. |
 | `0x0630` | E/S | **Sonido** – frecuencia, byte bajo (solo se engancha). |
@@ -323,6 +325,7 @@ de periféricos en `0x0600`–`0x0801`.
 | `0x0632` | E/S | **Sonido** – nota MIDI 0–127 (0 = silencio). 69 = LA4 = 440 Hz, +12 = octava. La forma fácil. |
 | `0x0633` | E/S | **Sonido** – duración automática = valor × 10 ms (0 = sostenida). "Pegajosa": cada nota la re-arma. |
 | `0x0634` | E/S | **Sonido** – velocidad (fuerza) MIDI 1–127 de las notas siguientes, **solo por Bluetooth MIDI** (el zumbador suena igual). Pegajosa; 100 al arrancar. |
+| `0x0635` | E/S | **Sonido** – instrumento de las notas siguientes: 0 ORGAN (constante), 1 PIANO, 2 GUITAR, 3 BELL. En el zumbador, la intensidad cae durante la nota (en 0,8 / 0,25 / 2 s); por Bluetooth MIDI, un Program Change (19, 0, 24, 14) antes de la nota siguiente. 0 al arrancar. |
 | `0x0640` | E/S | **Cargar programa**: `OUT` con un número de slot (0–59) carga esa imagen entera en la RAM de la CPU y la reinicia (PC=0, SP=0xFFFF); también deja pantalla, LED y sonido apagados y los encoders a 0, igual que al entrar en una ejecución nueva por el panel — un salto a otro programa, sin vuelta atrás. Slot vacío o fuera de rango: no hace nada. `IN` = 1 si el último intento falló (solo tiene sentido leerlo tras un fallo: si la carga sale bien, quien iba a leerlo ya no es el programa que sigue corriendo). |
 | `0x0641` | E/S | **Grabar programa**: `OUT` con un número de slot (0–59) graba ahí la RAM actual entera (equivale a "Guardar" del panel), con el nombre y la categoría del programa cargado. El programa sigue corriendo después. `IN` = 1 si la última grabación salió bien. |
 | `0x0642` | E/S | **Consultar slot**: `OUT` con un número de slot lee su nombre y categoría a `0x0660`–`0x066E`. `IN` = 1 si ese slot tiene programa. |
@@ -368,7 +371,7 @@ A esta resolución (glifos de 5×7 en una celda de 8 px de alto) no hay margen
 para además encoger el carácter en subíndice/superíndice y que se siga
 leyendo, así que solo se desplaza, a tamaño normal.
 
-**Sonido** (`0x0630`–`0x0634`): zumbador piezo pasivo en GPIO3, o Bluetooth
+**Sonido** (`0x0630`–`0x0635`): zumbador piezo pasivo en GPIO2, o Bluetooth
 MIDI (botón BOOT). `0x0634` solo cuenta por Bluetooth: la velocidad de la nota. Solo suena en
 **CONTINUOUS**; se calla en paso a paso, al volver a EDIT y al `HALT`. Lo genera
 el hardware, no gasta tiempo de CPU. Lo más simple: `OUT (0x0632),reg` con una
@@ -403,11 +406,13 @@ actual en el slot dado y sigue ejecutando el mismo programa.
 Igual que el resto de puertos, un slot vacío o un número ≥ 60 simplemente no
 hace nada, no cuelga ni corrompe memoria.
 
-**Ahorro de energía y dormir** (`0x0612`–`0x0613`): un programa en marcha
-cuenta como "en uso" (pantalla a tope, el panel leído cada 2 ms). Uno que pase
-horas encendido, como `tama.asm`, puede pedir el modo ahorro (`OUT
-(0x0612),reg` con 1) y, en vez de esperar dando vueltas en un bucle sobre un
-temporizador, dormir: `MOV AL,#5` + `OUT (0x0613),AL` para 50 ms sin gastar.
+**Ahorro de energía y dormir** (`0x0612`–`0x0613`): con un programa en
+marcha, la pantalla se atenúa y se apaga igual que en edición (a los 20 y 45 s
+sin tocar el panel; un giro o pulsación la enciende), y el panel se lee más
+despacio si no se toca. Un programa que pase horas encendido, como
+`tama.asm`, puede pedir tiempos más cortos (`OUT (0x0612),reg` con 1: 5 y
+10 s) y, en vez de esperar dando vueltas en un bucle sobre un temporizador,
+dormir: `MOV AL,#5` + `OUT (0x0613),AL` para 50 ms sin gastar.
 Con la pantalla apagada, el primer giro o pulsación la enciende, y el
 programa lo recibe igual: puede mirar el bit 1 de `IN (0x0612)` para no
 tomarlo como una orden.
