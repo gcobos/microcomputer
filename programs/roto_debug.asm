@@ -19,7 +19,7 @@
 ;  sentido de giro/inversion sin ambiguedad.
 ;
 ;  No hay salida por boton (los dos pulsadores son justo lo que se esta
-;  depurando): se sale cambiando el interruptor SW_MODE a EDIT, como
+;  depurando): se sale cambiando el interruptor SW_MODE a MOD, como
 ;  cualquier programa en ExecCont.
 ;
 ;  Ensamblar y enviar al slot 0:

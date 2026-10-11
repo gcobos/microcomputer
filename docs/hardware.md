@@ -139,8 +139,8 @@ Definido en [`src/panel.cpp`](../src/panel.cpp).
 | 14 · D3 | 4 | DATA_A  | Encoder DATA, señal A |
 | 3 · D4  | 3 | DATA_B  | Encoder DATA, señal B |
 | 4 · D5  | 2 | DATA_SW | Encoder DATA, pulsador |
-| 5 · D6  | 1 | SW_MODE | Interruptor EDIT / RUN |
-| 6 · D7  | 0 | SW_STEP | Interruptor SINGLE / CONTINUOUS |
+| 5 · D6  | 1 | SW_MODE | Interruptor MOD / RUN |
+| 6 · D7  | 0 | SW_STEP | Interruptor CODE / PROG |
 
 **Nivel bajo = activo** (contacto a GND). Cada entrada usada lleva un
 pull-up de 10 kΩ a 3V3 (el 74HC165 no tiene pull-ups internos).
@@ -157,7 +157,7 @@ en [`panel.h`](../include/panel.h) = transiciones por detente (4 para EC11).
 ### Interruptores SW_MODE y SW_STEP (deslizantes, SPST)
 
 Los dos van en horizontal, cada uno encima de su encoder:
-`EDIT <-SW_MODE-> RUN` sobre ADDR y `SINGLE <-SW_STEP-> CONTINUOUS` sobre
+`MOD <-SW_MODE-> RUN` sobre ADDR y `CODE <-SW_STEP-> PROG` sobre
 DATA. El tercer interruptor deslizante, el de encendido ON/OFF, va en
 vertical en la parte de abajo, bajo la rejilla del zumbador (ver
 [`panel.svg`](panel.svg), dibujado según la caja real).
@@ -171,9 +171,11 @@ de la SuperMini queda accesible por el lado frontal de la caja.
 
 - Una pata → D6 / D7 con pull-up de 10 kΩ a 3V3.
 - Otra pata → GND.
-- **SW_MODE**: abierto = `EDIT` · cerrado = `RUN`.
-- **SW_STEP**: abierto = `SINGLE` · cerrado = `CONTINUOUS`. Al editar,
-  SINGLE = memoria (teclear) y CONTINUOUS = programas (cargar/guardar).
+- **SW_MODE**: abierto = `MOD` · cerrado = `RUN`.
+- **SW_STEP**: abierto = `CODE` · cerrado = `PROG`. Juntos dan las cuatro
+  vistas: MOD CODE (editar el código), MOD PROG (elegir slot y
+  cargar/guardar/borrar), RUN CODE (depurar viendo el código) y RUN PROG
+  (ejecutar el programa).
 - Ver el detalle de cada vista en `specs.txt` §12 y en `docs/panel.svg`.
 
 ---
@@ -325,8 +327,8 @@ solo daría un pitido de frecuencia fija.
 - Más volumen: transistor NPN (2N3904) con `[1 kΩ]` en la base, emisor a GND,
   colector a la pata del piezo, la otra pata a 3V3, y un diodo (1N4148) en
   paralelo con el piezo. Solo hace falta si se cambia el piezo por un altavoz.
-- El tono suena **solo en modo CONTINUOUS**; se calla en paso a paso, al volver a
-  EDIT y al `HALT`. `PIN_BUZZER` en [`src/main.cpp`](../src/main.cpp).
+- El tono suena **solo en RUN PROG**; se calla en RUN CODE (paso a paso), al volver a
+  MOD y al `HALT`. `PIN_BUZZER` en [`src/main.cpp`](../src/main.cpp).
 - En el panel, los agujeros de salida de sonido van sobre el piezo
   (ver [`panel.svg`](panel.svg)).
 

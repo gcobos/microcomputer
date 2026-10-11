@@ -196,8 +196,8 @@
   </g>
   <line class="wire gnd" x1="876" y1="670" x2="906" y2="670"/><line class="wire gnd" x1="876" y1="708" x2="906" y2="708"/>
   <line class="wire gnd" x1="906" y1="670" x2="906" y2="1140"/>
-  <text class="pin" x="914" y="666">SW_MODE  (EDIT / RUN)</text>
-  <text class="pin" x="914" y="704">SW_STEP  (según SW_MODE)</text>
+  <text class="pin" x="914" y="666">SW_MODE  (MOD / RUN)</text>
+  <text class="pin" x="914" y="704">SW_STEP  (CODE / PROG)</text>
   <text class="sig" x="914" y="732">abierto = 1ª opción · cerrado (a GND) = 2ª</text>
 
   <!-- ================= ALIMENTACIÓN POR BATERÍA (opcional) ================= -->

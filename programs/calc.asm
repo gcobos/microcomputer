@@ -40,7 +40,7 @@
 ;  mostrar digitos sin sentido).
 ;
 ;  No hay boton de salida (los dos pulsadores son parte de la calculadora):
-;  se sale cambiando el interruptor SW_MODE a EDIT, igual que roto_debug.asm.
+;  se sale cambiando el interruptor SW_MODE a MOD, igual que roto_debug.asm.
 ;
 ;  Ensamblar y enviar al slot 10:
 ;     python3 tools/casm.py programs/calc.asm -o programs/calc.bin

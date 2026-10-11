@@ -85,10 +85,10 @@ La **vista** es función pura de los dos interruptores — nada oculto:
 
 | SW_MODE | SW_STEP | Vista | Pantalla |
 |---|---|---|---|
-| EDIT | SINGLE | `EditMem` | listado desensamblado + registros |
-| EDIT | CONTINUOUS | `EditPrg` | selector de slot + previsualización |
-| RUN | SINGLE | `ExecPaso` | listado + registros, `*` en el PC |
-| RUN | CONTINUOUS | `ExecCont` | framebuffer del programa |
+| MOD | CODE | `EditMem` | listado desensamblado + registros |
+| MOD | PROG | `EditPrg` | selector de slot + previsualización |
+| RUN | CODE | `ExecPaso` | listado + registros, `*` en el PC |
+| RUN | PROG | `ExecCont` | framebuffer del programa |
 
 | Vista | ADDR girar | ADDR pulsar CORTA | ADDR pulsar LARGA | DATA girar | DATA pulsar |
 |---|---|---|---|---|---|
@@ -106,13 +106,13 @@ elegida), así que si `prgAction` está en SAVE cualquiera de los dos guarda.
 (El editor de instrucciones campo a campo se explica en `editor.cpp` más abajo
 y en `specs.txt` §12; el detalle de `ExecPaso` en `specs.txt` §12 también.)
 
-- Cualquier (re)inicio de ejecución — entrar en RUN desde EDIT, o pulsación
-  larga de ADDR en STEP — hace `cpu.reset()` (PC=0) + `resetPositions()` +
+- Cualquier (re)inicio de ejecución — entrar en RUN desde MOD, o pulsación
+  larga de ADDR en RUN CODE — hace `cpu.reset()` (PC=0) + `resetPositions()` +
   borra el framebuffer y la capa de texto + `g_led=0` + `resetTimers()` +
-  `resetSound()`. Dentro de RUN, cambiar entre SINGLE y CONTINUOUS **no**
-  resetea: STEP congela donde esté y CONTINUOUS sigue desde ahí (para poder
+  `resetSound()`. Dentro de RUN, cambiar entre CODE y PROG **no**
+  resetea: RUN CODE congela donde esté y RUN PROG sigue desde ahí (para poder
   parar un programa, inspeccionarlo paso a paso y dejarlo seguir).
-- Volver a EDIT **no** resetea: se ve dónde quedó el PC.
+- Volver a MOD **no** resetea: se ve dónde quedó el PC.
 - `ExecCont`: la CPU corre por lotes (`EXEC_BATCH`) hasta HALT; el framebuffer
   se vuelca cada `FB_FLUSH_MS` (con aviso "HALT" si procede).
 - `EditPrg`: al cambiar de slot se releen `PREVIEW_BYTES` de la flash para la

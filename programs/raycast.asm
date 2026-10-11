@@ -95,7 +95,7 @@
 ;     pulsador DIRECCION o DATOS -> dispara un proyectil
 ;
 ;  No hay boton de salida (los dos pulsadores son para disparar): se sale
-;  cambiando el interruptor SW_MODE a EDIT, igual que roto_debug.asm.
+;  cambiando el interruptor SW_MODE a MOD, igual que roto_debug.asm.
 ;
 ;  Si el giro de vista o el avance salen invertidos en el aparato real,
 ;  cambia el signo en `gira_der`/`gira_izq` o en `mueve_adelante` (justo

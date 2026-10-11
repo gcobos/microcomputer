@@ -43,7 +43,7 @@ direcciones de 16 bits (no imita a ningún micro real). Corre sobre un ESP32-C3.
 
 CONTROLES: 2 encoders con pulsador (ADDR, DATA) + 2 interruptores
 deslizantes (SW_MODE, SW_STEP), horizontales, cada uno encima de un encoder:
-"EDIT <-SW_MODE-> RUN" sobre ADDR y "SINGLE <-SW_STEP-> CONTINUOUS" sobre
+"MOD <-SW_MODE-> RUN" sobre ADDR y "CODE <-SW_STEP-> PROG" sobre
 DATA (además del interruptor de encendido ON/OFF, deslizante vertical, en
 la parte de abajo de la caja; ver docs/panel.svg). Nada más, sin botones sueltos -- el hardware en sí (la
 clase PushButton, panel.h) solo distingue pulsación/nivel, sin pulsación
@@ -53,12 +53,12 @@ encima en main.cpp cronometrando ese mismo nivel, ver sección 12.
 
 CUATRO VISTAS, derivadas de los dos interruptores (ver sección 12):
 
-  SW_MODE=EDIT + SW_STEP=SINGLE      ->  EDIT MEMORY   (teclear el programa)
-  SW_MODE=EDIT + SW_STEP=CONTINUOUS  ->  EDIT PROGRAMS (elegir slot, cargar/guardar)
-  SW_MODE=RUN  + SW_STEP=SINGLE      ->  SINGLE STEP   (1 instrucción por pulsación)
-  SW_MODE=RUN  + SW_STEP=CONTINUOUS  ->  CONTINUOUS    (corre; pantalla = programa)
+  SW_MODE=MOD + SW_STEP=CODE  ->  MOD CODE  (editar el código: teclear el programa)
+  SW_MODE=MOD + SW_STEP=PROG  ->  MOD PROG  (elegir slot, cargar/guardar/borrar)
+  SW_MODE=RUN + SW_STEP=CODE  ->  RUN CODE  (depurar viendo el código: paso a paso)
+  SW_MODE=RUN + SW_STEP=PROG  ->  RUN PROG  (ejecutar; pantalla = programa)
 
-En RUN el programa manda: lee encoders y pulsadores con IN, y en CONTINUOUS
+En RUN el programa manda: lee encoders y pulsadores con IN, y en RUN PROG
 dibuja en la pantalla (gráficos y/o texto, por puertos). Los programas SIEMPRE
 arrancan en PC = 0.
 NO hay edición directa de registros: un registro se carga ejecutando
@@ -517,7 +517,7 @@ FRAMEBUFFER · gráficos (puertos 0x0000..0x03FF)
 
   El firmware guarda esos 1024 bytes en su propio buffer (g_fb en main.cpp),
   NO en la RAM de la CPU.
-  VOLCADO A LA OLED: solo en CONTINUOUS, cada FB_FLUSH_MS ms. Si la CPU ha hecho
+  VOLCADO A LA OLED: solo en RUN PROG, cada FB_FLUSH_MS ms. Si la CPU ha hecho
   HALT se superpone un aviso "HALT" en una esquina. En STEP no se vuelca (se
   ve la vista de depuración).
   BORRADO: se pone a 0 cada vez que se (re)inicia una ejecución (entrar en
@@ -540,7 +540,7 @@ TEXTO · rejilla de caracteres (puertos 0x0400..0x04FF)
 
   El firmware guarda las 168 celdas en g_text (main.cpp), NO en la RAM. Se
   ponen a 0 (todo transparente) al (re)iniciar una ejecución, igual que el
-  framebuffer. En CONTINUOUS se componen sobre el framebuffer cada FB_FLUSH_MS
+  framebuffer. En RUN PROG se componen sobre el framebuffer cada FB_FLUSH_MS
   ms (renderFramebuffer(g_fb, g_text, halted)). En STEP no se ven (vista de
   depuración). El aviso "HALT" se dibuja por encima de todo.
 
@@ -644,7 +644,7 @@ TEMPORIZADORES (puertos 0x0620 .. 0x0629, PORT_TIMER_BASE = 0x0620)
     t8 = 0x0628   256 ms/paso
     t9 = 0x0629   512 ms/paso  (el más lento; 255 -> 0 en ~130,6 s)
 
-  En RUN + CONTINUOUS, tickTimers() se llama una vez por vuelta de loop() --
+  En RUN PROG, tickTimers() se llama una vez por vuelta de loop() --
   avanzan en tiempo real todo el rato, se ejecute lo que se ejecute.
 
   En STEP (ExecPaso, main.cpp) NO están congelados del todo: tickTimers() se
@@ -712,8 +712,8 @@ SONIDO (puertos 0x0630 .. 0x0635, PORT_SND_BASE = 0x0630)
   ANTERIOR. Visto en fzero.asm y pong.asm (ya corregido): "el primer sonido
   se queda sonando hasta el segundo" es la firma de este fallo.
 
-  Suena SOLO en RUN + CONTINUOUS. Se calla (y se ponen los 4 registros a 0)
-  al (re)arrancar una ejecución, al pasar a STEP o EDIT, y al llegar a HALT.
+  Suena SOLO en RUN PROG. Se calla (y se ponen los 4 registros a 0)
+  al (re)arrancar una ejecución, al pasar a RUN CODE o MOD, y al llegar a HALT.
   tickSound() corre una vez por vuelta de loop() (aplica el auto-apagado).
   El piezo pasivo va directo entre GPIO2 y GND (opcional 100 Ω en serie).
 
@@ -997,19 +997,19 @@ MAPA DE ENTRADAS  (pin del 74HC165 -> señal -> bit del byte)
   D3  pin 14   DATA_A    bit 4    Encoder DATA, señal A
   D4  pin 3    DATA_B    bit 3    Encoder DATA, señal B
   D5  pin 4    DATA_SW   bit 2    Encoder DATA, pulsador
-  D6  pin 5    SW_MODE   bit 1    Interruptor: EDIT / RUN
-  D7  pin 6    SW_STEP   bit 0    Interruptor: SINGLE / CONTINUOUS
+  D6  pin 5    SW_MODE   bit 1    Interruptor: MOD / RUN
+  D7  pin 6    SW_STEP   bit 0    Interruptor: CODE / PROG
 
 ENCODERS: incrementales tipo EC11, con pulsador.
   A y B -> entradas del 74HC165 (con pull-up).  Común (C) -> GND.
   Pulsador: una pata -> entrada con pull-up, otra -> GND.
 
 INTERRUPTORES SW_MODE y SW_STEP: deslizantes, montados en horizontal encima
-  de cada encoder ("EDIT <-SW_MODE-> RUN" sobre ADDR, "SINGLE <-SW_STEP->
-  CONTINUOUS" sobre DATA). Eléctricamente, un contacto SPST:
+  de cada encoder ("MOD <-SW_MODE-> RUN" sobre ADDR, "CODE <-SW_STEP->
+  PROG" sobre DATA). Eléctricamente, un contacto SPST:
   Una pata -> entrada del 74HC165 (con pull-up).  Otra -> GND.
-  ABIERTO (alto)  = SW_MODE: EDIT · SW_STEP: SINGLE (editando: MEMORIA)
-  CERRADO (bajo)  = SW_MODE: RUN  · SW_STEP: CONTINUOUS (editando: PROGRAMAS)
+  ABIERTO (alto)  = SW_MODE: MOD · SW_STEP: CODE
+  CERRADO (bajo)  = SW_MODE: RUN · SW_STEP: PROG
 
 
 --------------------------------------------------------------------------------
@@ -1061,8 +1061,8 @@ cursor, slot: eso vive en main.cpp / UiState).
   (un solo esp_timer que se re-arma).
 
   API:
-    ejecutar()  = swModo_.on()      (false = EDIT)
-    swAbajo()   = swPaso_.on()      (false = SINGLE, true = CONTINUOUS)
+    ejecutar()  = swModo_.on()      (false = MOD)
+    swAbajo()   = swPaso_.on()      (false = CODE, true = PROG)
     takeDirDelta(), takeDatDelta()  -> detentes (se consumen; bajo mux_)
     takeDirPress(), takeDatPress()  -> pulsación corta (evento; bajo mux_)
     dirPos(), datPos(), dirDown(), datDown()   -> para los puertos IN
@@ -1073,19 +1073,19 @@ cursor, slot: eso vive en main.cpp / UiState).
  12. MÁQUINA DE ESTADOS DE LA INTERFAZ (src/main.cpp, loop())
 --------------------------------------------------------------------------------
 
-  EXEC_BATCH   = 4000    instrucciones por vuelta de loop() en CONTINUOUS (y
-                         por tanda de una carrera de ADDR en STEP, §12 más abajo)
-  FB_FLUSH_MS  = 125     volcado del framebuffer a la OLED en CONTINUOUS
+  EXEC_BATCH   = 4000    instrucciones por vuelta de loop() en RUN PROG (y
+                         por tanda de una carrera de ADDR en RUN CODE, §12 más abajo)
+  FB_FLUSH_MS  = 125     volcado del framebuffer a la OLED en RUN PROG
   PREVIEW_BYTES = 48     bytes de la imagen del slot leídos para la previsualización
   DIR_LONG_PRESS_MS = 500   umbral corta/larga del pulsador de ADDR (EditMem, ExecPaso)
 
 La VISTA es función de los dos interruptores (nada oculto):
 
   SW_MODE   SW_STEP   Vista        Pantalla
-  EDIT    SINGLE    EditMem      listado desensamblado + registros
-  EDIT    CONT.     EditPrg      selector de slot + previsualización
-  RUN     SINGLE    ExecPaso     listado + registros, * en el PC, # en el objetivo de ADDR
-  RUN     CONT.     ExecCont     pantalla del programa (gráficos + texto)
+  MOD       CODE      EditMem      listado desensamblado + registros
+  MOD       PROG      EditPrg      selector de slot + previsualización
+  RUN       CODE      ExecPaso     listado + registros, * en el PC, # en el objetivo de ADDR
+  RUN       PROG      ExecCont     pantalla del programa (gráficos + texto)
 
 Estado en main.cpp (UiState + globales): view, cursor + compose (EditMem) /
 cursor + pasoFollowCursor (ExecPaso, mismo campo cursor que EditMem), slot y
@@ -1101,8 +1101,8 @@ BUCLE
        - entrar en RUN (exec && !prevExec)
      acción: cpu.reset() (PC=0, SP=0xFFFF, regs=0) ; panel.resetPositions() ;
              memset(g_fb, 0) ; running = abajo
-     Dentro de RUN, cambiar entre SINGLE y CONTINUOUS NO resetea:
-     solo running = abajo (STEP congela donde quedó, CONTINUOUS sigue desde
+     Dentro de RUN, cambiar entre CODE y PROG NO resetea:
+     solo running = abajo (RUN CODE congela donde quedó, RUN PROG sigue desde
      ahí) -- para poder parar un programa, depurarlo paso a paso y dejarlo
      seguir.
   4. Según la vista:
@@ -1252,7 +1252,7 @@ BUCLE
                          la pantalla; el listado pasa a seguir al PC mientras
                          dura, viéndolo avanzar solo. Si el PC nunca llega (o
                          el programa hace HALT antes), la carrera no termina
-                         sola -- una pulsación larga (o volver a EDIT) la
+                         sola -- una pulsación larga (o volver a MOD) la
                          corta. No dispara nada si ya hay una en marcha.
      ADDR pulsar LARGA -> cpu.reset() + borrar framebuffer/texto +
                          resetPositions() + cancela una carrera en marcha
@@ -1282,13 +1282,13 @@ BUCLE
 
 REGLAS
   - Los programas SIEMPRE empiezan a ejecutarse en PC = 0 al entrar en RUN
-    (cambiar entre STEP y CONTINUOUS dentro de RUN no reinicia). Cualquier
+    (cambiar entre CODE y PROG dentro de RUN no reinicia). Cualquier
     (re)inicio de ejecución resetea la CPU y borra el framebuffer, pero NO el
     resto de la RAM (para volver al estado inicial, recargar el slot).
-  - Volver a EDIT NO resetea: la CPU queda congelada donde estaba, se ve
+  - Volver a MOD NO resetea: la CPU queda congelada donde estaba, se ve
     dónde quedó el PC (* en el listado).
   - No se editan a mano registros, PC ni SP: solo ejecutando código.
-  - CONTINUOUS se detiene solo al llegar a HALT o al volver a EDIT/STEP.
+  - RUN PROG se detiene solo al llegar a HALT o al volver a MOD o a RUN CODE.
 
 
 --------------------------------------------------------------------------------
@@ -1476,7 +1476,7 @@ setup()
   si !flash.init():  failBlink(80)   parpadeo rápido = falla la flash / JEDEC
   cpu.reset()
   prevExec = panel.ejecutar() ; prevAbajo = panel.swAbajo()
-  running  = prevExec && prevAbajo        (arrancado en RUN+CONTINUOUS)
+  running  = prevExec && prevAbajo        (arrancado en RUN PROG)
   oled.contrast(FULL) ; oled.render(cpu, ui)
   esp_timer_create(samplerCb) ; esp_timer_start_once(2 ms)   (muestreo del panel)
 
@@ -1486,7 +1486,7 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
   I2C de la OLED (~30 ms) o en un guardado de la flash (~1 s).
 
   RITMO ADAPTATIVO (según t = ms desde la última actividad del panel):
-    programa ejecutando en CONTINUOUS, o t < ACTIVE_WINDOW_MS  -> 2 ms
+    programa ejecutando en RUN PROG, o t < ACTIVE_WINDOW_MS  -> 2 ms
     t < SCREEN_DIM_MS (pantalla encendida, sin tocar)        -> 4 ms
     resto (pantalla atenuada/apagada)                        -> 8 ms
   panel.update() devuelve true si hubo actividad -> reinicia t.
@@ -1496,7 +1496,7 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
     t < SCREEN_OFF_MS -> contraste 0x10   ("SCR_DIM")
     resto             -> DISPLAY OFF (~µA, conserva el contenido)  ("SCR_OFF")
   Al reencender: g_forceRender = true (repinta) ; lastFlush = 0 (fuerza volcado).
-  Un programa ejecutando en CONTINUOUS cuenta como "en uso": t = 0 (no atenúa).
+  Un programa ejecutando en RUN PROG cuenta como "en uso": t = 0 (no atenúa).
 
   LIGHT SLEEP:
     si  t >= LIGHT_SLEEP_MS  y  no hay programa ejecutando  y  !Serial
@@ -1513,7 +1513,7 @@ MUESTREO DEL PANEL Y ENERGÍA (batería)  —  src/main.cpp
   Consumo — lo que más pesa, en orden: (1) el regulador/LDO de la placa (Iq de
   varios mA en muchos clones del C3 SuperMini; medir, quizá alimentar 3V3
   directo); (2) OLED encendida (~10-15 mA) -> apagarla es la mayor palanca;
-  (3) loop() girando a tope con la CPU emulada en HALT/EDIT (lo tapa el light
+  (3) loop() girando a tope con la CPU emulada en HALT/MOD (lo tapa el light
   sleep); (4) flash (§7: deep power-down entre accesos, ~1 µA). El '165 y el
   muestreo de 2 ms son despreciables (~20 µs cada 2 ms).
 
@@ -1582,16 +1582,16 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   vista (navegar, insertar/borrar, elegir+ejecutar destino, resetear) --
   ya no es un simple "retroceder" simétrico a DATA.
 - LAS 5 RUTINAS COMUNES:
-  1) Cargar y ejecutar: SW_STEP CONTINUOUS (EditPrg), girar ADDR al slot, con
+  1) Cargar y ejecutar: MOD PROG (EditPrg), girar ADDR al slot, con
      prgAction en LOAD pulsar DATA o ADDR (los dos hacen lo mismo).
-     SW_MODE RUN, SW_STEP CONTINUOUS.
-  2) Programa nuevo: SW_MODE EDIT, SW_STEP SINGLE. Girar DATA (se ve el
+     Luego RUN PROG.
+  2) Programa nuevo: MOD CODE. Girar DATA (se ve el
      mnemónico), pulsar DATA para avanzar. Repetir.
-  3) A ejecución: SW_MODE RUN (SW_STEP: SINGLE paso a paso / CONTINUOUS).
-  4) Grabar: SW_STEP CONTINUOUS, girar al slot, girar DATA hasta SAVE, pulsar DATA o
+  3) A ejecución: SW_MODE RUN (RUN CODE paso a paso / RUN PROG).
+  4) Grabar: MOD PROG, girar al slot, girar DATA hasta SAVE, pulsar DATA o
      ADDR (los dos guardan igual estando en SAVE).
-  5) Paso a paso de un programa cargado: cargar (rutina 1), SW_MODE RUN,
-     SW_STEP SINGLE, pulsar DATA repetidamente.
+  5) Paso a paso de un programa cargado: cargar (rutina 1), RUN CODE,
+     pulsar DATA repetidamente.
 - Encoders leídos por sondeo (no hay interrupción de flanco posible: las señales
   van por el 74HC165, no por GPIOs). El '165 se muestrea desde un esp_timer
   independiente de loop() a 2/4/8 ms según la actividad (§16), así que un
@@ -1622,7 +1622,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   quepa holgado. La RAM queda 100% para el programa.
 - El framebuffer del dispositivo (g_fb) NO está en la RAM de la CPU. Un
   programa que quiera leer lo que ha dibujado usa IN, no LDA.
-- En CONTINUOUS la OLED se refresca cada FB_FLUSH_MS. Componer el fotograma
+- En RUN PROG la OLED se refresca cada FB_FLUSH_MS. Componer el fotograma
   es rápido; el envío por I2C (~25-30 ms) lo hace una tarea aparte
   (OledPanel::txTaskFn, display.h) mientras la CPU emulada y el sonido siguen:
   antes, durante el volcado no avanzaba nada, el programa perdía ~25 % del
@@ -1639,7 +1639,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   dibujar píxeles. El resto de periféricos vive en 0x06xx.
 - En STEP los pulsadores de los encoders los usa el firmware (DATA avanza,
   ADDR resetea) y el programa los verá a 1 en ese instante (IN 0x0601 /
-  0x0603). En CONTINUOUS todo va al programa.
+  0x0603). En RUN PROG todo va al programa.
 - El listado de depuración se alinea siempre desde 0x0000; zonas de datos
   pueden verse "torcidas". No hay scroll manual en ejecución.
 - La previsualización del slot (EditPrg) lee solo PREVIEW_BYTES bytes de la
@@ -1657,7 +1657,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   tono lo genera tone()/LEDC por hardware, así que no roba tiempo a la CPU
   emulada ni depende del modelo de ejecución por lotes. Puertos 0x0630..0x0635:
   frecuencia de 16 bits, nota MIDI (lo más fácil de usar con OUT), duración
-  automática y velocidad MIDI (solo por Bluetooth). Solo suena en CONTINUOUS; se calla en STEP/EDIT y al HALT. Con un
+  automática y velocidad MIDI (solo por Bluetooth). Solo suena en RUN PROG; se calla en RUN CODE/MOD y al HALT. Con un
   piezo pasivo se pueden tocar melodías; un buzzer ACTIVO solo daría un pitido
   fijo y bastaría el bit 0 de un puerto.
 - TIMERS + SONIDO: patrón típico de melodía = OUT PORT_SND_DUR una vez, luego

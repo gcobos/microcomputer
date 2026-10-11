@@ -25,7 +25,7 @@
 ;       IPS ~= 74 * 65536 * 2.008 / 32 ~= 305 000 instrucciones/segundo
 ;
 ;  No hay entrada de usuario ni salida por boton: se deja correr, se lee el
-;  resultado y se vuelve a EDITAR con el interruptor SW_MODE del panel.
+;  resultado y se vuelve a MOD con el interruptor SW_MODE del panel.
 ;
 ;  Ensamblar y enviar al slot 57:
 ;     python3 tools/casm.py programs/benchmark.asm -o programs/benchmark.bin

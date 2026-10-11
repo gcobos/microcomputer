@@ -493,14 +493,14 @@ t3p6: .asciiz "16-BIT (AX..DX)\nMOV/ADD/SUB/CMP\nr16,r16 (2B); ADD/\nSUB r16,reg
 t3p7: .asciiz "STACK, JUMPS, COPY\nPUSH/POP reg (1B)\nJMP/CALL<cc> addr(3)\nJMP/CALL r16 (2B)\ncc:Z NZ C NC N NN V\nNV. MOVB/MOVW/MOVBR\ncopy CX: BX -> DX"
 t3p8: .asciiz "FLAGS SUMMARY\nZ=result 0, N=bit7\nADD/ADC: C=carry\nSUB/SBC/CMP: C =\nborrow. Logic: C=V=0\nINC/DEC 8-bit keep C\n16-bit: only CMP"
 t3p9: .asciiz "ASSEMBLER (casm)\n.org .db .dw .space\n.asciiz .equ .slot\n.name \"TEXT\" (<=14)\n.category GAME etc.\n.include \"text.asm\"\n(from programs/lib)"
-t4p0: .asciiz "TWO SLIDE SWITCHES\nEDIT<-SW_MODE->RUN\nabove ADDR. SINGLE\n<-SW_STEP->CONT.\nabove DATA. EDIT:\nSINGLE=memory,\nCONT.=programs"
-t4p1: .asciiz "THE FOUR VIEWS\nEDIT+SINGLE: memory\n(disasm + edit)\nEDIT+CONT: programs\n(slot browser)\nRUN+SINGLE: step\nRUN+CONT: continuous"
+t4p0: .asciiz "TWO SLIDE SWITCHES\nMOD<-SW_MODE->RUN\nabove ADDR.\nCODE<-SW_STEP->PROG\nabove DATA.\nTogether they pick\none of 4 views."
+t4p1: .asciiz "THE FOUR VIEWS\nMOD CODE: edit the\ncode (disasm)\nMOD PROG: programs\n(load/save/delete)\nRUN CODE: debug\nRUN PROG: run"
 t4p2: .asciiz "EditMem CONTROLS\nADDR turn: move by\nwhole instruction.\nADDR short: insert\nNOP. ADDR long:\ndelete byte. DATA\nturn: change field"
 t4p3: .asciiz "EditMem FIELDS\nDATA press confirms\nfield, advances.\nOn last field, also\nmoves to next addr.\nVerb field cycles\n30 verbs A-Z order"
 t4p4: .asciiz "EditPrg CONTROLS\nADDR turn: pick\nslot 0-59. DATA\nturn: cycle action\nLOAD/SAVE/NEW.\nEither button press\nruns chosen action"
 t4p5: .asciiz "ExecPaso CONTROLS\nADDR turn: pick a\ntarget addr (no\nrun yet). ADDR short\npress: run to there.\nADDR long: reset.\nDATA: step 1 instr"
 t4p6: .asciiz "ExecCont\nBoth encoders and\nboth buttons pass\nstraight through to\nthe running program\nvia IN on their\nports (0600-0603)"
-t4p7: .asciiz "RUN/RESET RULES\nStart of RUN or\nADDR-long in STEP:\nfull reset (PC,SP,\nscreen,snd,timers).\nSTEP<->CONT and\nEDIT keep the PC"
+t4p7: .asciiz "RUN/RESET RULES\nStart of RUN or\nADDR-long RUN CODE:\nfull reset (PC,SP,\nscreen,snd,timers).\nCODE<->PROG and\nMOD keep the PC"
 
 ; --- tablas de paginas por tema ----------------------------------------------
 T2_PAGES: .dw t2p0, t2pa, t2pb, t2p1, t2p2, t2p3, t2p4, t2p5, t2ph, t2pj, t2pg, t2p6, t2p7, t2p8, t2pe, t2pf, t2pi, t2p9, t2pc, t2pd

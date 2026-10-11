@@ -35,7 +35,7 @@
 ;  ha batido.
 ;
 ;  Sin tecla de salida (los dos pulsadores estan ocupados sacando la
-;  pelota) -- para parar, el interruptor SW_MODE del panel (vuelve a EDIT).
+;  pelota) -- para parar, el interruptor SW_MODE del panel (vuelve a MOD).
 ;
 ;  Ensamblar y enviar al slot 2:
 ;     python3 tools/casm.py programs/pong.asm -o programs/pong.bin

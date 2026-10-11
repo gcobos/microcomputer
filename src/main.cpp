@@ -552,7 +552,7 @@ void tickBootButton() {
 RTC_NOINIT_ATTR uint32_t g_diagMagic;
 RTC_NOINIT_ATTR uint32_t g_diagBoots;      // arranques desde el ultimo encendido
 uint8_t  g_diagReason = 0;                 // esp_reset_reason() de este arranque
-uint32_t g_diagExecStarts = 0;             // entradas a RUN (EDIT -> RUN)
+uint32_t g_diagExecStarts = 0;             // entradas a RUN (MOD -> RUN)
 uint32_t g_diagLoads = 0;                  // cargas de un slot (panel o PORT_PROG_LOAD)
 uint32_t g_diagLightSleeps = 0;            // light sleeps con un programa dormido
 
@@ -1956,7 +1956,7 @@ void loop() {
             } else {
                 // Corta: arranca la carrera hacia ui.cursor. Si el PC nunca
                 // llega ahí (o el programa hace HALT antes), no termina sola
-                // -- una pulsación larga (reset) o volver a EDIT la corta.
+                // -- una pulsación larga (reset) o volver a MOD la corta.
                 if (!dirBtnLongFired && !pasoRunning && !cpu.halted()) {
                     pasoTargetPC = ui.cursor;
                     pasoRunning = true;

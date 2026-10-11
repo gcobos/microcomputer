@@ -33,6 +33,8 @@
 ;     DIRECCION larga  -> (~0,6 s, actua sin soltar) entra en REC.
 ;     LOS DOS a la vez -> SONGS (y desde SONGS, vuelta a EDIT).
 ;  Arriba a la derecha, el instrumento de la cancion (ver SONGS).
+;  Al abrir el programa, la cancion de trabajo esta vacia (como tras NEW
+;  SONG); las guardadas se cargan desde SONGS.
 ;
 ;  REC ("REC" en inverso arriba): marcar el ritmo de las notas que ya hay,
 ;  desde el cursor (si estaba al final, desde el principio). CADA CAMBIO
@@ -47,34 +49,40 @@
 ;  sonando: dura hasta ahi (asi se marca la ultima, que con REPEAT es lo que
 ;  pasa hasta volver a empezar). DIRECCION gira mueve el
 ;  cursor, como en EDIT (y corta lo que se estuviera marcando). Se mide al
-;  ms (T1/T2/T4, ver meas_read).
-;  CUANTIZAR (QUANT en SONGS: OFF de fabrica, 50% o 100%). Al 100 %, cada
-;  duracion se ajusta a la
-;  figura mas cercana del pulso: 1/4, 1/2, 1, 1 1/2, 2, 3 o 4 pulsos (QSET). El pulso sale de la primera nota marcada al entrar en REC (que
-;  sea una nota "normal") y se va corrigiendo con cada una (1/8 de lo que
-;  diga la nota nueva), asi sigue un tempo que se mueve un poco sin que un
-;  fallo suelto lo descoloque. Una nota de mas de ~4 1/2 pulsos se guarda
-;  tal cual y no cuenta para el pulso (ver rq_*). Al 50 %, se queda a medio
-;  camino entre lo marcado y esa figura: corrige los fallos grandes y
-;  conserva el matiz. (Con el formato de 4 ms, sin cuantizar ya se reproduce
-;  casi tal cual lo marcado: por eso viene en OFF.)
-;  Con QUANT OFF, se guarda lo medido (a 4 ms) y lo que se pierde al
-;  redondear pasa a la nota siguiente.
+;  ms (ver meas_read). Lo marcado se guarda tal cual, sin
+;  TEMPO: el TEMPO de la cancion solo cambia la velocidad al reproducir.
+;  REC guarda lo medido (a 4 ms) y lo que se pierde al redondear pasa a la
+;  nota siguiente.
+;  CUANTIZAR (QUANT en SONGS: OFF de fabrica / ON). Con QUANT en ON, al
+;  salir de REC (si se ha marcado alguna nota) la cancion ENTERA pasa a una
+;  rejilla comun, sacada de la propia cancion: cada duracion queda en un
+;  multiplo exacto de la rejilla, y la cancion dura lo mismo que lo
+;  marcado. Si el ritmo es demasiado libre para ninguna rejilla, se queda
+;  como estaba. Mientras calcula (hasta ~2 s con 512 notas), "QUANTIZING..."
+;  en la linea de la nota. Ver quantize.
 ;
-;  SONGS: INSTR + REPEAT + QUANT + NEW SONG + 32 canciones. DATOS gira cambia de fila; un
+;  SONGS: INSTR + TEMPO + REPEAT + QUANT + NEW SONG + 32 canciones. DATOS gira cambia de fila; un
 ;  CLIC en cualquiera de los dos pulsadores hace lo de la fila, y DIRECCION
-;  gira el valor de la fila (INSTR, REPEAT, QUANT: siguiente / anterior;
+;  gira el valor de la fila (INSTR, TEMPO, REPEAT, QUANT: siguiente /
+;  anterior;
 ;  cancion: la accion):
 ;     INSTR     el instrumento siguiente de la cancion de trabajo
 ;               (PORT_SND_INSTR: ORGAN, PIANO, GUITAR, BELL); suena la nota
 ;               marcada con el. Se aplica al momento a todo (reproducir, REC,
 ;               la muestra al girar DATOS), se guarda con SAVE y vuelve con
 ;               LOAD; NEW SONG lo conserva.
+;     TEMPO     60..240 BPM, de 5 en 5 (de fabrica 120 = tal cual se grabo):
+;               la velocidad al reproducir. A 240 suena al doble de rapido y
+;               a 60 a la mitad; no cambia las notas guardadas, cada duracion
+;               se escala al sonar (tempo_scale). DIRECCION gira: +-5 (sin
+;               pasar de los limites); clic: +5 (de 240, vuelve a 60). Como
+;               INSTR, va con la cancion (SAVE lo guarda, LOAD lo recupera,
+;               NEW SONG lo conserva).
 ;     REPEAT    NO / YES: al acabar de reproducirse, vuelve a empezar (sin
 ;               hueco: el tiempo sigue). Como INSTR, va con la cancion (SAVE
 ;               lo guarda, LOAD lo recupera, NEW SONG lo conserva). En EDIT,
 ;               "REP" arriba a la izquierda.
-;     QUANT     OFF -> 50% -> 100%: cuantizar el ritmo en REC (ver REC).
+;     QUANT     OFF / ON: cuantizar la cancion al salir de REC (ver REC).
 ;               Para todas las canciones (se conserva al reenviar).
 ;     NEW SONG  DATOS LARGA (no un clic, para no perder la cancion sin
 ;               querer): vacia la cancion y vuelve a EDIT.
@@ -97,12 +105,16 @@
 ;     0xC060-0xC07F  1 = repetir, de cada cancion del banco
 ;     0xC080-0xC081  longitud de la cancion de trabajo
 ;     0xC082         instrumento de la cancion de trabajo
-;     0xC083         QUANT: 0 = OFF (de fabrica), 1 = 50 %, 2 = 100 %
-;     0xC084         formato de las canciones (1 = el actual; ver arriba)
+;     0xC083         QUANT: 0 = OFF (de fabrica), otro = ON
+;     0xC084         formato de las canciones (2 = el actual; ver abajo)
 ;     0xC085         1 = repetir la cancion de trabajo
+;     0xC086         TEMPO de la cancion de trabajo (BPM; 0 o fuera de rango = 120)
+;     0xC0A0-0xC0BF  TEMPO de cada cancion del banco (igual)
 ;     0xC400-0xC7FF  la cancion de trabajo (la que se toca/graba/reproduce)
 ;  Cada entrada ocupa 2 bytes (16 bits): nota (6 bits: 0..60 = DO3..DO8,
-;  63 = SILENCIO) + duracion (10 bits, en pasos de 4 ms: hasta ~4 s):
+;  63 = SILENCIO) + duracion (10 bits, escalonada: 0..511 en pasos de 4 ms,
+;  hasta 2044 ms; 512..1023 = 2048 ms + pasos de 12 ms, hasta 8180 ms; ver
+;  ms_to_units):
 ;     byte 0 = nota (bits 0-5) + duracion bits 0-1 (en los bits 6-7)
 ;     byte 1 = duracion bits 2-9
 ;  Los silencios son entradas propias (nota 63, "--" en la lista; se elige
@@ -112,13 +124,15 @@
 ;  vacia; hasta MAX_NOTES=512 entradas.
 ;  FORMATO ANTERIOR (hasta 2026-10): duracion y silencio previo de 5 bits
 ;  cada uno, indices de una tabla de 32 tiempos (OLD_TT) con saltos de hasta
-;  50 ms en lo largo. Al arrancar, si [song_fmt] != 1, convert_all pasa
-;  todas las canciones al formato nuevo (un silencio previo pasa a ser una
-;  entrada de silencio delante): suenan igual.
+;  50 ms en lo largo. Al arrancar, si [song_fmt] es 0, convert_all pasa
+;  todas las canciones al formato de 4 ms (un silencio previo pasa a ser una
+;  entrada de silencio delante): suenan igual. Despues (formato 1, hasta
+;  2026-10) la duracion iba siempre en pasos de 4 ms, hasta 4092 ms: si
+;  [song_fmt] es 1, convert_long pasa al formato 2 las notas de mas de 2 s
+;  (las demas son iguales en los dos).
 ;  Solo SAVE y DEL (en SONGS) escriben la flash (~1 s, "SAVING..."); LOAD y
-;  NEW SONG solo tocan la RAM. Como se graba la RAM entera, al volver a
-;  arrancar el programa tambien se recupera la cancion de trabajo que habia
-;  en ese momento.
+;  NEW SONG solo tocan la RAM. Se graba la RAM entera, pero la cancion de
+;  trabajo no se recupera al volver a arrancar: empieza vacia.
 ;  Reenviar el programa desde el ordenador NO borra las canciones: la
 ;  directiva .persist marca su zona (0x4000-0xC7FF) y tools/compi.py send la
 ;  copia del slot antes de grabar (con --no-persist, se borran).
@@ -152,6 +166,7 @@ P_T2       = 0x0622      ; 4 ms/paso  } con mas finura que T4 (ver meas_read)
 P_T3       = 0x0623      ; 8 ms/paso (ritmo del bucle)
 P_T4       = 0x0624      ; 16 ms/paso (duracion de nota y silencio: nunca a la vez)
 P_T5       = 0x0625      ; 32 ms/paso (pasos del menu de DIRECCION mantenido)
+P_T6       = 0x0626      ; 64 ms/paso (medir notas de mas de ~4 s)
 P_SND_NOTE = 0x0632      ; nota MIDI (0 = silencio)
 P_SND_DUR  = 0x0633      ; duracion automatica x10 ms (0 = sostenida)
 P_SND_VEL  = 0x0634      ; velocidad MIDI (solo por Bluetooth; pegajosa)
@@ -167,12 +182,18 @@ KB_TOP_BASE = 36         ; base mas alta (DO6..DO8)
 MAX_NOTES   = 512        ; notas por cancion (2 bytes cada una = 1 KiB)
 MAX_HI      = 2          ; byte alto de MAX_NOTES (512 = 0x0200)
 FILE_COUNT  = 32
-ROW_REPEAT  = 1          ; SONGS: fila 0 = INSTR, 1 = REPEAT, 2 = QUANT,
-ROW_QUANT   = 2          ; 3 = NEW SONG, 4.. = S01..S32
-ROW_NEW     = 3
-FIRST_FILE  = 4
-Q_MIN_BEAT  = 13         ; pulso minimo (unidades de 4 ms: 52 ms)
-Q_MAX_R     = 19         ; >= 19 cuartos de pulso: nota libre, sin ajustar
+ROW_TEMPO   = 1          ; SONGS: fila 0 = INSTR, 1 = TEMPO, 2 = REPEAT,
+ROW_REPEAT  = 2          ; 3 = QUANT, 4 = NEW SONG, 5.. = S01..S32
+ROW_QUANT   = 3
+ROW_NEW     = 4
+FIRST_FILE  = 5
+TEMPO_DEF   = 120        ; TEMPO: BPM con los que suena tal cual se grabo
+TEMPO_MIN   = 60         ; (a 60, a la mitad de velocidad; a 240, al doble)
+TEMPO_MAX   = 240
+TEMPO_STEP  = 5
+QZ_MAX_TRY  = 16         ; quantize: rejillas candidatas como mucho
+QZ_MIN_G    = 20         ; rejilla minima (ms)
+QZ_MAX_D    = 8180       ; duracion maxima de una nota (ms)
 INSTR_COUNT = 4
 BANK_HI     = 0x40       ; banco de canciones: 0x4000, 1 KiB cada una
 LENTAB      = 0xC000     ; longitudes del banco (32 x 16 bits)
@@ -181,9 +202,11 @@ REPTAB      = 0xC060     ; 1 = repetir, de cada cancion del banco (32 bytes)
 len_lo      = 0xC080     ; longitud de la cancion de trabajo
 len_hi      = 0xC081
 work_instr  = 0xC082     ; instrumento de la cancion de trabajo (0..3)
-quant_mode  = 0xC083     ; QUANT: 0 OFF, 1 50 %, 2 100 %
-song_fmt    = 0xC084     ; 1 = formato actual (si no, convert_all al arrancar)
+quant_mode  = 0xC083     ; QUANT: 0 OFF, otro = ON (cuantizar al salir de REC)
+song_fmt    = 0xC084     ; 2 = formato actual (si no, convert_all al arrancar)
 work_rep    = 0xC085     ; 1 = la cancion de trabajo se repite al acabar
+work_tempo  = 0xC086     ; TEMPO de la cancion de trabajo (BPM; ver tempo_get)
+TEMPOTAB    = 0xC0A0     ; TEMPO de cada cancion del banco (32 bytes)
 TMPBUF      = 0x2000     ; 1 KiB de paso para convert_song
 WORK        = 0xC400     ; notas de la cancion de trabajo
 DEF_DUR     = 64         ; insertar: 64 x 4 ms = 256 ms
@@ -228,16 +251,17 @@ start:
     MOV AL,#12
     STA [kb_base],AL
     CALL convert_all         ; canciones del formato anterior, si las hay
-    ; la cancion de trabajo se conserva: viene de la ultima grabacion del
-    ; programa (SAVE/DEL de FILES graban la RAM entera). Solo se valida.
-    LDA BL,[len_lo]
-    LDA BH,[len_hi]
-    CALL len_valid
-    STA [len_lo],BL
-    STA [len_hi],BH
-    CALL rpos_set            ; EDIT empieza con el cursor al final
+    ; la cancion de trabajo empieza vacia (como tras NEW SONG): SAVE/DEL
+    ; graban la RAM entera, y si no se abriria con la que hubiera entonces
+    MOV AL,#0
+    STA [len_lo],AL
+    STA [len_hi],AL
+    MOV BX,#0
+    CALL rpos_set
     LDA AL,[work_instr]
     CALL instr_set
+    CALL tempo_get           ; (las de antes del TEMPO: 0 -> 120)
+    STA [work_tempo],AL
     IN  AL,(P_DIR_POS)
     STA [dir_prev],AL
     IN  AL,(P_DAT_POS)
@@ -253,6 +277,7 @@ main_l:
     CALL poll_dat_rot
     CALL poll_dat_btn
     CALL tick_play
+    CALL meas_tick
     ; grabando el ritmo o reproduciendo, sin espera: la pulsacion y el final
     ; de cada nota se atienden en cuanto pasan (con la espera de 8 ms, cada
     ; nota se medía o arrancaba hasta 8 ms tarde, y en la reproduccion ese
@@ -382,22 +407,22 @@ note_pack:
     STA [BX],AL
     RET
 
-; --- ms_to_units: BX = ms -> BX = pasos de 4 ms, redondeado, entre 1 y
-; 1023 (no hay desplazamientos de 16 bits: a mano con los dos bytes) -------
+; --- ms_to_units: BX = ms -> BX = duracion guardada (10 bits, 1..1023),
+; redondeada. Escalonada: 0..511 = pasos de 4 ms (hasta 2044 ms), 512..1023 =
+; 2048 ms + pasos de 12 ms (hasta 8180 ms; en una nota tan larga, 12 ms no se
+; notan). No hay desplazamientos de 16 bits: a mano con los dos bytes ------
 ms_to_units:
-    ADD BX,#2
+    MOV DX,#2046
+    CMP BX,DX
+    JMPNC mtu_long
+    ADD BX,#2                ; corta: (ms + 2) / 4
     MOV AL,BH
     SHL AL,#6
     MOV CL,BL
     SHR CL,#2
     OR  CL,AL                ; byte bajo
     MOV AL,BH
-    SHR AL,#2                ; byte alto
-    CMP AL,#4
-    JMPC mtu_hi
-    MOV AL,#3                ; tope: 1023
-    MOV CL,#0xFF
-mtu_hi:
+    SHR AL,#2                ; byte alto (0 o 1)
     MOV BH,AL
     MOV BL,CL
     MOV AL,BL
@@ -406,16 +431,53 @@ mtu_hi:
     MOV BL,#1                ; nunca 0
 mtu_ret:
     RET
+mtu_long:                    ; larga: 512 + (ms - 2048 + 6) / 12
+    MOV DX,#2042
+    SUB BX,DX
+    MOV CH,#2                ; 512..767
+    MOV DX,#3072             ; 256 x 12
+    CMP BX,DX
+    JMPC mtu_div
+    SUB BX,DX
+    MOV CH,#3                ; 768..1023
+    CMP BX,DX
+    JMPC mtu_div
+    MOV BX,#1023             ; tope: 8180 ms
+    RET
+mtu_div:
+    MOV AX,BX
+    MOV CL,#12
+    DIV CL                   ; < 3072: cabe en 8 bits
+    MOV BL,AL
+    MOV BH,CH
+    RET
 
-; --- units_to_ms: BX = pasos de 4 ms -> BX = ms (x 4) --------------------
+; --- units_to_ms: BX = duracion guardada -> BX = ms (ver ms_to_units) ----
 units_to_ms:
     MOV AL,BH
-    SHL AL,#2
+    CMP AL,#2
+    JMPNC utm_long
+    SHL AL,#2                ; corta: x 4
     MOV CL,BL
     SHR CL,#6
     OR  AL,CL
     MOV BH,AL
     SHL BL,#2
+    RET
+utm_long:                    ; larga: 2048 + (u - 512) x 12
+    PUSH BH
+    MOV AL,BL
+    MOV CL,#12
+    MUL CL
+    MOV BX,AX
+    MOV DX,#2048
+    ADD BX,DX
+    POP AL
+    CMP AL,#3
+    JMPNZ utm_ret
+    MOV DX,#3072             ; 768..1023: + 256 x 12
+    ADD BX,DX
+utm_ret:
     RET
 
 ; --- dur_ms: la duracion de [un_dur_lo/hi] -> BX, en ms ------------------
@@ -424,20 +486,52 @@ dur_ms:
     LDA BH,[un_dur_hi]
     JMP units_to_ms
 
-; --- meas_arm / meas_read: cronometro de la grabacion. meas_arm arranca T1, T2
-; y T4 a la vez; meas_read da en BX lo que ha pasado desde entonces, en ms:
-; con T1 (2 ms) hasta ~0,5 s, con T2 (4 ms) hasta ~1 s, y despues con T4
-; (16 ms, hasta ~4 s). Un temporizador solo dice cuantos pasos ENTEROS han
-; pasado: se toma el centro del paso en curso (pasos x 2 + 1 ms con T1...),
-; si no cada medida sale de media medio paso corta y, al sumarse, la cancion
-; grabada se adelanta (con solo T4, 8 ms por medida). Usan AX, BX y CL. ---
+; --- meas_arm / meas_read: cronometro de la grabacion y la reproduccion.
+; meas_arm lo pone a 0; meas_read da en BX lo que ha pasado desde entonces,
+; en ms. Debajo, T1, T2, T4 y T6 arrancados a la vez (meas_raw): con T1 (2
+; ms) hasta ~0,5 s, con T2 (4 ms) hasta ~1 s, con T4 (16 ms) hasta ~4 s y
+; con T6 (64 ms) hasta ~16 s. Un temporizador solo dice cuantos pasos
+; ENTEROS han pasado: se toma el centro del paso en curso (pasos x 2 + 1 ms
+; con T1...), si no cada medida sale de media medio paso corta y, al
+; sumarse, la cancion grabada se adelanta (con solo T4, 8 ms por medida).
+; Para que las notas largas (hasta 8 s, o 16 a 60 BPM) se midan tambien al
+; ms, meas_tick (en cada vuelta del bucle principal) pasa lo medido a
+; [ms_base] cada ~0,4 s y vuelve a arrancar los temporizadores: lo hace en
+; cuanto T1 cambia de paso, asi que el error es de lo que tarda una vuelta
+; del bucle, en vez de los +-32 ms de T6 (que queda solo
+; por si el bucle se parase). Usan AX, BX, CX (y meas_tick, DX). -----------
 meas_arm:
+    MOV AL,#0
+    STA [ms_base_lo],AL
+    STA [ms_base_hi],AL
+meas_rearm:
     MOV AL,#255
     OUT (P_T1),AL
     OUT (P_T2),AL
     OUT (P_T4),AL
+    OUT (P_T6),AL
     RET
 meas_read:
+    CALL meas_raw
+    LDA CL,[ms_base_lo]
+    LDA CH,[ms_base_hi]
+    ADD BX,CX
+    RET
+meas_tick:
+    CALL meas_raw
+    MOV DX,#400
+    CMP BX,DX
+    JMPC mt_ret
+    SUB BX,CL                ; sin el medio paso: se pasa justo al cambiar
+    LDA CL,[ms_base_lo]       ; de paso, asi que lo medido es lo entero
+    LDA CH,[ms_base_hi]
+    ADD BX,CX
+    STA [ms_base_lo],BL
+    STA [ms_base_hi],BH
+    JMP meas_rearm
+mt_ret:
+    RET
+meas_raw:
     IN  AL,(P_T1)
     MOV CL,#2
     CMP AL,#0
@@ -448,6 +542,10 @@ meas_read:
     JMPNZ mr_mul
     IN  AL,(P_T4)
     MOV CL,#16
+    CMP AL,#0
+    JMPNZ mr_mul
+    IN  AL,(P_T6)
+    MOV CL,#64
 mr_mul:
     MOV BL,AL
     MOV AL,#255
@@ -590,7 +688,7 @@ re_go:
 re_pos:
     MOV AL,#0
     STA [rh_timing],AL
-    STA [q_beat],AL          ; el pulso sale de la primera nota marcada
+    STA [rec_dirty],AL
     MOV AL,#1
     STA [rec],AL
     STA [rh_fresh],AL
@@ -613,8 +711,566 @@ rx_off:
     OUT (P_SND_NOTE),AL
     MOV AL,#1
     STA [long_done],AL
+    LDA AL,[quant_mode]
+    CMP AL,#0
+    JMPZ rx_show
+    LDA AL,[rec_dirty]
+    CMP AL,#0
+    JMPZ rx_show
+    CALL quantize            ; QUANT ON y se ha marcado algo
+rx_show:
     CALL show_mode
+    CALL show_song
     CALL show_note_line
+    RET
+
+; ============================================================================
+;  QUANTIZE: al salir de REC con QUANT en ON, la cancion de trabajo entera
+;  pasa a una rejilla comun. Cada duracion queda en k x G ms (k entero):
+;   1. Rejillas candidatas: las duraciones mas cortas de la cancion, de
+;      menor a mayor (saltando las que estan a menos de un 6 % de la anterior
+;      probada; como mucho QZ_MAX_TRY), y la mitad de cada una (para que
+;      quepan notas de 1 1/2, con puntillo). Con la nota entera, k >= 1; con
+;      la mitad, k >= 2: lo que quede por debajo era un fallo y se alarga.
+;   2. De cada candidata, el error medio: lo que se aleja cada nota de su
+;      multiplo, en rejillas (como mucho 1). Se queda la de menor error, si
+;      no pasa de 0,15 rejillas por nota (a la mitad se le suman 0,03, para
+;      no partir el pulso sin necesidad). Si ninguna llega, el ritmo es
+;      demasiado libre: no se toca nada.
+;   3. G = suma de las duraciones / suma de las k: la cancion dura lo mismo
+;      que lo marcado (redondeado; hasta 8180 ms por nota).
+;  Probado en Python antes (ritmos con +-15 ms de temblor y una nota fallida:
+;  acierta las proporciones; con temblor de +-25 ms, casi siempre deja la
+;  cancion como estaba). Duraciones en ms en TMPBUF (2 bytes por entrada).
+; ============================================================================
+quantize:
+    CALL len_get
+    STA [qz_n_lo],BL
+    STA [qz_n_hi],BH
+    MOV DX,#2
+    CMP BX,DX
+    JMPNC qz_go
+    RET                      ; menos de 2 entradas: nada que comparar
+qz_go:
+    MOV CH,#3                ; "QUANTIZING..." en la linea de la nota (lo
+    CALL clear_row           ; tapa show_note_line al acabar)
+    MOV BX,#s_quantizing
+    MOV CX,#0x0300
+    CALL puts
+    ; duraciones en ms -> TMPBUF
+    MOV AL,#0
+    STA [qz_i_lo],AL
+    STA [qz_i_hi],AL
+qz_ld:
+    LDA BL,[qz_i_lo]
+    LDA BH,[qz_i_hi]
+    CALL note_ptr
+    CALL note_unpack
+    CALL dur_ms
+    CALL qz_put
+    CALL qz_next
+    JMPC qz_ld
+    LDA BL,[qz_n_lo]         ; fin de TMPBUF = TMPBUF + 2 n
+    LDA BH,[qz_n_hi]
+    ADD BX,BX
+    MOV CX,#TMPBUF
+    ADD BX,CX
+    STA [qz_end_lo],BL
+    STA [qz_end_hi],BH
+    ; limite = n x 19,25 ; penalizacion = n x 4 (en 1/128 de rejilla)
+    LDA BL,[qz_n_lo]
+    LDA BH,[qz_n_hi]
+    MOV CX,BX
+    ADD CX,CX
+    ADD CX,CX                ; x 4
+    STA [qz_pen_lo],CL
+    STA [qz_pen_hi],CH
+    MOV DX,CX
+    ADD DX,DX
+    ADD DX,DX                ; x 16
+    ADD DX,BX
+    ADD DX,BX
+    ADD DX,BX                ; x 19
+    MOV AL,BH                ; + n / 4
+    SHL AL,#6
+    SHR BL,#2
+    OR  BL,AL
+    SHR BH,#2
+    ADD DX,BX
+    STA [qz_lim_lo],DL
+    STA [qz_lim_hi],DH
+    ; candidatas
+    MOV AL,#0
+    STA [qz_last_lo],AL
+    STA [qz_last_hi],AL
+    STA [qz_tried],AL
+    STA [qz_bg_lo],AL
+    STA [qz_bg_hi],AL
+qz_cand:
+    ; umbral = ultima + ultima / 16 (la primera vez, QZ_MIN_G x 2)
+    LDA BL,[qz_last_lo]
+    LDA BH,[qz_last_hi]
+    MOV AL,BL
+    OR  AL,BH
+    JMPNZ qz_thr
+    MOV CX,#(QZ_MIN_G*2)
+    JMP qz_scan
+qz_thr:
+    MOV AL,BH
+    SHL AL,#4
+    MOV CL,BL
+    SHR CL,#4
+    OR  CL,AL
+    MOV CH,BH
+    SHR CH,#4
+    ADD CX,BX                ; CX = umbral
+qz_scan:
+    ; s = la duracion mas corta >= umbral (0xFFFF = ninguna). Sin llamadas:
+    ; BX recorre TMPBUF hasta [qz_end], AX = la duracion
+    MOV DX,#0xFFFF
+    MOV BX,#TMPBUF
+qz_sl:
+    LDA AL,[BX]
+    INC BX
+    LDA AH,[BX]
+    INC BX
+    CMP AX,CX
+    JMPC qz_sn               ; < umbral
+    CMP AX,DX
+    JMPNC qz_sn              ; no es mas corta
+    MOV DX,AX
+qz_sn:
+    LDA AL,[qz_end_lo]
+    LDA AH,[qz_end_hi]
+    CMP BX,AX
+    JMPC qz_sl
+    MOV BX,#0xFFFF
+    CMP DX,BX
+    JMPZ qz_chosen           ; no quedan candidatas
+    STA [qz_last_lo],DL
+    STA [qz_last_hi],DH
+    LDA AL,[qz_tried]
+    ADD AL,#1
+    STA [qz_tried],AL
+    CMP AL,#(QZ_MAX_TRY+1)
+    JMPZ qz_chosen
+    ; rejilla = la nota entera (k >= 1), sin penalizacion
+    STA [qz_g_lo],DL
+    STA [qz_g_hi],DH
+    MOV AL,#1
+    STA [qz_kmin],AL
+    MOV BX,#0
+    CALL qz_try
+    ; rejilla = su mitad (k >= 2), con penalizacion
+    LDA BL,[qz_last_lo]
+    LDA BH,[qz_last_hi]
+    MOV AL,BH
+    SHL AL,#7
+    SHR BL,#1
+    OR  BL,AL
+    SHR BH,#1
+    MOV DX,#QZ_MIN_G
+    CMP BX,DX
+    JMPC qz_cand             ; demasiado fina
+    STA [qz_g_lo],BL
+    STA [qz_g_hi],BH
+    MOV AL,#2
+    STA [qz_kmin],AL
+    LDA BL,[qz_pen_lo]
+    LDA BH,[qz_pen_hi]
+    CALL qz_try
+    JMP qz_cand
+
+qz_chosen:
+    LDA AL,[qz_bg_lo]
+    OR  AL,[qz_bg_hi]
+    JMPNZ qz_apply
+    RET                      ; ninguna encaja: se queda como estaba
+qz_apply:
+    LDA AL,[qz_bg_lo]
+    STA [qz_g_lo],AL
+    LDA AL,[qz_bg_hi]
+    STA [qz_g_hi],AL
+    LDA AL,[qz_bk]
+    STA [qz_kmin],AL
+    ; k de cada entrada (en TMPBUF, en lugar de su duracion), y las sumas
+    MOV AL,#0
+    STA [qz_t0],AL
+    STA [qz_t1],AL
+    STA [qz_t2],AL
+    STA [qz_s0],AL
+    STA [qz_s1],AL
+    STA [qz_s2],AL
+    STA [qz_i_lo],AL
+    STA [qz_i_hi],AL
+qz_kl:
+    CALL qz_get
+    LDA AL,[qz_t0]           ; suma de duraciones += BX
+    ADD AL,BL
+    STA [qz_t0],AL
+    LDA AL,[qz_t1]
+    ADC AL,BH
+    STA [qz_t1],AL
+    LDA AL,[qz_t2]
+    ADC AL,#0
+    STA [qz_t2],AL
+    CALL qz_round            ; [qz_k]
+    LDA BL,[qz_k_lo]
+    LDA BH,[qz_k_hi]
+    LDA AL,[qz_s0]           ; suma de k += k
+    ADD AL,BL
+    STA [qz_s0],AL
+    LDA AL,[qz_s1]
+    ADC AL,BH
+    STA [qz_s1],AL
+    LDA AL,[qz_s2]
+    ADC AL,#0
+    STA [qz_s2],AL
+    CALL qz_put
+    CALL qz_next
+    JMPC qz_kl
+    LDA AL,[qz_s2]
+    CMP AL,#0
+    JMPZ qz_div
+    RET                      ; mas de 65535 rejillas: no deberia pasar
+qz_div:
+    ; G = (suma duraciones + suma k / 2) / suma k
+    LDA CL,[qz_s0]
+    LDA CH,[qz_s1]
+    MOV AL,CH
+    SHL AL,#7
+    SHR CL,#1
+    OR  CL,AL
+    SHR CH,#1
+    LDA AL,[qz_t0]
+    ADD AL,CL
+    STA [qz_t0],AL
+    LDA AL,[qz_t1]
+    ADC AL,CH
+    STA [qz_t1],AL
+    LDA AL,[qz_t2]
+    ADC AL,#0
+    STA [qz_t2],AL
+    CALL qz_div24
+    STA [qz_G_lo],BL
+    STA [qz_G_hi],BH
+    ; cada entrada = k x G
+    MOV AL,#0
+    STA [qz_i_lo],AL
+    STA [qz_i_hi],AL
+qz_wl:
+    CALL qz_get              ; BX = k
+    MOV CX,BX
+    MOV BX,#0
+    LDA DL,[qz_G_lo]
+    LDA DH,[qz_G_hi]
+qz_ml:
+    MOV AL,CL
+    OR  AL,CH
+    JMPZ qz_md
+    ADD BX,DX
+    PUSH DL
+    PUSH DH
+    MOV DX,#QZ_MAX_D
+    CMP BX,DX
+    POP DH
+    POP DL
+    JMPNC qz_mcap
+    DEC CX
+    JMP qz_ml
+qz_mcap:
+    MOV BX,#QZ_MAX_D
+qz_md:
+    CALL ms_to_units
+    PUSH BL
+    PUSH BH
+    LDA BL,[qz_i_lo]
+    LDA BH,[qz_i_hi]
+    CALL note_ptr
+    PUSH BL
+    PUSH BH
+    CALL note_unpack         ; [un_note]
+    POP BH
+    POP BL
+    POP AH
+    POP AL
+    STA [un_dur_lo],AL
+    STA [un_dur_hi],AH
+    CALL note_pack
+    CALL qz_next
+    JMPC qz_wl
+    RET
+
+; --- qz_try: con [qz_g], [qz_kmin] y BX = penalizacion, el error de esa
+; rejilla; si no pasa del limite y es el mejor hasta ahora, se apunta. Es el
+; bucle que mas se repite (n entradas x hasta 32 rejillas): recorre TMPBUF
+; con un puntero, y con rejilla de hasta 255 ms el error sale con un DIV ----
+qz_try:
+    STA [qz_e_lo],BL
+    STA [qz_e_hi],BH
+    MOV BX,#TMPBUF
+    STA [qz_p_lo],BL
+    STA [qz_p_hi],BH
+    LDA BL,[qz_n_lo]
+    LDA BH,[qz_n_hi]
+    STA [qz_c_lo],BL
+    STA [qz_c_hi],BH
+qt_l:
+    LDA DL,[qz_p_lo]
+    LDA DH,[qz_p_hi]
+    LDA AL,[DX]
+    MOV BL,AL
+    INC DX
+    LDA AL,[DX]
+    MOV BH,AL
+    INC DX
+    STA [qz_p_lo],DL
+    STA [qz_p_hi],DH
+    ; atajo (lo normal): rejilla <= 255 y cociente <= 255 -> un DIV basta
+    LDA CL,[qz_g_lo]
+    LDA CH,[qz_g_hi]
+    MOV AL,CH
+    CMP AL,#0
+    JMPNZ qt_full
+    MOV AX,BX
+    DIV CL                   ; AL = cociente, AH = resto
+    JMPC qt_full
+    MOV DH,#0
+    MOV DL,CL
+    SUB DL,AH                ; rejilla - resto
+    CMP AH,DL
+    JMPC qt_down             ; resto < rejilla - resto: hacia abajo
+    ADD AL,#1                ; hacia arriba: k + 1, error = rejilla - resto
+    JMP qt_kchk
+qt_down:
+    MOV DL,AH                ; error = resto
+qt_kchk:
+    LDA AH,[qz_kmin]
+    CMP AL,AH
+    JMPNC qt_frac            ; k >= kmin: error ya en DX
+    MOV AX,BX                ; (BX sigue siendo la duracion)
+qt_full:
+    CALL qz_round            ; DX = error (ms), CX = rejilla
+qt_frac:
+    ; error en 1/128 de rejilla (como mucho 127)
+    MOV AL,#127
+    CMP DX,CX
+    JMPNC qt_add             ; una rejilla o mas
+    MOV AL,CH
+    CMP AL,#0
+    JMPNZ qt_slow
+    MOV AL,DL                ; error < rejilla <= 255: (error x 128) / rejilla
+    MOV AH,#128
+    MUL AH
+    DIV CL
+    JMP qt_add
+qt_slow:
+    ; rejilla de mas de 255 ms: error y rejilla a la mitad hasta que la
+    ; rejilla quepa en un byte (se pierden solo bits bajos), y el DIV
+    MOV AL,CH
+    SHL AL,#7
+    SHR CL,#1
+    OR  CL,AL
+    SHR CH,#1
+    MOV AL,DH
+    SHL AL,#7
+    SHR DL,#1
+    OR  DL,AL
+    SHR DH,#1
+    MOV AL,CH
+    CMP AL,#0
+    JMPNZ qt_slow
+    MOV AL,DL
+    MOV AH,#128
+    MUL AH
+    DIV CL
+    CMP AL,#128
+    JMPC qt_add
+    MOV AL,#127
+qt_add:
+    LDA BL,[qz_e_lo]
+    LDA BH,[qz_e_hi]
+    ADD BX,AL
+    STA [qz_e_lo],BL
+    STA [qz_e_hi],BH
+    LDA DL,[qz_lim_lo]
+    LDA DH,[qz_lim_hi]
+    CMP DX,BX
+    JMPC qt_ret              ; ya pasa del limite: descartada
+    LDA BL,[qz_c_lo]
+    LDA BH,[qz_c_hi]
+    DEC BX
+    STA [qz_c_lo],BL
+    STA [qz_c_hi],BH
+    MOV AL,BL
+    OR  AL,BH
+    JMPNZ qt_l
+    ; cabe: la mejor si no hay otra o si tiene menos error
+    LDA AL,[qz_bg_lo]
+    OR  AL,[qz_bg_hi]
+    JMPZ qt_best
+    LDA BL,[qz_e_lo]
+    LDA BH,[qz_e_hi]
+    LDA DL,[qz_be_lo]
+    LDA DH,[qz_be_hi]
+    CMP BX,DX
+    JMPNC qt_ret
+qt_best:
+    LDA AL,[qz_e_lo]
+    STA [qz_be_lo],AL
+    LDA AL,[qz_e_hi]
+    STA [qz_be_hi],AL
+    LDA AL,[qz_g_lo]
+    STA [qz_bg_lo],AL
+    LDA AL,[qz_g_hi]
+    STA [qz_bg_hi],AL
+    LDA AL,[qz_kmin]
+    STA [qz_bk],AL
+qt_ret:
+    RET
+
+; --- qz_round: BX = duracion (ms) -> [qz_k] = BX / [qz_g] redondeado (como
+; poco [qz_kmin]) y DX = lo que se aleja de k x rejilla (ms) ---------------
+qz_round:
+    LDA CL,[qz_g_lo]
+    LDA CH,[qz_g_hi]
+    PUSH BL
+    PUSH BH
+    MOV AL,CH
+    CMP AL,#0
+    JMPNZ qr_slow            ; rejilla de mas de 255 ms: k es pequeno
+    MOV AX,BX
+    DIV CL
+    JMPC qr_slow0            ; cociente de mas de 255
+    STA [qz_k_lo],AL
+    MOV AL,#0
+    STA [qz_k_hi],AL
+    MOV DL,AH                ; resto
+    MOV DH,#0
+    JMP qr_rnd
+qr_slow0:
+    POP BH
+    POP BL
+    PUSH BL
+    PUSH BH
+qr_slow:
+    MOV DX,BX                ; resto = duracion; k = 0
+    MOV AL,#0
+    STA [qz_k_lo],AL
+    STA [qz_k_hi],AL
+qr_sl:
+    CMP DX,CX
+    JMPC qr_rnd
+    SUB DX,CX
+    LDA BL,[qz_k_lo]
+    LDA BH,[qz_k_hi]
+    INC BX
+    STA [qz_k_lo],BL
+    STA [qz_k_hi],BH
+    JMP qr_sl
+qr_rnd:
+    ; DX = resto (< rejilla). Si resto x 2 >= rejilla, k + 1
+    MOV BX,DX
+    ADD BX,BX
+    CMP BX,CX
+    JMPC qr_min
+    LDA BL,[qz_k_lo]
+    LDA BH,[qz_k_hi]
+    INC BX
+    STA [qz_k_lo],BL
+    STA [qz_k_hi],BH
+    MOV BX,CX
+    SUB BX,DX
+    MOV DX,BX                ; error = rejilla - resto
+qr_min:
+    POP BH                   ; BX = duracion
+    POP BL
+    LDA AL,[qz_k_hi]
+    CMP AL,#0
+    JMPNZ qr_ret
+    LDA AL,[qz_k_lo]
+    LDA AH,[qz_kmin]
+    CMP AL,AH
+    JMPNC qr_ret
+    ; k < kmin: un fallo; k = kmin, error = kmin x rejilla - duracion
+    STA [qz_k_lo],AH
+    MOV DX,CX
+    CMP AH,#1
+    JMPZ qr_m1
+    ADD DX,CX
+qr_m1:
+    SUB DX,BX
+qr_ret:
+    RET
+
+; --- qz_get / qz_put: la palabra i de TMPBUF -> BX / BX -> la palabra i
+qz_get:
+    CALL qz_ptr
+    LDA AL,[DX]
+    MOV BL,AL
+    INC DX
+    LDA AL,[DX]
+    MOV BH,AL
+    RET
+qz_put:
+    CALL qz_ptr
+    MOV AL,BL
+    STA [DX],AL
+    INC DX
+    MOV AL,BH
+    STA [DX],AL
+    RET
+qz_ptr:
+    LDA DL,[qz_i_lo]
+    LDA DH,[qz_i_hi]
+    ADD DX,DX
+    PUSH BL
+    PUSH BH
+    MOV BX,#TMPBUF
+    ADD DX,BX
+    POP BH
+    POP BL
+    RET
+
+; --- qz_next: i + 1; C = 1 si aun quedan (i < n) --------------------------
+qz_next:
+    LDA BL,[qz_i_lo]
+    LDA BH,[qz_i_hi]
+    INC BX
+    STA [qz_i_lo],BL
+    STA [qz_i_hi],BH
+    LDA DL,[qz_n_lo]
+    LDA DH,[qz_n_hi]
+    CMP BX,DX
+    RET
+
+; --- qz_div24: [qz_t2:t1:t0] / [qz_s1:s0] -> BX (el cociente cabe en 16
+; bits). Division larga bit a bit: no hay desplazamientos de 16 bits ni
+; division de 24, asi que el dividendo (BX + CL) y el resto (DX) se
+; desplazan byte a byte con ADD/ADC ----------------------------------------
+qz_div24:
+    LDA BL,[qz_t0]
+    LDA BH,[qz_t1]
+    LDA CL,[qz_t2]
+    LDA AL,[qz_s0]
+    LDA AH,[qz_s1]
+    MOV DX,#0
+    MOV CH,#24
+qd_l:
+    ADD BL,BL
+    ADC BH,BH
+    ADC CL,CL
+    ADC DL,DL
+    ADC DH,DH
+    JMPC qd_sub              ; el resto paso de 16 bits: seguro que cabe
+    CMP DX,AX
+    JMPC qd_n
+qd_sub:
+    SUB DX,AX
+    OR  BL,#1
+qd_n:
+    DEC CH
+    JMPNZ qd_l
     RET
 
 ; --- play_toggle: reproduce desde el cursor hasta el final, con el cursor
@@ -728,12 +1384,14 @@ ad_ret:
     RET
 
 ; --- act_next / act_prev: SONGS, DIRECCION gira -> el valor de la fila:
-; INSTR, REPEAT y QUANT, el siguiente / anterior (como el clic); en una
+; INSTR, TEMPO, REPEAT y QUANT, el siguiente / anterior (como el clic); en una
 ; cancion, la accion (LOAD, SAVE, DEL, con vuelta). En NEW SONG, nada -----
 act_next:
     LDA AL,[files_sel]
     CMP AL,#0
     JMPZ instr_next
+    CMP AL,#ROW_TEMPO
+    JMPZ tempo_up
     CMP AL,#ROW_REPEAT
     JMPZ repeat_toggle
     CMP AL,#ROW_QUANT
@@ -750,6 +1408,8 @@ act_prev:
     LDA AL,[files_sel]
     CMP AL,#0
     JMPZ instr_prev
+    CMP AL,#ROW_TEMPO
+    JMPZ tempo_down
     CMP AL,#ROW_REPEAT
     JMPZ repeat_toggle
     CMP AL,#ROW_QUANT
@@ -1027,18 +1687,10 @@ rec_moved:
 rm_ret:
     RET
 
-; --- rq_clamp: AL = pulso; como minimo Q_MIN_BEAT ----------------------
-rq_clamp:
-    CMP AL,#Q_MIN_BEAT
-    JMPNC rqc_ok
-    MOV AL,#Q_MIN_BEAT
-rqc_ok:
-    RET
-
 ; --- rec_edge: REC, un cambio del pulsador DATOS (pulsado o soltado).
 ; Si sonaba una nota ([rh_timing]), su duracion es lo medido desde el
-; cambio anterior: cuantizada (ver la cabecera) o, con QUANT OFF, mas el
-; error que arrastran las anteriores ([rh_e_*]), a 4 ms. Luego empieza la
+; cambio anterior, mas el error que arrastran las anteriores ([rh_e_*]),
+; a 4 ms (la cuantizacion, si la hay, es al salir de REC: quantize). Luego empieza la
 ; siguiente (un silencio tambien se marca: suena nada); si no quedan, calla
 ; y sigue en REC (a EDIT solo con DIRECCION).
 rec_edge:
@@ -1057,119 +1709,20 @@ re_first:
     JMP re_next
 
 ; --- rec_close: cierra la nota que suena ([rh_timing]): su duracion es lo
-; medido desde el cambio anterior (cuantizada o con el error arrastrado,
-; ver rec_edge), se guarda y el cursor pasa a la siguiente. Tambien al
+; medido desde el cambio anterior (con el error arrastrado, ver
+; rec_edge), se guarda y el cursor pasa a la siguiente. Tambien al
 ; salir de REC con DIRECCION (rec_exit): asi la ultima nota de la cancion
 ; (lo que dura antes de volver a empezar con REPEAT) se guarda sin otro
 ; cambio de DATOS -----------------------------------------------------------
 rec_close:
     MOV AL,#0
     STA [rh_timing],AL
+    MOV AL,#1
+    STA [rec_dirty],AL       ; algo marcado: al salir, QUANT (si esta en ON)
     CALL meas_read
     STA [rh_m_lo],BL         ; duracion medida (ms)
     STA [rh_m_hi],BH
     CALL meas_arm            ; ya mide la siguiente
-    LDA AL,[rh_m_lo]
-    STA [q_ms_lo],AL         ; lo medido, para el 50 %
-    LDA AL,[rh_m_hi]
-    STA [q_ms_hi],AL
-    LDA AL,[quant_mode]
-    CMP AL,#0
-    JMPZ rc_raw
-    ; --- cuantizar. [q_beat] = pulso en unidades de 4 ms (0 = aun no hay);
-    ; r = duracion en CUARTOS de pulso = ms / q_beat (redondeado)
-    LDA AL,[q_beat]
-    CMP AL,#0
-    JMPNZ rq_have
-    LDA BL,[rh_m_lo]         ; primera nota: ella marca el pulso, tal cual
-    LDA BH,[rh_m_hi]
-    ADD BX,#2
-    MOV AX,BX
-    MOV CL,#4
-    DIV CL                   ; ms / 4 (satura en 255: pulso maximo ~1 s)
-    CALL rq_clamp
-    STA [q_beat],AL
-    JMP rq_store
-rq_have:
-    SHR AL                   ; ms + pulso/2, para redondear
-    LDA BL,[rh_m_lo]
-    LDA BH,[rh_m_hi]
-    ADD BX,AL
-    MOV AX,BX
-    LDA CL,[q_beat]
-    DIV CL                   ; AL = r (satura en 255)
-    CMP AL,#Q_MAX_R
-    JMPNC rq_store           ; muy larga: libre, tal cual
-    STA [q_r],AL
-    ; la figura de QSET mas cercana a r (empate: la mas corta) -> [q_k]
-    MOV AL,#0xFF
-    STA [q_best],AL
-    MOV BX,#QSET
-    MOV CH,#7
-rq_l:
-    LDA CL,[BX]
-    LDA AL,[q_r]
-    SUB AL,CL
-    JMPNC rq_abs
-    NOT AL                   ; r < figura: |r - figura|
-    ADD AL,#1
-rq_abs:
-    LDA DL,[q_best]
-    CMP AL,DL
-    JMPNC rq_next
-    STA [q_best],AL
-    STA [q_k],CL
-rq_next:
-    INC BX
-    SUB CH,#1
-    JMPNZ rq_l
-    ; el pulso que dice esta nota = ms / figura; pulso = (7 pulso + ese) / 8
-    LDA BL,[rh_m_lo]
-    LDA BH,[rh_m_hi]
-    MOV AX,BX
-    LDA CL,[q_k]
-    DIV CL
-    STA [q_r],AL
-    LDA AL,[q_beat]
-    MOV CL,#7
-    MUL CL
-    MOV BX,AX
-    LDA AL,[q_r]
-    ADD BX,AL
-    MOV AX,BX
-    MOV CL,#8
-    DIV CL
-    CALL rq_clamp
-    STA [q_beat],AL
-    ; duracion guardada = pulso x figura (en ms: unidades de 4 ms x cuartos)
-    LDA CL,[q_k]
-    MUL CL
-    STA [rh_m_lo],AL
-    STA [rh_m_hi],AH
-rq_store:
-    ; [rh_m] -> pasos de 4 ms; sin arrastrar error (las iguales, iguales).
-    ; Al 50 %: (lo medido + la figura) / 2
-    LDA BL,[rh_m_lo]
-    LDA BH,[rh_m_hi]
-    LDA AL,[quant_mode]
-    CMP AL,#1
-    JMPNZ rq_full
-    LDA CL,[q_ms_lo]
-    LDA CH,[q_ms_hi]
-    ADD BX,CX
-    MOV AL,BH                ; / 2, a mano (no hay SHR de 16 bits)
-    SHL AL,#7
-    SHR BL,#1
-    OR  BL,AL
-    SHR BH,#1
-rq_full:
-    CALL ms_to_units
-    STA [q_u_lo],BL
-    STA [q_u_hi],BH
-    MOV AL,#0
-    STA [rh_e_lo],AL
-    STA [rh_e_hi],AL
-    JMP rc_entry
 rc_raw:
     LDA BL,[rh_m_lo]
     LDA BH,[rh_m_hi]
@@ -1428,6 +1981,7 @@ pl_start:
     MOV AL,#1
     STA [play_state],AL
     CALL dur_ms
+    CALL tempo_scale         ; al TEMPO de la cancion
     LDA CL,[pl_late_lo]
     LDA CH,[pl_late_hi]
     SUB BX,CX
@@ -1536,14 +2090,16 @@ beep_low:
     RET
 
 ; ============================================================================
-;  CONVERSION DEL FORMATO ANTERIOR (ver la cabecera). Una vez: luego
-;  [song_fmt] = 1 (se queda en la flash con el proximo SAVE/DEL; hasta
+;  CONVERSION DE LOS FORMATOS ANTERIORES (ver la cabecera). Una vez: luego
+;  [song_fmt] = 2 (se queda en la flash con el proximo SAVE/DEL; hasta
 ;  entonces, cada arranque convierte otra vez lo que hay en la flash).
 ; ============================================================================
 convert_all:
     LDA AL,[song_fmt]
-    CMP AL,#1
+    CMP AL,#2
     JMPZ ca_ret
+    CMP AL,#1
+    JMPZ convert_long        ; formato 1: solo las notas largas
     MOV AL,#0
     STA [cv_f],AL
 ca_l:
@@ -1582,7 +2138,83 @@ ca_next:
     STA [len_hi],AL
     MOV AL,#1
     STA [song_fmt],AL
+    JMP convert_long         ; y de ahi, al 2
 ca_ret:
+    RET
+
+; --- convert_long: formato 1 -> 2. En el 1, la duracion era siempre en
+; pasos de 4 ms (hasta 4092 ms); en el 2, desde 512 va en pasos de 12 ms
+; (ver ms_to_units). Solo cambian las entradas de 512 o mas (> 2 s) -------
+convert_long:
+    MOV AL,#0
+    STA [cv_f],AL
+cl_l:
+    LDA AL,[cv_f]
+    CALL file_len
+    STA [cv_len_lo],BL
+    STA [cv_len_hi],BH
+    LDA AL,[cv_f]
+    CALL file_base
+    CALL long_song
+    LDA AL,[cv_f]
+    ADD AL,#1
+    STA [cv_f],AL
+    CMP AL,#FILE_COUNT
+    JMPNZ cl_l
+    CALL len_get             ; y la cancion de trabajo
+    CALL len_valid
+    STA [cv_len_lo],BL
+    STA [cv_len_hi],BH
+    MOV BX,#WORK
+    CALL long_song
+    MOV AL,#2
+    STA [song_fmt],AL
+    RET
+
+; --- long_song: BX = sus notas, [cv_len] = cuantas -> las de 512 o mas,
+; pasadas al formato 2, en su sitio --------------------------------------
+long_song:
+    STA [cv_src_lo],BL
+    STA [cv_src_hi],BH
+ls_l:
+    LDA AL,[cv_len_lo]
+    OR  AL,[cv_len_hi]
+    JMPZ ls_ret
+    LDA BL,[cv_src_lo]
+    LDA BH,[cv_src_hi]
+    CALL note_unpack
+    LDA AL,[un_dur_hi]
+    CMP AL,#2
+    JMPC ls_next             ; < 512: igual en los dos formatos
+    LDA BL,[un_dur_lo]       ; formato 1: x 4 ms
+    LDA BH,[un_dur_hi]
+    MOV AL,BH
+    SHL AL,#2
+    MOV CL,BL
+    SHR CL,#6
+    OR  AL,CL
+    MOV BH,AL
+    SHL BL,#2
+    CALL ms_to_units
+    STA [un_dur_lo],BL
+    STA [un_dur_hi],BH
+    LDA BL,[cv_src_lo]
+    LDA BH,[cv_src_hi]
+    CALL note_pack
+ls_next:
+    LDA BL,[cv_src_lo]
+    LDA BH,[cv_src_hi]
+    INC BX
+    INC BX
+    STA [cv_src_lo],BL
+    STA [cv_src_hi],BH
+    LDA BL,[cv_len_lo]
+    LDA BH,[cv_len_hi]
+    DEC BX
+    STA [cv_len_lo],BL
+    STA [cv_len_hi],BH
+    JMP ls_l
+ls_ret:
     RET
 
 ; --- convert_song: BX = sus notas, [cv_len] = cuantas (formato anterior)
@@ -1747,6 +2379,85 @@ instr_show:
     MOV AL,#30               ; 300 ms: que se oiga la caida
     JMP sound_for
 
+; --- file_tempo_ptr: AL = fichero -> BX = su TEMPO en TEMPOTAB ----------
+file_tempo_ptr:
+    MOV BX,#TEMPOTAB
+    ADD BX,AL
+    RET
+
+; --- tempo_get: AL = el TEMPO de la cancion de trabajo, TEMPO_MIN..MAX
+; (fuera de rango -- p. ej. 0, el de las canciones de antes -- = 120) -------
+tempo_get:
+    LDA AL,[work_tempo]
+tempo_valid:                 ; AL = TEMPO guardado -> AL = TEMPO valido
+    CMP AL,#TEMPO_MIN
+    JMPC tg_def
+    CMP AL,#(TEMPO_MAX+1)
+    JMPC tg_ret
+tg_def:
+    MOV AL,#TEMPO_DEF
+tg_ret:
+    RET
+
+; --- tempo_up / tempo_down / tempo_click: SONGS, TEMPO. DIRECCION gira:
+; +-5 BPM, sin pasar de los limites; clic: +5, y de 240 vuelve a 60 ---------
+tempo_click:
+    CALL tempo_get
+    CMP AL,#TEMPO_MAX
+    JMPNZ tu_add
+    MOV AL,#TEMPO_MIN
+    JMP tempo_set
+tempo_up:
+    CALL tempo_get
+    CMP AL,#TEMPO_MAX
+    JMPZ tempo_set
+tu_add:
+    ADD AL,#TEMPO_STEP
+    CMP AL,#(TEMPO_MAX+1)
+    JMPC tempo_set
+    MOV AL,#TEMPO_MAX
+    JMP tempo_set
+tempo_down:
+    CALL tempo_get
+    SUB AL,#TEMPO_STEP
+    CMP AL,#TEMPO_MIN
+    JMPNC tempo_set
+    MOV AL,#TEMPO_MIN
+tempo_set:
+    STA [work_tempo],AL
+    CALL draw_files
+    RET
+
+; --- tempo_scale: BX = ms de la cancion -> BX = ms al TEMPO de la cancion
+; = (ms x 120 + TEMPO/2) / TEMPO, exacto. ms <= 8180, asi que ms x 120 llega
+; a 3 bytes: dos MUL de 8x8 (byte bajo y alto de ms) y una division larga
+; de dos DIV (el byte alto del producto, < 15, siempre es menor que TEMPO)
+tempo_scale:
+    CALL tempo_get
+    CMP AL,#TEMPO_DEF
+    JMPZ tsc_ret             ; a 120, tal cual
+    MOV CL,AL                ; CL = TEMPO
+    MOV DL,BH
+    MOV AL,BL
+    MOV CH,#120
+    MUL CH                   ; ms_bajo x 120
+    MOV DH,CL
+    SHR DH
+    ADD AX,DH                ; + TEMPO/2: redondear
+    MOV DH,AL                ; byte 0 del producto
+    PUSH AH
+    MOV AL,DL
+    MUL CH                   ; ms_alto x 120 (va 8 bits a la izquierda)
+    POP DL
+    ADD AX,DL                ; AX = bytes 1-2 del producto
+    DIV CL                   ; cociente alto (< 256: AX < 4000), AH = resto
+    MOV BH,AL
+    MOV AL,DH                ; resto:byte 0
+    DIV CL
+    MOV BL,AL
+tsc_ret:
+    RET
+
 ; --- repeat_toggle: SONGS, clic en REPEAT -> NO <-> YES ----------------
 repeat_toggle:
     LDA AL,[work_rep]
@@ -1756,20 +2467,14 @@ repeat_toggle:
     CALL draw_files
     RET
 
-; --- quant_toggle / quant_prev: SONGS, QUANT -> el siguiente / anterior
-; de OFF -> 50% -> 100% (con vuelta) ----------------------------------------
+; --- quant_toggle: SONGS, QUANT -> OFF <-> ON (DIRECCION gira en los dos
+; sentidos y el clic hacen lo mismo) -----------------------------------------
 quant_prev:
-    LDA AL,[quant_mode]
-    ADD AL,#2                ; -1 en modulo 3
-    CMP AL,#3
-    JMPC qt_set
-    SUB AL,#3
-    JMP qt_set
 quant_toggle:
     LDA AL,[quant_mode]
-    ADD AL,#1
-    CMP AL,#3
-    JMPC qt_set
+    CMP AL,#0
+    MOV AL,#1
+    JMPZ qt_set
     MOV AL,#0
 qt_set:
     STA [quant_mode],AL
@@ -1782,6 +2487,8 @@ files_execute:
     LDA AL,[files_sel]
     CMP AL,#0
     JMPZ instr_next
+    CMP AL,#ROW_TEMPO
+    JMPZ tempo_click
     CMP AL,#ROW_REPEAT
     JMPZ repeat_toggle
     CMP AL,#ROW_QUANT
@@ -1831,6 +2538,12 @@ fe_load:
     STA [work_rep],AL        ; y si se repite
     LDA AL,[files_sel]
     SUB AL,#FIRST_FILE
+    CALL file_tempo_ptr
+    LDA AL,[BX]
+    CALL tempo_valid
+    STA [work_tempo],AL      ; y su TEMPO
+    LDA AL,[files_sel]
+    SUB AL,#FIRST_FILE
     CALL file_base
     MOV DX,#WORK
     MOV CX,#512              ; 1 KiB de notas (MOVW: palabras)
@@ -1862,6 +2575,11 @@ fe_save:
     CALL file_rep_ptr
     LDA AL,[work_rep]
     STA [BX],AL              ; y si se repite
+    LDA AL,[files_sel]
+    SUB AL,#FIRST_FILE
+    CALL file_tempo_ptr
+    LDA AL,[work_tempo]
+    STA [BX],AL              ; y su TEMPO
     LDA AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_len_ptr
@@ -2155,7 +2873,7 @@ df_l:
     LDA AL,[files_top]
     LDA BL,[df_k]
     ADD AL,BL
-    STA [df_i],AL            ; entrada de la lista (0 INSTR, 1 REPEAT, 2 QUANT, 3 NEW)
+    STA [df_i],AL            ; entrada de la lista (0 INSTR, 1 TEMPO, 2 REPEAT, 3 QUANT, 4 NEW)
     LDA AL,[df_k]
     ADD AL,#1
     MOV CH,AL                ; fila de pantalla
@@ -2169,6 +2887,24 @@ df_l:
     CALL put_instr
     JMP df_mark
 df_not_instr:
+    CMP AL,#ROW_TEMPO
+    JMPNZ df_not_tempo
+    MOV BX,#s_tempo          ; "TEMPO: 120 BPM"
+    CALL puts
+    CALL tempo_get
+    CMP AL,#100
+    JMPNC df_t3
+    CALL put2                ; 60..95: sin cero delante
+    JMP df_bpm
+df_t3:
+    MOV BL,AL
+    MOV BH,#0
+    CALL put_n16
+df_bpm:
+    MOV BX,#s_bpm
+    CALL puts
+    JMP df_mark
+df_not_tempo:
     CMP AL,#ROW_REPEAT
     JMPNZ df_not_rep
     MOV BX,#s_repeat         ; "REPEAT: YES"
@@ -2184,16 +2920,13 @@ df_r:
 df_not_rep:
     CMP AL,#ROW_QUANT
     JMPNZ df_not_quant
-    MOV BX,#s_quant          ; "QUANT: 50%"
+    MOV BX,#s_quant          ; "QUANT: ON"
     CALL puts
     MOV BX,#s_off
     LDA AL,[quant_mode]
     CMP AL,#0
     JMPZ df_q
-    MOV BX,#s_q50
-    CMP AL,#1
-    JMPZ df_q
-    MOV BX,#s_q100
+    MOV BX,#s_on
 df_q:
     CALL puts
     JMP df_mark
@@ -2684,15 +3417,16 @@ s_instr:    .asciiz "INSTR: "
 s_quant:    .asciiz "QUANT: "
 s_off:      .asciiz "OFF"
 s_repeat:   .asciiz "REPEAT: "
+s_tempo:    .asciiz "TEMPO: "
+s_bpm:      .asciiz " BPM"
 s_no:       .asciiz "NO"
 s_yes:      .asciiz "YES"
 s_rep:      .asciiz "REP"
-s_q50:      .asciiz "50%"
-s_q100:     .asciiz "100%"
+s_on:       .asciiz "ON"
+s_quantizing: .asciiz "QUANTIZING..."
 ; figuras a las que se ajusta el ritmo en REC, en cuartos de pulso
 ; (sin 3/4: entre 1 y 3/4 el margen era 1/8 de pulso, y una negra algo
 ; corta se guardaba como 3/4)
-QSET:       .db 1, 2, 4, 6, 8, 12, 16
 
 ACT_NAMES:  .dw s_a_load, s_a_save, s_a_del
 s_a_load:   .asciiz "LOAD"
@@ -2723,12 +3457,44 @@ rh_fresh:     .space 1    ; 1 = REC: la siguiente nota no mide su silencio
 rh_m_lo:      .space 1    ; REC: duracion objetivo (ms, 16 bits)
 rh_m_hi:      .space 1
 rh_timing:    .space 1    ; REC: 1 = suena la nota [rpos] y se esta midiendo
-q_beat:       .space 1    ; REC: pulso (unidades de 4 ms; 0 = aun no hay)
-q_r:          .space 1
-q_k:          .space 1    ; figura elegida (cuartos de pulso)
-q_best:       .space 1
-q_ms_lo:      .space 1    ; REC: lo medido (ms), para QUANT 50 %
-q_ms_hi:      .space 1
+rec_dirty:    .space 1    ; 1 = en este REC se ha marcado alguna nota
+qz_n_lo:      .space 1    ; quantize: entradas de la cancion
+qz_n_hi:      .space 1
+qz_i_lo:      .space 1    ; indice de la entrada en curso
+qz_i_hi:      .space 1
+qz_last_lo:   .space 1    ; la ultima duracion probada como rejilla
+qz_last_hi:   .space 1
+qz_tried:     .space 1
+qz_g_lo:      .space 1    ; rejilla que se prueba (ms)
+qz_g_hi:      .space 1
+qz_kmin:      .space 1    ; 1 (rejilla = la nota) o 2 (su mitad)
+qz_k_lo:      .space 1    ; k = duracion / rejilla, redondeado (qz_round)
+qz_k_hi:      .space 1
+qz_e_lo:      .space 1    ; error sumado (128 = una rejilla entera)
+qz_e_hi:      .space 1
+qz_lim_lo:    .space 1    ; error maximo admitido (0,15 rejillas por nota)
+qz_lim_hi:    .space 1
+qz_pen_lo:    .space 1    ; penalizacion de la media rejilla (0,03 por nota)
+qz_pen_hi:    .space 1
+qz_bg_lo:     .space 1    ; la mejor hasta ahora (rejilla, kmin, error)
+qz_bg_hi:     .space 1
+qz_bk:        .space 1
+qz_be_lo:     .space 1
+qz_be_hi:     .space 1
+qz_t0:        .space 1    ; suma de las duraciones (24 bits)
+qz_t1:        .space 1
+qz_t2:        .space 1
+qz_s0:        .space 1    ; suma de las k (24 bits)
+qz_s1:        .space 1
+qz_s2:        .space 1
+qz_end_lo:    .space 1    ; fin de las duraciones en TMPBUF
+qz_end_hi:    .space 1
+qz_p_lo:      .space 1    ; qz_try: puntero en TMPBUF y entradas que quedan
+qz_p_hi:      .space 1
+qz_c_lo:      .space 1
+qz_c_hi:      .space 1
+qz_G_lo:      .space 1    ; rejilla final = suma duraciones / suma k
+qz_G_hi:      .space 1
 prev_pitch:   .space 1    ; REC: la nota que se acaba de cerrar (0xFF = ninguna)
 ns_note:      .space 1
 rh_e_lo:      .space 1    ; REC: error de redondeo arrastrado (ms, con signo)
@@ -2767,6 +3533,8 @@ q_u_lo:       .space 1    ; REC: la duracion a guardar (pasos de 4 ms)
 q_u_hi:       .space 1
 pl_t_lo:      .space 1    ; reproduccion: ms en que acaba la entrada
 pl_t_hi:      .space 1
+ms_base_lo:   .space 1    ; meas_*: lo ya medido antes del ultimo rearranque
+ms_base_hi:   .space 1
 pl_c_lo:      .space 1    ; reproduccion: ms en que se corta (<= pl_t)
 pl_c_hi:      .space 1
 pl_late_lo:   .space 1    ; reproduccion: lo que se paso la anterior (ms)

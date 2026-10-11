@@ -38,7 +38,7 @@
 ;       con una señal horaria exacta sin tocar hora/minutos)
 ;
 ;  Esta version ya no tiene una tecla para "salir" del programa -- para eso
-;  esta el interruptor SW_MODE del panel (vuelve a EDIT), que corta la
+;  esta el interruptor SW_MODE del panel (vuelve a MOD), que corta la
 ;  ejecucion pase lo que pase el programa, sin que este tenga que hacer nada
 ;  especial.
 ;

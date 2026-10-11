@@ -25,19 +25,19 @@
 
   <rect x="173.0" y="60.0" width="654.5" height="521.9" rx="71.4" fill="url(#panelg)" stroke="#8f8f96" stroke-width="2.5"/>
   <rect x="183.2" y="70.2" width="634.1" height="501.5" rx="61.2" fill="none" stroke="#b4b4ba" stroke-width="1.5"/>
-  <!-- SW_MODE: deslizante horizontal "EDIT <-SW_MODE-> RUN" -->
+  <!-- SW_MODE: deslizante horizontal "MOD <-SW_MODE-> RUN" -->
   <rect x="266.5" y="75.3" width="71.4" height="30.6" rx="3" fill="#c6c6ca" stroke="#5f5f66" stroke-width="1.5"/>
   <rect x="271.5" y="87.6" width="61.4" height="6" rx="3" fill="#47474c"/>
   <rect x="270.5" y="79.3" width="30.0" height="22.6" rx="3" fill="#5a5a60" stroke="#37373b"/>
-  <text x="261.5" y="94.6" text-anchor="end" class="state">EDIT</text>
+  <text x="261.5" y="94.6" text-anchor="end" class="state">MOD</text>
   <text x="342.9" y="94.6" class="state">RUN</text>
   <text x="302.2" y="119.9" text-anchor="middle" class="sw">SW_MODE</text>
-  <!-- SW_STEP: deslizante horizontal "SINGLE <-SW_STEP-> CONTINUOUS" -->
+  <!-- SW_STEP: deslizante horizontal "CODE <-SW_STEP-> PROG" -->
   <rect x="662.6" y="75.3" width="71.4" height="30.6" rx="3" fill="#c6c6ca" stroke="#5f5f66" stroke-width="1.5"/>
   <rect x="667.6" y="87.6" width="61.4" height="6" rx="3" fill="#47474c"/>
   <rect x="666.6" y="79.3" width="30.0" height="22.6" rx="3" fill="#5a5a60" stroke="#37373b"/>
-  <text x="657.6" y="94.6" text-anchor="end" class="state">SINGLE</text>
-  <text x="739.0" y="94.6" class="state">CONTINUOUS</text>
+  <text x="657.6" y="94.6" text-anchor="end" class="state">CODE</text>
+  <text x="739.0" y="94.6" class="state">PROG</text>
   <text x="698.3" y="119.9" text-anchor="middle" class="sw">SW_STEP</text>
   <!-- encoder ADDR -->
   <rect x="237.6" y="184.1" width="96.9" height="96.9" rx="3" fill="#dcdce0" stroke="#5f5f66" stroke-width="1.5"/>
@@ -117,16 +117,16 @@
   <line x1="595" y1="635.9" x2="595" y2="753.9" stroke="#d7d7dc"/>
   <line x1="58" y1="677.9" x2="944" y2="677.9" stroke="#d7d7dc"/>
   <line x1="58" y1="715.9" x2="944" y2="715.9" stroke="#d7d7dc"/>
-  <text x="410" y="655.9" text-anchor="middle" class="lgh">SW_MODE ◀ EDIT</text>
+  <text x="410" y="655.9" text-anchor="middle" class="lgh">SW_MODE ◀ MOD</text>
   <text x="775" y="655.9" text-anchor="middle" class="lgh">SW_MODE ▶ RUN</text>
-  <text x="144" y="695.9" text-anchor="middle" class="lgh">SW_STEP ◀ SINGLE</text>
-  <text x="144" y="737.9" text-anchor="middle" class="lgh">SW_STEP ▶ CONTINUOUS</text>
-  <text x="245" y="691.9" class="lgh">EDIT MEMORY</text>
+  <text x="144" y="695.9" text-anchor="middle" class="lgh">SW_STEP ◀ CODE</text>
+  <text x="144" y="737.9" text-anchor="middle" class="lgh">SW_STEP ▶ PROG</text>
+  <text x="245" y="691.9" class="lgh">MOD CODE</text>
   <text x="245" y="706.9" class="lg">turn DATA = edit field · press DATA = confirm/next</text>
-  <text x="245" y="731.9" class="lgh">EDIT PROGRAMS</text>
+  <text x="245" y="731.9" class="lgh">MOD PROG</text>
   <text x="245" y="746.9" class="lg">ADDR = slot · DATA = LOAD ⇄ SAVE</text>
-  <text x="610" y="691.9" class="lgh">SINGLE STEP</text>
+  <text x="610" y="691.9" class="lgh">RUN CODE</text>
   <text x="610" y="706.9" class="lg">press DATA = 1 instruction · ADDR = reset</text>
-  <text x="610" y="731.9" class="lgh">CONTINUOUS</text>
+  <text x="610" y="731.9" class="lgh">RUN PROG</text>
   <text x="610" y="746.9" class="lg">runs until HALT · screen = program's graphics + text</text>
 </svg>

@@ -9,7 +9,7 @@ ensamblador y el emulador (ISA versión 2, ver sección 3).
 
 ## 1. Cómo se teclea un programa
 
-1. `SW_MODE` = **EDIT**, `SW_STEP` = **SINGLE** (vista EDIT MEMORY).
+1. `SW_MODE` = **MOD**, `SW_STEP` = **CODE** (vista MOD CODE).
 2. El cursor empieza en `0x0000`. La fila 0 dice qué **campo** estás rellenando
    ahora mismo (`OP`, `MODE`, `COND`, `REG`, `DST`, `SRC`, `IMM`, `LO`, `HI`,
    `PTR`, `SRC16`, `N` — abreviaturas en inglés, como los mnemónicos y los
@@ -54,8 +54,8 @@ ensamblador y el emulador (ISA versión 2, ver sección 3).
    - Al aterrizar en una dirección con algo ya escrito, el selector arranca
      en lo que ya haya: si solo quieres cambiar un campo, ve pulsando DATA
      sin girar por los demás.
-4. Para ejecutar: `SW_MODE` = **RUN** (`SW_STEP` en SINGLE = paso a paso, en CONTINUOUS = continuo). Siempre
-   arranca en `PC = 0` al entrar en RUN desde EDIT. Dentro de RUN, cambiar
+4. Para ejecutar: `SW_MODE` = **RUN** (`SW_STEP` en CODE = paso a paso, en PROG = continuo). Siempre
+   arranca en `PC = 0` al entrar en RUN desde MOD. Dentro de RUN, cambiar
    entre paso a paso y continuo **no** reinicia: el programa sigue desde
    donde estaba (sirve para parar uno en marcha, mirarlo paso a paso y
    dejarlo seguir). En paso a paso (STEP), **DATA** sigue ejecutando
@@ -343,7 +343,7 @@ de periféricos en `0x0600`–`0x0801`.
 | `0x0801` | E/S | **EEPROM**: `OUT` graba el búfer en la flash. `IN` = 1 si salió bien. |
 
 Gráficos, texto, atributos de texto, encoders, LED, temporizadores y sonido
-se ponen a 0 cada vez que arranca una ejecución. En CONTINUOUS la pantalla es
+se ponen a 0 cada vez que arranca una ejecución. En RUN PROG la pantalla es
 el gráfico + el texto (refresco cada 125 ms, `FB_FLUSH_MS`).
 
 **Texto** (`0x0400`–`0x04FF`): fuente monospace de 6×8 (5×7 de Adafruit GFX),
@@ -373,7 +373,7 @@ leyendo, así que solo se desplaza, a tamaño normal.
 
 **Sonido** (`0x0630`–`0x0635`): zumbador piezo pasivo en GPIO2, o Bluetooth
 MIDI (botón BOOT). `0x0634` solo cuenta por Bluetooth: la velocidad de la nota. Solo suena en
-**CONTINUOUS**; se calla en paso a paso, al volver a EDIT y al `HALT`. Lo genera
+**RUN PROG**; se calla en paso a paso (RUN CODE), al volver a MOD y al `HALT`. Lo genera
 el hardware, no gasta tiempo de CPU. Lo más simple: `OUT (0x0632),reg` con una
 nota MIDI. Para efectos (sirenas, barridos) usa la frecuencia de 16 bits
 (`0x0630` bajo, luego `0x0631` alto).
@@ -433,7 +433,7 @@ el aparato no tiene pila. Patrón:
 **Temporizadores** (`0x0620`–`0x0629`): 10 cuentas atrás. Cada `t_i` baja 1
 cada `1 << i` ms → t0 = 1 ms/paso, t1 = 2, t2 = 4, t3 = 8, t4 = 16, t5 = 32,
 t6 = 64, t7 = 128, t8 = 256, t9 = 512 ms (t9: 255 → 0 en ~131 s). En
-**CONTINUOUS** corren siempre; en **paso a paso** NO están del todo
+**RUN PROG** corren siempre; en **paso a paso** NO están del todo
 congelados: avanzan según el tiempo real transcurrido entre un paso
 ejecutado y el siguiente (nada mientras no se pulsa nada) — ver sección 1.
 `IN` **no** cambia los flags: para esperar a que llegue a 0 hay que
@@ -445,16 +445,16 @@ ejecutado y el siguiente (nada mientras no se pulsa nada) — ver sección 1.
 
 Teclea los bytes desde `0x0000`. Para ejecutar: `SW_MODE` = RUN.
 
-### El LED sigue al pulsador DATA  *(RUN + CONTINUOUS)*
+### El LED sigue al pulsador DATA  *(RUN PROG)*
 ```
 Dir  Bytes        Instrucción
 0000 30 03 06     IN  AL,(0x0603)     ; lee el pulsador del encoder DATA
 0003 38 10 06     OUT (0x0610),AL     ; lo manda al LED
 0006 B8 00 00     JMP 0x0000          ; repetir para siempre
 ```
-Pulsa el eje del encoder DATA → el LED se enciende. (Vuelve a EDIT para parar.)
+Pulsa el eje del encoder DATA → el LED se enciende. (Vuelve a MOD para parar.)
 
-### Escribir "HOLA" arriba a la izquierda  *(RUN + CONTINUOUS)*
+### Escribir "HOLA" arriba a la izquierda  *(RUN PROG)*
 ```
 Dir  Bytes        Instrucción
 0000 08 48        MOV AL,#0x48        ; 'H'
@@ -469,7 +469,7 @@ Dir  Bytes        Instrucción
 ```
 La fila siguiente empieza en `0x0420` (`0x0400 + 1×32`).
 
-### Suma 5 + 3  *(RUN + SINGLE, paso a paso, para verlo)*
+### Suma 5 + 3  *(RUN CODE, paso a paso, para verlo)*
 ```
 Dir  Bytes     Instrucción
 0000 08 05     MOV AL,#0x05
@@ -479,7 +479,7 @@ Dir  Bytes     Instrucción
 ```
 O más corto, con inmediato: `08 05` `58 01 03` `01` (`MOV AL,#5` · `ADD AL,#3` · `HALT`).
 
-### Tres puntos en el borde izquierdo de la pantalla  *(RUN + CONTINUOUS)*
+### Tres puntos en el borde izquierdo de la pantalla  *(RUN PROG)*
 ```
 Dir  Bytes        Instrucción
 0000 08 80        MOV AL,#0x80        ; 0x80 = píxel más a la izquierda
@@ -497,9 +497,9 @@ Dir  Bytes        Instrucción
 0005 BA 02 00     JMPNZ 0x0002        ; repite mientras AL != 0
 0008 01           HALT
 ```
-Míralo en **paso a paso** (`SW_STEP` en SINGLE): AL va 3 → 2 → 1 → 0 y para.
+Míralo en **paso a paso** (RUN CODE): AL va 3 → 2 → 1 → 0 y para.
 
-### Espera con temporizador y enciende el LED  *(RUN + CONTINUOUS)*
+### Espera con temporizador y enciende el LED  *(RUN PROG)*
 ```
 Dir  Bytes        Instrucción
 0000 08 0A        MOV AL,#0x0A        ; 10 pasos de t5 (32 ms) ≈ 320 ms
@@ -514,7 +514,7 @@ Dir  Bytes        Instrucción
 Cambia el temporizador (`0x0620`–`0x0629`) o el valor inicial para ajustar el
 retardo. Recuerda: en paso a paso los temporizadores no avanzan.
 
-### Dos notas: DO4 y luego SOL4  *(RUN + CONTINUOUS)*
+### Dos notas: DO4 y luego SOL4  *(RUN PROG)*
 ```
 Dir  Bytes        Instrucción
 0000 08 0F        MOV AL,#0x0F        ; 15 × 10 ms = 150 ms por nota

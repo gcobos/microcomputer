@@ -319,7 +319,7 @@ def cmd_diag(args):
     say(f"arranques desde el ultimo encendido: {d['boots']}")
     say(f"motivo del ultimo arranque:         {RESET_REASONS.get(d['reason'], d['reason'])}")
     say(f"encendido desde hace:               {up // 3600} h {up // 60 % 60} min {up % 60} s")
-    say(f"entradas a RUN (EDIT -> RUN):       {d['exec_starts']}")
+    say(f"entradas a RUN (MOD -> RUN):        {d['exec_starts']}")
     say(f"cargas de un slot:                  {d['loads']}")
     say(f"light sleeps de un programa:        {d['light_sleeps']}")
     if "sound_bt" in d:
