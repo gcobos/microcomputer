@@ -108,33 +108,33 @@ start:
 
 match_init:
     MOV AL,#0
-    STA [rally],AL
-    STA [best_rally],AL
+    MOV [rally],AL
+    MOV [best_rally],AL
     MOV AL,#25
-    STA [pad_l_y],AL        ; paletas centradas ((64-14)/2 = 25)
-    STA [pad_r_y],AL
+    MOV [pad_l_y],AL        ; paletas centradas ((64-14)/2 = 25)
+    MOV [pad_r_y],AL
     MOV AL,#0
-    STA [score_l],AL
-    STA [score_r],AL
-    STA [ball_active],AL
-    STA [serve_turn],AL     ; 0 = puede sacar cualquiera (solo al empezar)
+    MOV [score_l],AL
+    MOV [score_r],AL
+    MOV [ball_active],AL
+    MOV [serve_turn],AL     ; 0 = puede sacar cualquiera (solo al empezar)
 
     IN  AL,(P_DIR_POS)          ; siembra el LFSR con algo poco predecible
     ADD AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
     JMPNZ seed_ok
     MOV AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
 seed_ok:
 
     IN  AL,(P_DIR_POS)
-    STA [dir_prev],AL
+    MOV [dir_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_prev],AL
+    MOV [dat_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
 
     CALL clsg
     CALL clst
@@ -146,10 +146,10 @@ main_l:
     CALL serve_check
     CALL ball_phys
 
-    LDA AL,[score_l]        ; fin de partida: el primero a WIN_SCORE
+    MOV AL,[score_l]        ; fin de partida: el primero a WIN_SCORE
     CMP AL,#WIN_SCORE
     JMPZ match_end
-    LDA AL,[score_r]
+    MOV AL,[score_r]
     CMP AL,#WIN_SCORE
     JMPZ match_end
 
@@ -173,67 +173,67 @@ match_end:
 ; ============================================================================
 update_pad_l:
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_prev]
     SUB AL,BL                ; AL = delta con signo
-    LDA CL,[tmp0]
-    STA [dir_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_prev],CL
     CMP AL,#0
     JMPNZ upl_moved
     MOV AL,#0
-    STA [pad_l_spd],AL       ; quieta este fotograma -> velocidad 0 (ver
+    MOV [pad_l_spd],AL       ; quieta este fotograma -> velocidad 0 (ver
     JMP upl_done             ; calc_bounce_vy)
 upl_moved:
-    STA [tmp1],AL
+    MOV [tmp1],AL
     AND AL,#0x80
     JMPZ upl_pos
     ; delta negativo: paleta sube (Y menor)
     MOV AL,#0xFF
-    STA [last_dir_l],AL
-    LDA AL,[tmp1]
+    MOV [last_dir_l],AL
+    MOV AL,[tmp1]
     NOT AL
     ADD AL,#1                ; AL = |delta|
     SHL AL                   ; paso = |delta|*2
-    STA [tmp1],AL
+    MOV [tmp1],AL
     NOT AL
     ADD AL,#1
-    STA [pad_l_spd],AL       ; velocidad con signo (negativa = sube)
-    LDA AL,[pad_l_y]
-    LDA BL,[tmp1]
+    MOV [pad_l_spd],AL       ; velocidad con signo (negativa = sube)
+    MOV AL,[pad_l_y]
+    MOV BL,[tmp1]
     CMP AL,BL
     JMPNC upl_subok           ; pad_l_y >= paso -> resta sin problema
     MOV AL,#0
-    STA [pad_l_y],AL
+    MOV [pad_l_y],AL
     JMP upl_done
 upl_subok:
     SUB AL,BL
-    STA [pad_l_y],AL
+    MOV [pad_l_y],AL
     JMP upl_done
 upl_pos:
     MOV AL,#1
-    STA [last_dir_l],AL
-    LDA AL,[tmp1]
+    MOV [last_dir_l],AL
+    MOV AL,[tmp1]
     SHL AL
-    STA [tmp1],AL
-    STA [pad_l_spd],AL       ; velocidad con signo (positiva = baja)
-    LDA AL,[pad_l_y]
-    LDA BL,[tmp1]
+    MOV [tmp1],AL
+    MOV [pad_l_spd],AL       ; velocidad con signo (positiva = baja)
+    MOV AL,[pad_l_y]
+    MOV BL,[tmp1]
     ADD AL,BL
     CMP AL,#(PAD_MAXY+1)
     JMPC upl_storeok          ; AL <= PAD_MAXY -> vale tal cual
     MOV AL,#PAD_MAXY
 upl_storeok:
-    STA [pad_l_y],AL
+    MOV [pad_l_y],AL
 upl_done:
     RET
 
 update_pad_r:
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_prev],CL
     ; la paleta derecha queda mas natural invirtiendo el sentido del encoder
     ; DATOS respecto al de DIRECCION (no es un problema del firmware: los dos
     ; mandos ya son consistentes ahi, es solo como se siente mejor este juego
@@ -243,48 +243,48 @@ update_pad_r:
     CMP AL,#0
     JMPNZ upr_moved
     MOV AL,#0
-    STA [pad_r_spd],AL       ; quieta este fotograma -> velocidad 0
+    MOV [pad_r_spd],AL       ; quieta este fotograma -> velocidad 0
     JMP upr_done
 upr_moved:
-    STA [tmp1],AL
+    MOV [tmp1],AL
     AND AL,#0x80
     JMPZ upr_pos
     MOV AL,#0xFF
-    STA [last_dir_r],AL
-    LDA AL,[tmp1]
+    MOV [last_dir_r],AL
+    MOV AL,[tmp1]
     NOT AL
     ADD AL,#1
     SHL AL
-    STA [tmp1],AL
+    MOV [tmp1],AL
     NOT AL
     ADD AL,#1
-    STA [pad_r_spd],AL       ; velocidad con signo (negativa = sube)
-    LDA AL,[pad_r_y]
-    LDA BL,[tmp1]
+    MOV [pad_r_spd],AL       ; velocidad con signo (negativa = sube)
+    MOV AL,[pad_r_y]
+    MOV BL,[tmp1]
     CMP AL,BL
     JMPNC upr_subok
     MOV AL,#0
-    STA [pad_r_y],AL
+    MOV [pad_r_y],AL
     JMP upr_done
 upr_subok:
     SUB AL,BL
-    STA [pad_r_y],AL
+    MOV [pad_r_y],AL
     JMP upr_done
 upr_pos:
     MOV AL,#1
-    STA [last_dir_r],AL
-    LDA AL,[tmp1]
+    MOV [last_dir_r],AL
+    MOV AL,[tmp1]
     SHL AL
-    STA [tmp1],AL
-    STA [pad_r_spd],AL       ; velocidad con signo (positiva = baja)
-    LDA AL,[pad_r_y]
-    LDA BL,[tmp1]
+    MOV [tmp1],AL
+    MOV [pad_r_spd],AL       ; velocidad con signo (positiva = baja)
+    MOV AL,[pad_r_y]
+    MOV BL,[tmp1]
     ADD AL,BL
     CMP AL,#(PAD_MAXY+1)
     JMPC upr_storeok
     MOV AL,#PAD_MAXY
 upr_storeok:
-    STA [pad_r_y],AL
+    MOV [pad_r_y],AL
 upr_done:
     RET
 
@@ -294,55 +294,55 @@ upr_done:
 ; ============================================================================
 serve_check:
     IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
+    MOV BL,[dir_btn_prev]
+    MOV [dir_btn_prev],AL
     CMP AL,#0
     JMPZ svl_done
     CMP BL,#0
     JMPNZ svl_done             ; ya estaba pulsado -> no es flanco
-    LDA AL,[ball_active]
+    MOV AL,[ball_active]
     CMP AL,#0
     JMPNZ svl_done             ; ya hay una pelota en juego
-    LDA AL,[serve_turn]
+    MOV AL,[serve_turn]
     CMP AL,#2
     JMPZ svl_done              ; le toca sacar a la derecha -- ignora este pulsador
     MOV AL,#LEFT_SERVE_X
-    STA [ball_x],AL
-    LDA AL,[pad_l_y]
+    MOV [ball_x],AL
+    MOV AL,[pad_l_y]
     ADD AL,#6                 ; centra la pelota en la paleta (PAD_H/2 - BALL_H/2)
-    STA [ball_y],AL
+    MOV [ball_y],AL
     MOV AL,#BALL_SPEED
-    STA [ball_vx],AL
-    LDA AL,[last_dir_l]
-    STA [ball_vy],AL
+    MOV [ball_vx],AL
+    MOV AL,[last_dir_l]
+    MOV [ball_vy],AL
     MOV AL,#1
-    STA [ball_active],AL
+    MOV [ball_active],AL
 svl_done:
 
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ svr_done
     CMP BL,#0
     JMPNZ svr_done
-    LDA AL,[ball_active]
+    MOV AL,[ball_active]
     CMP AL,#0
     JMPNZ svr_done
-    LDA AL,[serve_turn]
+    MOV AL,[serve_turn]
     CMP AL,#1
     JMPZ svr_done              ; le toca sacar a la izquierda -- ignora este pulsador
     MOV AL,#RIGHT_SERVE_X
-    STA [ball_x],AL
-    LDA AL,[pad_r_y]
+    MOV [ball_x],AL
+    MOV AL,[pad_r_y]
     ADD AL,#6
-    STA [ball_y],AL
+    MOV [ball_y],AL
     MOV AL,#(0-BALL_SPEED)
-    STA [ball_vx],AL
-    LDA AL,[last_dir_r]
-    STA [ball_vy],AL
+    MOV [ball_vx],AL
+    MOV AL,[last_dir_r]
+    MOV [ball_vy],AL
     MOV AL,#1
-    STA [ball_active],AL
+    MOV [ball_active],AL
 svr_done:
     RET
 
@@ -351,139 +351,139 @@ svr_done:
 ;  detecta cuando se sale por un lado (punto para el contrario).
 ; ============================================================================
 ball_phys:
-    LDA AL,[ball_active]
+    MOV AL,[ball_active]
     CMP AL,#0
     JMPZ bp_done
 
-    LDA AL,[ball_x]
-    LDA BL,[ball_vx]
+    MOV AL,[ball_x]
+    MOV BL,[ball_vx]
     ADD AL,BL
-    STA [ball_x],AL
-    LDA AL,[ball_y]
-    LDA BL,[ball_vy]
+    MOV [ball_x],AL
+    MOV AL,[ball_y]
+    MOV BL,[ball_vy]
     ADD AL,BL
-    STA [ball_y],AL
+    MOV [ball_y],AL
 
     ; --- rebote arriba/abajo ---
-    LDA AL,[ball_y]
+    MOV AL,[ball_y]
     AND AL,#0x80
     JMPNZ bp_ywrap             ; el bit de signo puesto = se ha ido negativo (por arriba)
-    LDA AL,[ball_y]
+    MOV AL,[ball_y]
     CMP AL,#(BALL_MAXY+1)
     JMPC bp_yok                ; ball_y <= BALL_MAXY -> dentro de rango
     MOV AL,#BALL_MAXY
-    STA [ball_y],AL
-    LDA AL,[ball_vy]
+    MOV [ball_y],AL
+    MOV AL,[ball_vy]
     NOT AL
     ADD AL,#1
-    STA [ball_vy],AL
+    MOV [ball_vy],AL
     JMP bp_yok
 bp_ywrap:
     MOV AL,#0
-    STA [ball_y],AL
-    LDA AL,[ball_vy]
+    MOV [ball_y],AL
+    MOV AL,[ball_vy]
     NOT AL
     ADD AL,#1
-    STA [ball_vy],AL
+    MOV [ball_vy],AL
 bp_yok:
 
     ; --- lado segun el signo de vx ---
-    LDA AL,[ball_vx]
+    MOV AL,[ball_vx]
     AND AL,#0x80
     JMPZ bp_right
 
     ; --- vx<0: hacia la paleta/pared izquierda ---
-    LDA AL,[ball_x]
+    MOV AL,[ball_x]
     CMP AL,#(LEFT_PADDLE_X+1)
     JMPNC bp_done               ; ball_x > LEFT_PADDLE_X -> aun lejos
-    LDA AL,[ball_y]
+    MOV AL,[ball_y]
     ADD AL,#(BALL_H-1)
-    LDA BL,[pad_l_y]
+    MOV BL,[pad_l_y]
     CMP AL,BL
     JMPC bp_l_miss              ; ball_y+1 < pad_l_y -> por encima, no solapa
-    LDA AL,[pad_l_y]
+    MOV AL,[pad_l_y]
     ADD AL,#PAD_H
-    LDA BL,[ball_y]
+    MOV BL,[ball_y]
     CMP BL,AL
     JMPNC bp_l_miss              ; ball_y >= pad_l_y+PAD_H -> por debajo, no solapa
     ; SOLAPA: rebota -- angulo segun donde golpeo en la paleta y hacia donde
     ; se estaba moviendo (calc_bounce_vy), para que no sea siempre el mismo
     ; rebote sosote
-    LDA AL,[ball_vx]
+    MOV AL,[ball_vx]
     NOT AL
     ADD AL,#1
-    STA [ball_vx],AL
+    MOV [ball_vx],AL
     MOV AL,#LEFT_SERVE_X
-    STA [ball_x],AL
-    LDA AL,[pad_l_y]
-    STA [bp_pad_y],AL
-    LDA AL,[pad_l_spd]
-    STA [bp_pad_spd],AL
+    MOV [ball_x],AL
+    MOV AL,[pad_l_y]
+    MOV [bp_pad_y],AL
+    MOV AL,[pad_l_spd]
+    MOV [bp_pad_spd],AL
     CALL calc_bounce_vy
-    STA [ball_vy],AL
+    MOV [ball_vy],AL
     CALL rally_hit
     CALL snd_bounce
     JMP bp_done
 bp_l_miss:
-    LDA AL,[ball_x]
+    MOV AL,[ball_x]
     CMP AL,#(LEFT_WALL_X+1)
     JMPNC bp_done                ; ball_x > LEFT_WALL_X -> aun no ha llegado del todo
-    LDA AL,[score_r]
+    MOV AL,[score_r]
     ADD AL,#1
-    STA [score_r],AL
+    MOV [score_r],AL
     MOV AL,#0
-    STA [ball_active],AL
+    MOV [ball_active],AL
     MOV AL,#2
-    STA [serve_turn],AL      ; punto de la derecha -> saca la derecha
+    MOV [serve_turn],AL      ; punto de la derecha -> saca la derecha
     CALL draw_scores
     MOV AL,#0
-    STA [rally],AL          ; punto: se acaba el peloteo
+    MOV [rally],AL          ; punto: se acaba el peloteo
     CALL snd_point
     JMP bp_done
 
 bp_right:
-    LDA AL,[ball_x]
+    MOV AL,[ball_x]
     CMP AL,#RIGHT_PADDLE_X
     JMPC bp_done                 ; ball_x < RIGHT_PADDLE_X -> aun lejos
-    LDA AL,[ball_y]
+    MOV AL,[ball_y]
     ADD AL,#(BALL_H-1)
-    LDA BL,[pad_r_y]
+    MOV BL,[pad_r_y]
     CMP AL,BL
     JMPC bp_r_miss
-    LDA AL,[pad_r_y]
+    MOV AL,[pad_r_y]
     ADD AL,#PAD_H
-    LDA BL,[ball_y]
+    MOV BL,[ball_y]
     CMP BL,AL
     JMPNC bp_r_miss
-    LDA AL,[ball_vx]
+    MOV AL,[ball_vx]
     NOT AL
     ADD AL,#1
-    STA [ball_vx],AL
+    MOV [ball_vx],AL
     MOV AL,#RIGHT_SERVE_X
-    STA [ball_x],AL
-    LDA AL,[pad_r_y]
-    STA [bp_pad_y],AL
-    LDA AL,[pad_r_spd]
-    STA [bp_pad_spd],AL
+    MOV [ball_x],AL
+    MOV AL,[pad_r_y]
+    MOV [bp_pad_y],AL
+    MOV AL,[pad_r_spd]
+    MOV [bp_pad_spd],AL
     CALL calc_bounce_vy
-    STA [ball_vy],AL
+    MOV [ball_vy],AL
     CALL rally_hit
     CALL snd_bounce
     JMP bp_done
 bp_r_miss:
-    LDA AL,[ball_x]
+    MOV AL,[ball_x]
     CMP AL,#RIGHT_WALL_X
     JMPC bp_done
-    LDA AL,[score_l]
+    MOV AL,[score_l]
     ADD AL,#1
-    STA [score_l],AL
+    MOV [score_l],AL
     MOV AL,#0
-    STA [ball_active],AL
+    MOV [ball_active],AL
     MOV AL,#1
-    STA [serve_turn],AL      ; punto de la izquierda -> saca la izquierda
+    MOV [serve_turn],AL      ; punto de la izquierda -> saca la izquierda
     CALL draw_scores
     MOV AL,#0
-    STA [rally],AL          ; punto: se acaba el peloteo
+    MOV [rally],AL          ; punto: se acaba el peloteo
     CALL snd_point
 bp_done:
     RET
@@ -529,26 +529,26 @@ snd_point:
 calc_bounce_vy:
     ; offset = ball_y - pad_y - 6 (centro pelota - centro paleta: PAD_H/2 -
     ; BALL_H/2 = 7-1 = 6)
-    LDA AL,[ball_y]
-    LDA BL,[bp_pad_y]
+    MOV AL,[ball_y]
+    MOV BL,[bp_pad_y]
     SUB AL,BL
     SUB AL,#6
     AND AL,#0x80
-    STA [bp_offsign],AL
-    LDA AL,[ball_y]
-    LDA BL,[bp_pad_y]
+    MOV [bp_offsign],AL
+    MOV AL,[ball_y]
+    MOV BL,[bp_pad_y]
     SUB AL,BL
     SUB AL,#6
-    STA [bp_tmp],AL
-    LDA BL,[bp_offsign]
+    MOV [bp_tmp],AL
+    MOV BL,[bp_offsign]
     CMP BL,#0
     JMPZ cbv_off_abs
-    LDA AL,[bp_tmp]
+    MOV AL,[bp_tmp]
     NOT AL
     ADD AL,#1
-    STA [bp_tmp],AL
+    MOV [bp_tmp],AL
 cbv_off_abs:
-    LDA AL,[bp_tmp]           ; |offset|
+    MOV AL,[bp_tmp]           ; |offset|
     CMP AL,#4
     JMPNC cbv_off_1
     MOV AL,#0
@@ -556,30 +556,30 @@ cbv_off_abs:
 cbv_off_1:
     MOV AL,#1
 cbv_off_signed:
-    LDA BL,[bp_offsign]
+    MOV BL,[bp_offsign]
     CMP BL,#0
     JMPZ cbv_off_done
     NOT AL
     ADD AL,#1
 cbv_off_done:
-    STA [bp_offc],AL
+    MOV [bp_offc],AL
 
     ; empuje = velocidad de la paleta (misma idea: magnitud -> -2..2 con
     ; el mismo signo que el movimiento)
-    LDA AL,[bp_pad_spd]
+    MOV AL,[bp_pad_spd]
     AND AL,#0x80
-    STA [bp_velsign],AL
-    LDA AL,[bp_pad_spd]
-    STA [bp_tmp],AL
-    LDA BL,[bp_velsign]
+    MOV [bp_velsign],AL
+    MOV AL,[bp_pad_spd]
+    MOV [bp_tmp],AL
+    MOV BL,[bp_velsign]
     CMP BL,#0
     JMPZ cbv_vel_abs
-    LDA AL,[bp_tmp]
+    MOV AL,[bp_tmp]
     NOT AL
     ADD AL,#1
-    STA [bp_tmp],AL
+    MOV [bp_tmp],AL
 cbv_vel_abs:
-    LDA AL,[bp_tmp]           ; |velocidad|
+    MOV AL,[bp_tmp]           ; |velocidad|
     CMP AL,#8
     JMPNC cbv_vel_2
     CMP AL,#2
@@ -592,23 +592,23 @@ cbv_vel_1:
 cbv_vel_2:
     MOV AL,#2
 cbv_vel_signed:
-    LDA BL,[bp_velsign]
+    MOV BL,[bp_velsign]
     CMP BL,#0
     JMPZ cbv_vel_done
     NOT AL
     ADD AL,#1
 cbv_vel_done:
-    STA [bp_velc],AL
+    MOV [bp_velc],AL
 
     ; total = offc (-1..1) + velc (-2..2) + un empujon al azar (-1..1, ver
     ; rnd/rnd_raw): sin esto, la misma pareja offset/velocidad da SIEMPRE el
     ; mismo angulo exacto, y un jugador aprende enseguida a "programar" el
     ; rebote con precision -- demasiado predecible. El azar es pequeño (no
     ; ahoga el control del offset/velocidad, solo evita que sea 100% exacto)
-    LDA AL,[bp_offc]
-    LDA BL,[bp_velc]
+    MOV AL,[bp_offc]
+    MOV BL,[bp_velc]
     ADD AL,BL
-    STA [bp_tmp],AL
+    MOV [bp_tmp],AL
 
     CALL rnd
     AND AL,#0x03
@@ -624,7 +624,7 @@ cbv_rnd_1:
 cbv_rnd_0:
     MOV AL,#0
 cbv_rnd_apply:
-    LDA BL,[bp_tmp]
+    MOV BL,[bp_tmp]
     ADD AL,BL
 
     ; recorte a -3..3 (offc+velc ya cabia ahi; el empujon de +-1 puede sacarlo
@@ -653,12 +653,12 @@ rnd:
     MOV AL,DL
     RET
 rnd_raw:
-    LDA AL,[seed]
+    MOV AL,[seed]
     SHR AL
     JMPNC rr_n
     XOR AL,#0xB8
 rr_n:
-    STA [seed],AL
+    MOV [seed],AL
     RET
 
 ; ============================================================================
@@ -667,36 +667,36 @@ rr_n:
 ; ============================================================================
 draw_paddles_ball:
     MOV AL,#PAD_L_X
-    STA [rect_x],AL
-    LDA AL,[pad_l_y]
-    STA [rect_y],AL
+    MOV [rect_x],AL
+    MOV AL,[pad_l_y]
+    MOV [rect_y],AL
     MOV AL,#PAD_W
-    STA [rect_w],AL
+    MOV [rect_w],AL
     MOV AL,#PAD_H
-    STA [rect_h],AL
+    MOV [rect_h],AL
     CALL fill_shadow_rect
 
     MOV AL,#PAD_R_X
-    STA [rect_x],AL
-    LDA AL,[pad_r_y]
-    STA [rect_y],AL
+    MOV [rect_x],AL
+    MOV AL,[pad_r_y]
+    MOV [rect_y],AL
     MOV AL,#PAD_W
-    STA [rect_w],AL
+    MOV [rect_w],AL
     MOV AL,#PAD_H
-    STA [rect_h],AL
+    MOV [rect_h],AL
     CALL fill_shadow_rect
 
-    LDA AL,[ball_active]
+    MOV AL,[ball_active]
     CMP AL,#0
     JMPZ dpb_done
-    LDA AL,[ball_x]
-    STA [rect_x],AL
-    LDA AL,[ball_y]
-    STA [rect_y],AL
+    MOV AL,[ball_x]
+    MOV [rect_x],AL
+    MOV AL,[ball_y]
+    MOV [rect_y],AL
     MOV AL,#BALL_W
-    STA [rect_w],AL
+    MOV [rect_w],AL
     MOV AL,#BALL_H
-    STA [rect_h],AL
+    MOV [rect_h],AL
     CALL fill_shadow_rect
 dpb_done:
     RET
@@ -705,32 +705,32 @@ dpb_done:
 ; a la izquierda en (rect_x,rect_y) --------------------------------------
 fill_shadow_rect:
     MOV AL,#0
-    STA [rect_dy],AL
+    MOV [rect_dy],AL
 frr_row:
     MOV AL,#0
-    STA [rect_dx],AL
+    MOV [rect_dx],AL
 frr_col:
-    LDA AL,[rect_x]
-    LDA BL,[rect_dx]
+    MOV AL,[rect_x]
+    MOV BL,[rect_dx]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[rect_y]
-    LDA BL,[rect_dy]
+    MOV [px_x],AL
+    MOV AL,[rect_y]
+    MOV BL,[rect_dy]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[rect_dx]
+    MOV AL,[rect_dx]
     ADD AL,#1
-    STA [rect_dx],AL
-    LDA BL,[rect_w]
+    MOV [rect_dx],AL
+    MOV BL,[rect_w]
     CMP AL,BL
     JMPNZ frr_col
 
-    LDA AL,[rect_dy]
+    MOV AL,[rect_dy]
     ADD AL,#1
-    STA [rect_dy],AL
-    LDA BL,[rect_h]
+    MOV [rect_dy],AL
+    MOV BL,[rect_h]
     CMP AL,BL
     JMPNZ frr_row
     RET
@@ -740,23 +740,23 @@ frr_col:
 ;  texto -- no toca el framebuffer grafico para nada.
 ; ============================================================================
 draw_scores:
-    LDA AL,[score_l]
+    MOV AL,[score_l]
     MOV CX,#SCORE_L_COL
     CALL put_num2
-    LDA AL,[score_r]
+    MOV AL,[score_r]
     MOV CX,#SCORE_R_COL
     CALL put_num2
     RET
 
 ; --- put_num2:  AL=valor (0..99), CL=col, CH=fila -- escribe 2 digitos ----
 put_num2:
-    STA [pn_v],AL
-    LDA AL,[pn_v]
+    MOV [pn_v],AL
+    MOV AL,[pn_v]
     PUSH AH
     MOV AH,#0
     MOV DL,#10
     DIV DL                  ; DL = cociente, resto -> [pn_v]
-    STA [pn_v],AH
+    MOV [pn_v],AH
     MOV DL,AL
     POP AH
 pn2_td:
@@ -764,7 +764,7 @@ pn2_td:
     ADD AL,#0x30
     CALL putc
     ADD CL,#1
-    LDA AL,[pn_v]
+    MOV AL,[pn_v]
     ADD AL,#0x30
     CALL putc
     RET
@@ -782,27 +782,27 @@ load_record:
     JMPNZ rec_lr_set
     IN  AL,(P_EEP_BASE+1)
 rec_lr_set:
-    STA [record],AL
+    MOV [record],AL
     RET
 
 ; --- show_record: carga el record y escribe "RECORD nnn" en CH=fila, CL=col --
 show_record:
     CALL load_record
-    LDA AL,[record]
+    MOV AL,[record]
     MOV AH,#0
     MOV BL,#100
     DIV BL
     ADD AL,#'0'
-    STA [rec_d],AL
+    MOV [rec_d],AL
     MOV AL,AH
     MOV AH,#0
     MOV BL,#10
     DIV BL
     ADD AL,#'0'
-    STA [rec_d+1],AL
+    MOV [rec_d+1],AL
     MOV AL,AH
     ADD AL,#'0'
-    STA [rec_d+2],AL
+    MOV [rec_d+2],AL
     MOV BX,#s_record
     CALL puts
     RET
@@ -810,13 +810,13 @@ show_record:
 ; --- save_record: si [best_rally] supera el record, lo graba en la flash.
 ; Sale AL = 1 si es record nuevo, 0 si no. ----------------------------------
 save_record:
-    LDA AL,[best_rally]
-    LDA BL,[record]
+    MOV AL,[best_rally]
+    MOV BL,[record]
     CMP BL,AL
     MOV AL,#0
     JMPNC rec_sv_done          ; record >= puntos: nada que grabar
-    LDA AL,[best_rally]
-    STA [record],AL
+    MOV AL,[best_rally]
+    MOV [record],AL
     OUT (P_EEP_LOAD),AL     ; parte del contenido real de la EEPROM
     OUT (P_EEP_BASE+1),AL
     MOV AL,#REC_MAGIC
@@ -831,15 +831,15 @@ rec_sv_done:
 ; ============================================================================
 ; --- rally_hit: un golpe de pala mas en el peloteo en curso ---------------
 rally_hit:
-    LDA AL,[rally]
+    MOV AL,[rally]
     CMP AL,#255
     JMPZ rh_done            ; tope de 8 bits
     ADD AL,#1
-    STA [rally],AL
-    LDA BL,[best_rally]
+    MOV [rally],AL
+    MOV BL,[best_rally]
     CMP BL,AL
     JMPNC rh_done
-    STA [best_rally],AL
+    MOV [best_rally],AL
 rh_done:
     RET
 
@@ -868,7 +868,7 @@ show_match_over:
     CALL blit
     CALL clst
     MOV BX,#s_left_wins
-    LDA AL,[score_l]
+    MOV AL,[score_l]
     CMP AL,#WIN_SCORE
     JMPZ smo_w
     MOV BX,#s_right_wins
@@ -878,7 +878,7 @@ smo_w:
     MOV BX,#s_rally
     MOV CX,#0x0302
     CALL puts
-    LDA AL,[best_rally]
+    MOV AL,[best_rally]
     MOV CX,#0x0310
     CALL put3
     CALL save_record        ; graba el record si se ha batido
@@ -934,12 +934,12 @@ put3:
     MOV AH,#0
     MOV DL,#100
     DIV DL
-    STA [pn_v],AH
+    MOV [pn_v],AH
     POP AH
     ADD AL,#0x30
     CALL putc
     ADD CL,#1
-    LDA AL,[pn_v]
+    MOV AL,[pn_v]
     CALL put_num2
     RET
 
@@ -951,7 +951,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -963,13 +963,13 @@ ps_d:
 
 ; --- putc:  AL=caracter, CL=col, CH=fila -----------------------------------
 putc:
-    STA [tmp2],AL
+    MOV [tmp2],AL
     MOV AL,CH
     SHL AL,#5
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     OUT (DX),AL
     RET
 
@@ -985,10 +985,10 @@ putc:
 ; exactamente: cada vez que se dibujaba una paleta corrompia instrucciones).
 shadow_set_px:
     CALL calc_pix
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- calc_pix:  de (px_x,px_y) saca BX = shadow+puerto, y pix_mask --------
@@ -996,18 +996,18 @@ shadow_set_px:
 ; `shadow` en vez de dejar pix_lo/pix_hi sueltos -- un pixel menos de
 ; indireccion porque aqui no hace falta separar el calculo del uso)
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -1018,12 +1018,12 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     ; BX = shadow + pix_lo + pix_hi*256
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
     RET
 
@@ -1040,7 +1040,7 @@ cpx_d:
 ; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
     MOV AL,#0
-    STA [shadow],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
@@ -1053,7 +1053,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL

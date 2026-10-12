@@ -16,26 +16,29 @@ enum Form : uint8_t {
     FK_NONE,       // sin operandos (NOP, HALT, RET, MOVB, MOVW, MOVBR)
     FK_RR,         // ALU reg,reg
     FK_RI,         // ALU reg,#imm8
-    FK_RM,         // ALU reg,[dir]
-    FK_RP,         // ALU reg,[r16]
     FK_LDI,        // MOV reg,#imm8
-    FK_LDA, FK_LDAR, FK_STA, FK_STAR,
+    FK_LDA, FK_LDAR, FK_STA, FK_STAR,   // MOV reg,[dir] / reg,[r16] / [dir],reg / [r16],reg
+    FK_STI,        // MOV [dir],#imm8
+    FK_STIR,       // MOV [r16],#imm8
     FK_IN, FK_INR, FK_OUT, FK_OUTR,
     FK_R16R16,     // MOV/ADD/SUB/CMP r16,r16
     FK_R16R8,      // ADD/SUB r16,reg8
     FK_R16IMM8,    // ADD/SUB r16,#imm8
     FK_R16IMM16,   // MOV/CMP r16,#imm16
-    FK_REG,        // un registro de 8 bits (NOT/MUL/DIV/INC/DEC/PUSH/POP)
+    FK_REG,        // un registro de 8 bits (NOT/NEG/MUL/IMUL/DIV/INC/DEC/PUSH/POP)
     FK_REG16,      // un par de 16 bits (INC/DEC/PUSH/POP)
-    FK_SHIFT,      // SHR/SHL reg,#N
-    FK_JCC,        // JMP/CALL <cond>,dir
+    FK_X16,        // NEG/MUL/DIV r16 (OP_X16)
+    FK_SHIFT,      // SHR/SHL/SAR/ROL/ROR/RCL/RCR reg,#N (1..8)
+    FK_SHIFT16,    // SHL/SHR/SAR r16,#N (1..16)
+    FK_JCC,        // JMP <cond>,dir
+    FK_CALL,       // CALL dir
     FK_JR,         // JMP/CALL r16
 };
 
 struct VerbInfo {
     const char* name;
     uint8_t nForms;
-    Form forms[7];
+    Form forms[10];
 };
 
 // Indexada por Verb (editor.h)
@@ -46,38 +49,45 @@ const VerbInfo kVerbs[VERB_COUNT] = {
     {"MOVB",  1, {FK_NONE}},
     {"MOVW",  1, {FK_NONE}},
     {"MOVBR", 1, {FK_NONE}},
-    {"MOV",   4, {FK_RR, FK_LDI, FK_R16R16, FK_R16IMM16}},
-    {"LDA",   2, {FK_LDA, FK_LDAR}},
-    {"STA",   2, {FK_STA, FK_STAR}},
+    {"MOV",  10, {FK_RR, FK_LDI, FK_LDA, FK_LDAR, FK_STA, FK_STAR, FK_STI, FK_STIR,
+                  FK_R16R16, FK_R16IMM16}},
     {"IN",    2, {FK_IN, FK_INR}},
     {"OUT",   2, {FK_OUT, FK_OUTR}},
-    {"ADD",   7, {FK_RR, FK_RI, FK_RM, FK_RP, FK_R16R8, FK_R16R16, FK_R16IMM8}},
-    {"ADC",   4, {FK_RR, FK_RI, FK_RM, FK_RP}},
-    {"SUB",   7, {FK_RR, FK_RI, FK_RM, FK_RP, FK_R16R8, FK_R16R16, FK_R16IMM8}},
-    {"SBC",   4, {FK_RR, FK_RI, FK_RM, FK_RP}},
-    {"CMP",   6, {FK_RR, FK_RI, FK_RM, FK_RP, FK_R16R16, FK_R16IMM16}},
-    {"AND",   4, {FK_RR, FK_RI, FK_RM, FK_RP}},
-    {"OR",    4, {FK_RR, FK_RI, FK_RM, FK_RP}},
-    {"XOR",   4, {FK_RR, FK_RI, FK_RM, FK_RP}},
+    {"ADD",   5, {FK_RR, FK_RI, FK_R16R8, FK_R16R16, FK_R16IMM8}},
+    {"ADC",   2, {FK_RR, FK_RI}},
+    {"SUB",   5, {FK_RR, FK_RI, FK_R16R8, FK_R16R16, FK_R16IMM8}},
+    {"SBC",   2, {FK_RR, FK_RI}},
+    {"CMP",   4, {FK_RR, FK_RI, FK_R16R16, FK_R16IMM16}},
+    {"AND",   2, {FK_RR, FK_RI}},
+    {"OR",    2, {FK_RR, FK_RI}},
+    {"XOR",   2, {FK_RR, FK_RI}},
     {"NOT",   1, {FK_REG}},
-    {"SHR",   1, {FK_SHIFT}},
-    {"SHL",   1, {FK_SHIFT}},
-    {"MUL",   1, {FK_REG}},
-    {"DIV",   1, {FK_REG}},
+    {"NEG",   2, {FK_REG, FK_X16}},
+    {"SHR",   2, {FK_SHIFT, FK_SHIFT16}},
+    {"SHL",   2, {FK_SHIFT, FK_SHIFT16}},
+    {"SAR",   2, {FK_SHIFT, FK_SHIFT16}},
+    {"ROL",   1, {FK_SHIFT}},
+    {"ROR",   1, {FK_SHIFT}},
+    {"RCL",   1, {FK_SHIFT}},
+    {"RCR",   1, {FK_SHIFT}},
+    {"MUL",   2, {FK_REG, FK_X16}},
+    {"IMUL",  1, {FK_REG}},
+    {"DIV",   2, {FK_REG, FK_X16}},
     {"INC",   2, {FK_REG16, FK_REG}},
     {"DEC",   2, {FK_REG16, FK_REG}},
     {"PUSH",  2, {FK_REG, FK_REG16}},
     {"POP",   2, {FK_REG, FK_REG16}},
     {"JMP",   2, {FK_JCC, FK_JR}},
-    {"CALL",  2, {FK_JCC, FK_JR}},
+    {"CALL",  2, {FK_CALL, FK_JR}},
 };
 
 // Orden en que DATOS los va ofreciendo al girar en el campo Verb:
 // alfabetico por nombre, no el orden interno del enum.
 const uint8_t kVerbAlpha[VERB_COUNT] = {
-    V_ADC, V_ADD, V_AND, V_CALL, V_CMP, V_DEC, V_DIV, V_HALT, V_IN, V_INC,
-    V_JMP, V_LDA, V_MOV, V_MOVB, V_MOVBR, V_MOVW, V_MUL, V_NOP, V_NOT, V_OR,
-    V_OUT, V_POP, V_PUSH, V_RET, V_SBC, V_SHL, V_SHR, V_STA, V_SUB, V_XOR,
+    V_ADC, V_ADD, V_AND, V_CALL, V_CMP, V_DEC, V_DIV, V_HALT, V_IMUL, V_IN,
+    V_INC, V_JMP, V_MOV, V_MOVB, V_MOVBR, V_MOVW, V_MUL, V_NEG, V_NOP, V_NOT,
+    V_OR, V_OUT, V_POP, V_PUSH, V_RCL, V_RCR, V_RET, V_ROL, V_ROR, V_SAR,
+    V_SBC, V_SHL, V_SHR, V_SUB, V_XOR,
 };
 
 uint8_t alphaIndexOf(uint8_t verb) {
@@ -107,17 +117,20 @@ uint8_t formFields(Form f, EField out[3]) {
         case FK_RR:        out[0] = EField::Dst; out[1] = EField::Src; return 2;
         case FK_RI:
         case FK_LDI:       out[0] = EField::Reg; out[1] = EField::Imm; return 2;
-        case FK_RM:
         case FK_LDA:
         case FK_IN:        out[0] = EField::Reg; out[1] = EField::Lo; out[2] = EField::Hi; return 3;
-        case FK_RP:
         case FK_LDAR:
         case FK_INR:       out[0] = EField::Reg; out[1] = EField::Ptr; return 2;
-        // Destino primero, igual que en pantalla (STA [dir],reg / OUT (puerto),reg)
+        // Destino primero, igual que en pantalla (MOV [dir],reg / OUT (puerto),reg)
         case FK_STA:
         case FK_OUT:       out[0] = EField::Lo; out[1] = EField::Hi; out[2] = EField::Reg; return 3;
         case FK_STAR:
         case FK_OUTR:      out[0] = EField::Ptr; out[1] = EField::Reg; return 2;
+        case FK_STI:       out[0] = EField::Lo; out[1] = EField::Hi; out[2] = EField::Imm; return 3;
+        case FK_STIR:      out[0] = EField::Ptr; out[1] = EField::Imm; return 2;
+        case FK_X16:       out[0] = EField::Ptr; return 1;
+        case FK_SHIFT16:   out[0] = EField::Ptr; out[1] = EField::Shift; return 2;
+        case FK_CALL:      out[0] = EField::Lo; out[1] = EField::Hi; return 2;
         case FK_R16R16:    out[0] = EField::Ptr; out[1] = EField::Ptr2; return 2;
         case FK_R16R8:     out[0] = EField::Ptr; out[1] = EField::Reg; return 2;
         case FK_R16IMM8:   out[0] = EField::Ptr; out[1] = EField::Imm; return 2;
@@ -227,8 +240,9 @@ void applyDelta(ComposeState& st, int16_t delta) {
         case EField::Ptr2: st.ptr2 = (uint8_t)(((int16_t)st.ptr2 + delta) & 3); break;
         case EField::Imm:  st.imm  = (uint8_t)((int16_t)st.imm + delta); break;
         case EField::Shift: {
-            int16_t v = (int16_t)(((int16_t)(st.shift - 1) + delta) % 8);
-            if (v < 0) v += 8;
+            const int16_t maxN = (formOf(st.verb, st.mode) == FK_SHIFT16) ? 16 : 8;
+            int16_t v = (int16_t)(((int16_t)(st.shift - 1) + delta) % maxN);
+            if (v < 0) v += maxN;
             st.shift = (uint8_t)(v + 1);
             break;
         }
@@ -277,17 +291,17 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
         case FK_RI:
             b[0] = makeOpcode(OP_ALUI, r); b[1] = alu; b[2] = st.imm; n = 3;
             break;
-        case FK_RM:
-            b[0] = makeOpcode(OP_ALUM, r); b[1] = alu; b[2] = lo; b[3] = hi; n = 4;
-            break;
-        case FK_RP:
-            b[0] = makeOpcode(OP_ALUP, r); b[1] = (uint8_t)((alu << 2) | p); n = 2;
-            break;
         case FK_LDI:  b[0] = makeOpcode(OP_LDI, r);  b[1] = st.imm; n = 2; break;
         case FK_LDA:  b[0] = makeOpcode(OP_LDA, r);  b[1] = lo; b[2] = hi; n = 3; break;
         case FK_LDAR: b[0] = makeOpcode(OP_LDAR, r); b[1] = p; n = 2; break;
         case FK_STA:  b[0] = makeOpcode(OP_STA, r);  b[1] = lo; b[2] = hi; n = 3; break;
         case FK_STAR: b[0] = makeOpcode(OP_STAR, r); b[1] = p; n = 2; break;
+        case FK_STI:
+            b[0] = makeOpcode(OP_CALL, CALL_STI); b[1] = lo; b[2] = hi; b[3] = st.imm; n = 4;
+            break;
+        case FK_STIR:
+            b[0] = makeOpcode(OP_CALL, (uint8_t)(CALL_STIR | p)); b[1] = st.imm; n = 2;
+            break;
         case FK_IN:   b[0] = makeOpcode(OP_IN, r);   b[1] = lo; b[2] = hi; n = 3; break;
         case FK_INR:  b[0] = makeOpcode(OP_INR, r);  b[1] = p; n = 2; break;
         case FK_OUT:  b[0] = makeOpcode(OP_OUT, r);  b[1] = lo; b[2] = hi; n = 3; break;
@@ -313,6 +327,8 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
         case FK_REG: {
             uint8_t fam = OP_NOT;
             switch (st.verb) {
+                case V_NEG:  fam = OP_NEG;  break;
+                case V_IMUL: fam = OP_IMUL; break;
                 case V_MUL:  fam = OP_MUL;  break;
                 case V_DIV:  fam = OP_DIV;  break;
                 case V_INC:  fam = OP_INC;  break;
@@ -331,15 +347,40 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
                 b[0] = makeOpcode(OP_PUSHPOP16, (uint8_t)(((st.verb == V_POP) ? 4 : 0) | p));
             break;
         case FK_SHIFT:
-            b[0] = makeOpcode((st.verb == V_SHL) ? OP_SHL : OP_SHR, r);
-            b[1] = (uint8_t)((st.shift - 1) & 7); n = 2;
+            if (st.verb == V_SHL || st.verb == V_SHR) {
+                b[0] = makeOpcode((st.verb == V_SHL) ? OP_SHL : OP_SHR, r);
+                b[1] = (uint8_t)((st.shift - 1) & 7);
+            } else {
+                uint8_t shx = (st.verb == V_ROL) ? SHX_ROL : (st.verb == V_ROR) ? SHX_ROR
+                            : (st.verb == V_RCL) ? SHX_RCL : (st.verb == V_RCR) ? SHX_RCR : SHX_SAR;
+                b[0] = makeOpcode(OP_SHX, r);
+                b[1] = (uint8_t)((shx << 3) | ((st.shift - 1) & 7));
+            }
+            n = 2;
             break;
-        case FK_JCC:
-            if (st.cond == 8)   // NV no cabe en el campo de 3 bits: va en OP_JX
-                b[0] = makeOpcode(OP_JX, (st.verb == V_CALL) ? JX_CALLNV : JX_JMPNV);
+        case FK_SHIFT16: {
+            uint8_t x = (st.verb == V_SHL) ? X16_SHL : (st.verb == V_SHR) ? X16_SHR : X16_SAR;
+            b[0] = makeOpcode(OP_X16, p);
+            b[1] = (uint8_t)((x << 4) | ((st.shift - 1) & 15)); n = 2;
+            break;
+        }
+        case FK_X16: {
+            uint8_t x = (st.verb == V_NEG) ? X16_NEG : (st.verb == V_MUL) ? X16_MUL : X16_DIV;
+            b[0] = makeOpcode(OP_X16, p); b[1] = (uint8_t)(x << 4); n = 2;
+            break;
+        }
+        case FK_JCC: {
+            // NV y las de signo no caben en el campo de 3 bits: van en OP_JX
+            static const uint8_t kJx[5] = {JX_JMPNV, JX_JMPLT, JX_JMPGE, JX_JMPLE, JX_JMPGT};
+            if (st.cond >= 8 && st.cond < COND_COUNT)
+                b[0] = makeOpcode(OP_JX, kJx[st.cond - 8]);
             else
-                b[0] = makeOpcode((st.verb == V_CALL) ? OP_CALL : OP_JMP, st.cond);
+                b[0] = makeOpcode(OP_JMP, (uint8_t)(st.cond & 7));
             b[1] = lo; b[2] = hi; n = 3;
+            break;
+        }
+        case FK_CALL:
+            b[0] = makeOpcode(OP_CALL, CALL_ADDR); b[1] = lo; b[2] = hi; n = 3;
             break;
         case FK_JR:
             b[0] = makeOpcode(OP_JX, (st.verb == V_CALL) ? JX_CALLR : JX_JMPR);
@@ -381,10 +422,10 @@ ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
             }
             break;
         case OP_LDI:  set(V_MOV, FK_LDI);  st.reg = r; st.imm = b1; break;
-        case OP_LDA:  set(V_LDA, FK_LDA);  st.reg = r; st.addr16 = a12; break;
-        case OP_STA:  set(V_STA, FK_STA);  st.reg = r; st.addr16 = a12; break;
-        case OP_LDAR: set(V_LDA, FK_LDAR); st.reg = r; st.ptr = (uint8_t)(b1 & 3); break;
-        case OP_STAR: set(V_STA, FK_STAR); st.reg = r; st.ptr = (uint8_t)(b1 & 3); break;
+        case OP_LDA:  set(V_MOV, FK_LDA);  st.reg = r; st.addr16 = a12; break;
+        case OP_STA:  set(V_MOV, FK_STA);  st.reg = r; st.addr16 = a12; break;
+        case OP_LDAR: set(V_MOV, FK_LDAR); st.reg = r; st.ptr = (uint8_t)(b1 & 3); break;
+        case OP_STAR: set(V_MOV, FK_STAR); st.reg = r; st.ptr = (uint8_t)(b1 & 3); break;
         case OP_IN:   set(V_IN, FK_IN);    st.reg = r; st.addr16 = a12; break;
         case OP_OUT:  set(V_OUT, FK_OUT);  st.reg = r; st.addr16 = a12; break;
         case OP_INR:  set(V_IN, FK_INR);   st.reg = r; st.ptr = (uint8_t)(b1 & 3); break;
@@ -399,16 +440,25 @@ ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
             st.reg = r; st.imm = b2;
             break;
         }
-        case OP_ALUM: {
-            uint8_t v = verbOfAlu(b1);
-            if (v == V_MOV) set(V_LDA, FK_LDA); else set(v, FK_RM);
-            st.reg = r; st.addr16 = a23;
+        case OP_SHX: {
+            static const uint8_t kShx[5] = {V_SAR, V_ROL, V_ROR, V_RCL, V_RCR};
+            uint8_t x = (uint8_t)((b1 >> 3) & 7);
+            if (x < 5) { set(kShx[x], FK_SHIFT); st.reg = r; st.shift = (uint8_t)((b1 & 7) + 1); }
+            else st.verb = V_NOP;
             break;
         }
-        case OP_ALUP: {
-            uint8_t v = verbOfAlu((uint8_t)(b1 >> 2));
-            if (v == V_MOV) set(V_LDA, FK_LDAR); else set(v, FK_RP);
-            st.reg = r; st.ptr = (uint8_t)(b1 & 3);
+        case OP_NEG:  set(V_NEG, FK_REG);  st.reg = r; break;
+        case OP_IMUL: set(V_IMUL, FK_REG); st.reg = r; break;
+        case OP_X16: {
+            uint8_t x = (uint8_t)(b1 >> 4);
+            st.ptr = (uint8_t)(r & 3);
+            if (r >= 4 || x > X16_DIV) { st.verb = V_NOP; st.ptr = 0; break; }
+            if (x <= X16_SAR) {
+                set((x == X16_SHL) ? V_SHL : (x == X16_SHR) ? V_SHR : V_SAR, FK_SHIFT16);
+                st.shift = (uint8_t)((b1 & 15) + 1);
+            } else {
+                set((x == X16_NEG) ? V_NEG : (x == X16_MUL) ? V_MUL : V_DIV, FK_X16);
+            }
             break;
         }
         case OP_NOT: set(V_NOT, FK_REG); st.reg = r; break;
@@ -421,11 +471,19 @@ ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
         case OP_PUSH: set(V_PUSH, FK_REG); st.reg = r; break;
         case OP_POP:  set(V_POP, FK_REG);  st.reg = r; break;
         case OP_JMP:  set(V_JMP, FK_JCC);  st.cond = r; st.addr16 = a12; break;
-        case OP_CALL: set(V_CALL, FK_JCC); st.cond = r; st.addr16 = a12; break;
+        case OP_CALL:
+            if (r == CALL_ADDR)      { set(V_CALL, FK_CALL); st.addr16 = a12; }
+            else if (r == CALL_STI)  { set(V_MOV, FK_STI);  st.addr16 = a12; st.imm = b3; }
+            else if (r >= CALL_STIR) { set(V_MOV, FK_STIR); st.ptr = (uint8_t)(r & 3); st.imm = b1; }
+            else st.verb = V_NOP;
+            break;
         case OP_JX:
             switch (r) {
-                case JX_JMPNV:  set(V_JMP, FK_JCC);  st.cond = 8; st.addr16 = a12; break;
-                case JX_CALLNV: set(V_CALL, FK_JCC); st.cond = 8; st.addr16 = a12; break;
+                case JX_JMPNV:  set(V_JMP, FK_JCC);  st.cond = 8;  st.addr16 = a12; break;
+                case JX_JMPLT:  set(V_JMP, FK_JCC);  st.cond = 9;  st.addr16 = a12; break;
+                case JX_JMPGE:  set(V_JMP, FK_JCC);  st.cond = 10; st.addr16 = a12; break;
+                case JX_JMPLE:  set(V_JMP, FK_JCC);  st.cond = 11; st.addr16 = a12; break;
+                case JX_JMPGT:  set(V_JMP, FK_JCC);  st.cond = 12; st.addr16 = a12; break;
                 case JX_JMPR:   set(V_JMP, FK_JR);   st.ptr = (uint8_t)(b1 & 3); break;
                 case JX_CALLR:  set(V_CALL, FK_JR);  st.ptr = (uint8_t)(b1 & 3); break;
                 default:        st.verb = V_NOP; break;

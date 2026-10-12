@@ -140,6 +140,11 @@ private:
     // y de division por cero.
     void doMul(uint8_t reg);
     void doDiv(uint8_t reg);
+    void doShx(uint8_t reg, uint8_t operand);   // SAR/ROL/ROR/RCL/RCR
+    void doNeg8(uint8_t reg);
+    void doImul(uint8_t reg);
+    void doX16(uint8_t pair, uint8_t operand);  // 16 bits: desplazar, NEG, MUL, DIV
+    bool testSigned(uint8_t jx) const;          // JMPLT/GE/LE/GT
     // MOVB/MOVW (OP_EXT2 subop 2/3, isa.h): copia BX->DX, CX bytes (MOVB) o
     // CX palabras de 16 bits (MOVW); avanza BX/DX y pone CX a 0 al terminar.
     void doMovBlock(bool words);

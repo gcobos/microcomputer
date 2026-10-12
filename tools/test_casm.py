@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Comprueba casm.py con los ejemplos de docs/isa.md (ISA version 2). Ejecuta:  python3 tools/test_casm.py
+"""Comprueba casm.py con los ejemplos de docs/isa.md (ISA version 3). Ejecuta:  python3 tools/test_casm.py
 """
 import sys
 
@@ -13,7 +13,7 @@ def asm(src):
 
 
 # Bytes calculados a mano a partir de la tabla de codificacion de docs/isa.md
-# (ISA version 2), no copiados de la salida de casm.py.
+# (ISA version 3), no copiados de la salida de casm.py.
 CASES = [
     # docs/isa.md, ejemplos
     ("LED sigue al pulsador", """
@@ -78,19 +78,19 @@ CASES = [
         OR BL,#0x80
         CMP CL,#0x0A
     """, "58 01 05 5A 07 80 5C 05 0A"),
-    ("LDA/STA/JMP con etiqueta", """
+    ("MOV con memoria y JMP con etiqueta", """
         .org 0
-            LDA AL,[dato]
-            STA [dato+1],AL
+            MOV AL,[dato]
+            MOV [dato+1],AL
             JMP  fin
         dato:  .db 0x11, 0x22
         fin:   HALT
     """, "10 09 00 18 0A 00 B8 0B 00 11 22 01"),
     ("CALL/RET", """
-            CALLZ sub
+            CALL sub
             HALT
         sub: RET
-    """, "C1 04 00 01 02"),
+    """, "C0 04 00 01 02"),
     (".dw y .ascii", """
         .dw 0x1234
         .ascii "Hi"
@@ -101,28 +101,54 @@ CASES = [
         MOV AL,#lo(addr)
         MOV AH,#hi(addr)
     """, "08 EF 09 BE"),
-    ("LDA/STA/IN/OUT indirecto por registro", """
-        LDA AL,[DX]
-        STA [DX],AL
+    ("MOV/IN/OUT indirecto por registro", """
+        MOV AL,[DX]
+        MOV [DX],AL
         IN  CH,(BX)
         OUT (BX),CH
         HALT
     """, "20 03 28 03 45 01 4D 01 01"),
     # ISA 2: instrucciones nuevas
-    ("ADC/SBC, ALU con memoria y [reg16], INC/DEC 8 bits, SHR/SHL", """
+    ("ADC/SBC, INC/DEC 8 bits, SHR/SHL", """
         ADC AL,BL
         SBC AL,#1
-        CMP AL,[0x1234]
-        ADD AL,[BX]
         INC AL
         DEC CL
         SHR AL
         SHL BL,#3
-    """, "50 12 58 04 01 60 05 34 12 68 05 98 A4 78 00 82 02"),
-    ("MOV con memoria = LDA", """
+    """, "50 12 58 04 01 98 A4 78 00 82 02"),
+    ("MOV con memoria (las antiguas LDA/STA)", """
         MOV AL,[0x1234]
         MOV AL,[BX]
-    """, "10 34 12 20 01"),
+        MOV [0x1234],AL
+        MOV [BX],CL
+    """, "10 34 12 20 01 18 34 12 2C 01"),
+    # ISA 3
+    ("ISA 3: SAR/ROL/ROR/RCL/RCR, NEG, IMUL", """
+        SAR AL
+        ROL BL,#3
+        ROR CH,#8
+        RCL DL,#1
+        RCR AH,#2
+        NEG CL
+        IMUL BL
+    """, "60 00 62 0A 65 17 66 18 61 21 6C F2"),
+    ("ISA 3: 16 bits y MOV [..],#imm", """
+        NEG BX
+        MUL CX
+        DIV DX
+        SHL AX,#16
+        SHR BX
+        SAR DX,#9
+        MOV [0x2000],#0x7F
+        MOV [BX],#0x55
+    """, "F9 30 FA 40 FB 50 F8 0F F9 10 FB 28 C1 00 20 7F C5 55"),
+    ("ISA 3: saltos con signo", """
+        JMPLT 0x0040
+        JMPGE 0x0040
+        JMPLE 0x0040
+        JMPGT 0x0040
+    """, "C9 40 00 CC 40 00 CD 40 00 CE 40 00"),
     ("16 bits", """
         MOV BX,DX
         ADD BX,CL
@@ -140,12 +166,11 @@ CASES = [
         JMP BX
         CALL DX
         JMPNV 0x0010
-        CALLNV 0x0020
         JMPV 0x0030
         MOVB
         MOVW
         MOVBR
-    """, "CA 01 CB 03 C8 10 00 C9 20 00 BF 30 00 03 04 05"),
+    """, "CA 01 CB 03 C8 10 00 BF 30 00 03 04 05"),
 ]
 
 ERROR_CASES = [
@@ -155,6 +180,13 @@ ERROR_CASES = [
     ("SHR con N fuera de 1..8", "SHR AL,#9"),
     ("simbolo indefinido", "JMP noexiste"),
     ("instruccion basura", "FOO AL,BL"),
+    ("ISA 3: LDA ya no existe", "LDA AL,[1]"),
+    ("ISA 3: STA ya no existe", "STA [1],AL"),
+    ("ISA 3: ALU con memoria ya no existe", "ADD AL,[BX]"),
+    ("ISA 3: CALL con condicion ya no existe", "CALLZ 1"),
+    ("ROL no tiene forma de 16 bits", "ROL AX"),
+    ("SHL de 16 bits con N > 16", "SHL AX,#17"),
+    ("MOV de memoria a memoria no existe", "MOV [1],[2]"),
 ]
 
 

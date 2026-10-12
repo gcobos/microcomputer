@@ -20,10 +20,12 @@ carga al encender y monta solo sus carpetas (juegos, programas, utilidades,
 demos, documentación) con el nombre y la categoría que cada programa graba
 en su slot.
 
-**ISA versión 2 (2026-10):** la codificación de las instrucciones cambió
-entera (ver [`docs/isa.md`](docs/isa.md) §3). Tras flashear este firmware hay
-que reenviar todos los programas con `tools/compi.py send`: los `.bin`
-anteriores no son compatibles.
+**ISA versión 3 (2026-10):** salieron las formas que no usaba ningún
+programa (ALU con memoria, `CALL` con condición) y entraron `SAR`/`ROL`/`ROR`/
+`RCL`/`RCR`, `NEG`, `IMUL`, operaciones de 16 bits (desplazar, `NEG`, `MUL`,
+`DIV`), saltos con signo y `MOV [dir],#imm`; `LDA`/`STA` se escriben `MOV`
+(ver [`docs/isa.md`](docs/isa.md) §3). El resto conserva sus opcodes: solo
+hay que reenviar los programas que usaban lo que salió.
 
 ## Fuente de verdad: `specs.txt`
 

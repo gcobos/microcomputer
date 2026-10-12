@@ -372,17 +372,17 @@ MAX_SHOTS    = 2
 start:
     IN  AL,(P_DAT_POS)          ; siembra el LFSR con algo poco predecible
     ADD AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
     JMPNZ init
     MOV AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
 init:
     IN  AL,(P_DIR_POS)
-    STA [dir_pos_prev],AL
+    MOV [dir_pos_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_pos_prev],AL
+    MOV [dat_pos_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
     CALL title_screen
     CALL clsg
     CALL clst
@@ -390,11 +390,11 @@ init:
 
 main_l:
     CALL update_player
-    LDA AL,[room_transition_pending]
+    MOV AL,[room_transition_pending]
     CMP AL,#0
     JMPZ main_no_transition
     MOV AL,#0
-    STA [room_transition_pending],AL
+    MOV [room_transition_pending],AL
     CALL cross_room_gap
     JMP main_draw
 
@@ -426,17 +426,17 @@ main_draw:
 ; ============================================================================
 new_game:
     MOV AL,#0
-    STA [room_num],AL
-    STA [score_lo],AL
-    STA [score_hi],AL
-    STA [room_transition_pending],AL
-    STA [keys_held],AL
-    STA [keys_used],AL
-    STA [low_life_rooms],AL
+    MOV [room_num],AL
+    MOV [score_lo],AL
+    MOV [score_hi],AL
+    MOV [room_transition_pending],AL
+    MOV [keys_held],AL
+    MOV [keys_used],AL
+    MOV [low_life_rooms],AL
     MOV AL,#MAX_LIVES
-    STA [lives],AL
+    MOV [lives],AL
     MOV AL,#0
-    STA [room0_entered],AL  ; ver la guarda de "centro de pantalla" en
+    MOV [room0_entered],AL  ; ver la guarda de "centro de pantalla" en
                              ; place_player_spawn (cross_room_gap lo pone a 1
                              ; al salir de la sala 0 por primera vez)
 
@@ -445,21 +445,21 @@ new_game:
     ; visitada aqui mismo (cross_room_gap nunca se llama para llegar a ella,
     ; es el punto de partida).
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 ng_clr_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#room_visited
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
-    LDA AL,[i]
+    MOV [BX],AL
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#MAX_ROOMS
     JMPNZ ng_clr_l
     MOV BX,#room_visited
     MOV AL,#1
-    STA [BX],AL              ; room_visited[0] = 1 (indice 0 = la base misma)
+    MOV [BX],AL              ; room_visited[0] = 1 (indice 0 = la base misma)
 
     CALL plan_dungeon
 
@@ -469,18 +469,18 @@ ng_clr_l:
     CALL rnd
     AND AL,#3
     MOV BX,#room_entry_side
-    STA [BX],AL
+    MOV [BX],AL
 
     ; genera las 50 salas de un tiron, en orden -- gen_and_save_current_room
     ; ya lee su propio entry_side de room_entry_side[] y decide llave/
     ; candado por su propio numero, sin necesitar nada de la sala anterior.
     MOV AL,#0
-    STA [room_num],AL
+    MOV [room_num],AL
 ng_gen_l:
     CALL gen_and_save_current_room
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     ADD AL,#1
-    STA [room_num],AL
+    MOV [room_num],AL
     CMP AL,#MAX_ROOMS
     JMPNZ ng_gen_l
 
@@ -488,7 +488,7 @@ ng_gen_l:
     ; datos de la ULTIMA sala generada (el jefe) -- se restaura la 0 para
     ; arrancar la partida de verdad ahi.
     MOV AL,#0
-    STA [room_num],AL
+    MOV [room_num],AL
     CALL restore_room_state
 
     CALL draw_maze
@@ -518,22 +518,22 @@ plan_dungeon:
     ; que se quede en 254 sigue significando "pared cerrada, no hay sala
     ; ahi" para gen_and_save_current_room, exactamente igual que antes.
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 pd_clear_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#room_link
     ADD BX,CL
     MOV AL,#254
-    STA [BX],AL
-    LDA AL,[i]
+    MOV [BX],AL
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#200
     JMPNZ pd_clear_l
 
     ; --- camino directo: 0->1->2->...->24->49(jefe) -------------------------
     MOV AL,#0
-    STA [pd_i],AL
+    MOV [pd_i],AL
 pd_path_l:
     ; lado de SALIDA de la sala pd_i hacia la siguiente -- al azar, pero
     ; nunca el mismo que su propio lado de ENTRADA (ya fijado en
@@ -544,77 +544,77 @@ pd_path_l:
 pd_pick_side:
     CALL rnd
     AND AL,#3
-    STA [pd_side],AL
-    LDA AL,[pd_i]
+    MOV [pd_side],AL
+    MOV AL,[pd_i]
     CMP AL,#0
     JMPZ pd_side_ok
-    LDA CL,[pd_i]
+    MOV CL,[pd_i]
     MOV BX,#room_entry_side
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[pd_side]
+    MOV AL,[BX]
+    MOV BL,[pd_side]
     CMP AL,BL
     JMPZ pd_pick_side          ; coincide con la entrada -- vuelve a tirar
 pd_side_ok:
 
     ; vecino: pd_i+1, o el jefe si pd_i es la ultima del camino
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     CMP AL,#(PATH_ROOMS-1)
     JMPNZ pd_next_is_room
     MOV AL,#BOSS_ROOM_NUM
     JMP pd_have_next
 pd_next_is_room:
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     ADD AL,#1
 pd_have_next:
-    STA [pd_nxt],AL
+    MOV [pd_nxt],AL
 
     ; enlaza pd_i --pd_side--> pd_nxt
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     SHL AL,#2
-    LDA BL,[pd_side]
+    MOV BL,[pd_side]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[pd_nxt]
-    STA [BX],AL
+    MOV AL,[pd_nxt]
+    MOV [BX],AL
 
     ; el vecino entra por el lado opuesto -- fija su room_entry_side y el
     ; enlace de vuelta pd_nxt --tmp3--> pd_i
-    LDA CL,[pd_side]
+    MOV CL,[pd_side]
     MOV BX,#OPP_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp3],AL
+    MOV AL,[BX]
+    MOV [tmp3],AL
 
-    LDA CL,[pd_nxt]
+    MOV CL,[pd_nxt]
     MOV BX,#room_entry_side
     ADD BX,CL
-    LDA AL,[tmp3]
-    STA [BX],AL
+    MOV AL,[tmp3]
+    MOV [BX],AL
 
-    LDA AL,[pd_nxt]
+    MOV AL,[pd_nxt]
     SHL AL,#2
-    LDA BL,[tmp3]
+    MOV BL,[tmp3]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[pd_i]
-    STA [BX],AL
+    MOV AL,[pd_i]
+    MOV [BX],AL
 
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     ADD AL,#1
-    STA [pd_i],AL
+    MOV [pd_i],AL
     CMP AL,#PATH_ROOMS
     JMPNZ pd_path_l
 
     ; --- salas extra 25..48: cada una cuelga de una sala del camino ---------
     MOV AL,#PATH_ROOMS
-    STA [pd_i],AL
+    MOV [pd_i],AL
 pd_extra_l:
     ; Las salas 25..44 NO cuelgan al azar: la 25+k es el ramal de la llave del
     ; candado LOCK_ZONE_START+k, y cuelga de esa sala o de una ANTERIOR del
@@ -624,67 +624,67 @@ pd_extra_l:
     ; hueco (ningun ramal anterior puede haber usado esa sala, porque su
     ; candidata LOCK_ZONE_START+k'-d' es siempre < LOCK_ZONE_START+k), asi que
     ; esto termina siempre y nunca deja una llave sin colocar.
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     CMP AL,#(KEYBRANCH_START+KEYBRANCH_LEN)
     JMPNC pd_extra_random
 
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     SUB AL,#KEYBRANCH_START
-    STA [pd_k],AL
+    MOV [pd_k],AL
     MOV BX,#MAX_KEY_OFFSET
-    LDA CL,[pd_k]
+    MOV CL,[pd_k]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ pd_d_zero
     ADD AL,#1
-    STA [pd_dmod],AL
+    MOV [pd_dmod],AL
 pd_d_roll:
     CALL rnd
     AND AL,#3
-    LDA BL,[pd_dmod]
+    MOV BL,[pd_dmod]
     CMP AL,BL
     JMPNC pd_d_roll              ; AL >= max+1 -- reintenta
-    STA [pd_d],AL
+    MOV [pd_d],AL
     JMP pd_d_try
 pd_d_zero:
     MOV AL,#0
-    STA [pd_d],AL
+    MOV [pd_d],AL
 pd_d_try:
-    LDA AL,[pd_k]
+    MOV AL,[pd_k]
     ADD AL,#LOCK_ZONE_START
-    LDA BL,[pd_d]
+    MOV BL,[pd_d]
     SUB AL,BL
-    STA [pd_room],AL             ; candidata = LOCK_ZONE_START + k - d
+    MOV [pd_room],AL             ; candidata = LOCK_ZONE_START + k - d
     MOV AL,#0
-    STA [pd_side],AL
+    MOV [pd_side],AL
 pd_forced_scan_s:
-    LDA AL,[pd_room]
+    MOV AL,[pd_room]
     SHL AL,#2
-    LDA BL,[pd_side]
+    MOV BL,[pd_side]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#254
     JMPZ pd_extra_have_slot
-    LDA AL,[pd_side]
+    MOV AL,[pd_side]
     ADD AL,#1
-    STA [pd_side],AL
+    MOV [pd_side],AL
     CMP AL,#4
     JMPNZ pd_forced_scan_s
-    LDA AL,[pd_d]                ; sin hueco aqui -- desplazamiento menor
+    MOV AL,[pd_d]                ; sin hueco aqui -- desplazamiento menor
     CMP AL,#0
     JMPZ pd_extra_next           ; (no deberia pasar nunca con d=0)
     SUB AL,#1
-    STA [pd_d],AL
+    MOV [pd_d],AL
     JMP pd_d_try
 
 pd_extra_random:
     MOV AL,#0
-    STA [pd_tries],AL
+    MOV [pd_tries],AL
 pd_extra_pick:
     ; sala candidata del camino, 0..24 -- descarte-y-repite de siempre
     ; (PATH_ROOMS=25 no es potencia de 2)
@@ -692,20 +692,20 @@ pd_extra_pick:
     AND AL,#31
     CMP AL,#PATH_ROOMS
     JMPNC pd_extra_pick
-    STA [pd_room],AL
+    MOV [pd_room],AL
     CALL rnd
     AND AL,#3
-    STA [pd_side],AL
+    MOV [pd_side],AL
 
-    LDA AL,[pd_room]
+    MOV AL,[pd_room]
     SHL AL,#2
-    LDA BL,[pd_side]
+    MOV BL,[pd_side]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#254
     JMPZ pd_extra_have_slot    ; libre -- se usa
 
@@ -713,76 +713,76 @@ pd_extra_pick:
     ; 3 lados libres cada una, dan de sobra para 24 extras: esto no deberia
     ; llegar a hacer falta nunca, pero un barrido determinista de repuesto
     ; evita colgarse para siempre si la mala suerte del azar lo agotara)
-    LDA AL,[pd_tries]
+    MOV AL,[pd_tries]
     ADD AL,#1
-    STA [pd_tries],AL
+    MOV [pd_tries],AL
     CMP AL,#100
     JMPNZ pd_extra_pick
 
 pd_extra_scan_r:
     MOV AL,#0
-    STA [pd_room],AL
+    MOV [pd_room],AL
 pd_extra_scan_r_l:
     MOV AL,#0
-    STA [pd_side],AL
+    MOV [pd_side],AL
 pd_extra_scan_s_l:
-    LDA AL,[pd_room]
+    MOV AL,[pd_room]
     SHL AL,#2
-    LDA BL,[pd_side]
+    MOV BL,[pd_side]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#254
     JMPZ pd_extra_have_slot
-    LDA AL,[pd_side]
+    MOV AL,[pd_side]
     ADD AL,#1
-    STA [pd_side],AL
+    MOV [pd_side],AL
     CMP AL,#4
     JMPNZ pd_extra_scan_s_l
-    LDA AL,[pd_room]
+    MOV AL,[pd_room]
     ADD AL,#1
-    STA [pd_room],AL
+    MOV [pd_room],AL
     CMP AL,#PATH_ROOMS
     JMPNZ pd_extra_scan_r_l
     JMP pd_extra_next          ; inalcanzable en la practica -- ver la nota de arriba
 
 pd_extra_have_slot:
-    LDA CL,[tmp2]
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[pd_i]
-    STA [BX],AL
+    MOV AL,[pd_i]
+    MOV [BX],AL
 
-    LDA CL,[pd_side]
+    MOV CL,[pd_side]
     MOV BX,#OPP_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp3],AL              ; tmp3 = lado de entrada de la sala extra
+    MOV AL,[BX]
+    MOV [tmp3],AL              ; tmp3 = lado de entrada de la sala extra
 
-    LDA CL,[pd_i]
+    MOV CL,[pd_i]
     MOV BX,#room_entry_side
     ADD BX,CL
-    LDA AL,[tmp3]
-    STA [BX],AL
+    MOV AL,[tmp3]
+    MOV [BX],AL
 
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     SHL AL,#2
-    LDA BL,[tmp3]
+    MOV BL,[tmp3]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[pd_room]
-    STA [BX],AL
+    MOV AL,[pd_room]
+    MOV [BX],AL
 
 pd_extra_next:
-    LDA AL,[pd_i]
+    MOV AL,[pd_i]
     ADD AL,#1
-    STA [pd_i],AL
+    MOV [pd_i],AL
     CMP AL,#BOSS_ROOM_NUM     ; 25..48 son las EXTRA_ROOMS(24) -- la 49 es el
                               ; jefe, ya enlazada aparte desde la 24, nunca
                               ; una "extra" mas (si el bucle llegara hasta
@@ -800,22 +800,22 @@ pd_extra_next:
 ;  (room_visited[], ver new_game).
 ; ============================================================================
 cross_room_gap:
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     SHL AL,#2
-    LDA BL,[exit_dir_taken]
+    MOV BL,[exit_dir_taken]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp0],AL             ; tmp0 = sala destino (siempre real)
+    MOV AL,[BX]
+    MOV [tmp0],AL             ; tmp0 = sala destino (siempre real)
 
-    LDA CL,[exit_dir_taken]
+    MOV CL,[exit_dir_taken]
     MOV BX,#OPP_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [entry_side],AL       ; lado de entrada en la sala destino: SIEMPRE el
+    MOV AL,[BX]
+    MOV [entry_side],AL       ; lado de entrada en la sala destino: SIEMPRE el
                                ; opuesto del lado por el que se acaba de salir,
                                ; no el room_entry_side[] fijo de plan_dungeon
                                ; (que solo describe la arista del camino: al
@@ -826,22 +826,22 @@ cross_room_gap:
     ; atras al menos una vez -- a partir de ahora, cualquier vuelta a la
     ; sala 0 tiene un lado de entrada real que respetar (ver la guarda de
     ; place_player_spawn); antes de esto, todavia no hay "de donde viene".
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#0
     JMPNZ crg_not_leaving_room0
     MOV AL,#1
-    STA [room0_entered],AL
+    MOV [room0_entered],AL
 crg_not_leaving_room0:
 
     ; puntua solo la primera vez que se entra a la sala destino
-    LDA CL,[tmp0]
+    MOV CL,[tmp0]
     MOV BX,#room_visited
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPNZ crg_no_score
     MOV AL,#1
-    STA [BX],AL
+    MOV [BX],AL
     MOV AL,#10
     CALL score_add
     CALL update_score_hud
@@ -849,8 +849,8 @@ crg_not_leaving_room0:
     CALL play_tune
 crg_no_score:
 
-    LDA AL,[tmp0]
-    STA [room_num],AL
+    MOV AL,[tmp0]
+    MOV [room_num],AL
     CALL restore_room_state
 
     CALL draw_maze
@@ -875,32 +875,32 @@ crg_no_score:
 ; ============================================================================
 on_room_entered:
     MOV AL,#0
-    STA [room_timer_lo],AL
-    STA [room_timer_hi],AL
-    STA [ghost_active],AL
+    MOV [room_timer_lo],AL
+    MOV [room_timer_hi],AL
+    MOV [ghost_active],AL
     OUT (P_SND_NOTE),AL          ; por si sonaba el tono del fantasma al salir
 
-    LDA AL,[player_x]
-    STA [ghost_origin_x],AL
-    LDA AL,[player_y]
-    STA [ghost_origin_y],AL
+    MOV AL,[player_x]
+    MOV [ghost_origin_x],AL
+    MOV AL,[player_y]
+    MOV [ghost_origin_y],AL
 
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#BOSS_ROOM_NUM
     JMPNZ ore_ghost_calc
     MOV AL,#0xFF
-    STA [ghost_threshold_lo],AL
-    STA [ghost_threshold_hi],AL
+    MOV [ghost_threshold_lo],AL
+    MOV [ghost_threshold_hi],AL
     RET
 ore_ghost_calc:
     MOV AL,#GHOST_BASE_SECONDS
-    LDA BL,[keys_used]
+    MOV BL,[keys_used]
     SUB AL,BL                    ; AL = segundos permitidos (50 - llaves usadas)
     MOV BL,#GHOST_FPS
     MUL BL                       ; AX = segundos * GHOST_FPS
-    STA [ghost_threshold_lo],AL
+    MOV [ghost_threshold_lo],AL
     MOV AL,AH
-    STA [ghost_threshold_hi],AL
+    MOV [ghost_threshold_hi],AL
     RET
 
 ; ============================================================================
@@ -913,59 +913,59 @@ ore_ghost_calc:
 ;  mas rapido cuanto mas cerca este (distancia Manhattan, escalada con MUL/DIV).
 ; ============================================================================
 update_ghost:
-    LDA AL,[room_timer_lo]
+    MOV AL,[room_timer_lo]
     ADD AL,#1
-    STA [room_timer_lo],AL
+    MOV [room_timer_lo],AL
     JMPNC ug_no_carry
-    LDA AL,[room_timer_hi]
+    MOV AL,[room_timer_hi]
     ADD AL,#1
-    STA [room_timer_hi],AL
+    MOV [room_timer_hi],AL
 ug_no_carry:
 
-    LDA AL,[ghost_active]
+    MOV AL,[ghost_active]
     CMP AL,#0
     JMPNZ ug_move
 
     ; ¿se ha superado el umbral? comparacion de 16 bits (alto primero, bajo
     ; solo si empata)
-    LDA AL,[room_timer_hi]
-    LDA BL,[ghost_threshold_hi]
+    MOV AL,[room_timer_hi]
+    MOV BL,[ghost_threshold_hi]
     CMP AL,BL
     JMPC ug_ret                 ; timer_hi < threshold_hi -- todavia no
     JMPNZ ug_activate           ; timer_hi > threshold_hi -- ya se paso
-    LDA AL,[room_timer_lo]
-    LDA BL,[ghost_threshold_lo]
+    MOV AL,[room_timer_lo]
+    MOV BL,[ghost_threshold_lo]
     CMP AL,BL
     JMPC ug_ret                 ; timer_lo < threshold_lo -- todavia no
 
 ug_activate:
     MOV AL,#1
-    STA [ghost_active],AL
-    LDA AL,[ghost_origin_x]
-    STA [ghost_x],AL
-    LDA AL,[ghost_origin_y]
-    STA [ghost_y],AL
+    MOV [ghost_active],AL
+    MOV AL,[ghost_origin_x]
+    MOV [ghost_x],AL
+    MOV AL,[ghost_origin_y]
+    MOV [ghost_y],AL
     MOV AL,#GHOST_TONE_MAX
-    STA [ghost_tone_timer],AL
+    MOV [ghost_tone_timer],AL
     MOV AL,#0
-    STA [ghost_tone_phase],AL
-    STA [ghost_move_cnt],AL
+    MOV [ghost_tone_phase],AL
+    MOV [ghost_move_cnt],AL
     RET
 
 ug_move:
     ; solo avanza 1 de cada GHOST_MOVE_DELAY fotogramas (el choque y el
     ; sonido se siguen comprobando todos)
-    LDA AL,[ghost_move_cnt]
+    MOV AL,[ghost_move_cnt]
     CMP AL,#0
     JMPZ ug_step
     SUB AL,#1
-    STA [ghost_move_cnt],AL
+    MOV [ghost_move_cnt],AL
     JMP ug_y_done
 ug_step:
     MOV AL,#(GHOST_MOVE_DELAY-1)
-    STA [ghost_move_cnt],AL
-    LDA AL,[ghost_x]
-    LDA BL,[player_x]
+    MOV [ghost_move_cnt],AL
+    MOV AL,[ghost_x]
+    MOV BL,[player_x]
     CMP AL,BL
     JMPZ ug_x_done
     JMPC ug_x_inc
@@ -974,11 +974,11 @@ ug_step:
 ug_x_inc:
     ADD AL,#1
 ug_x_store:
-    STA [ghost_x],AL
+    MOV [ghost_x],AL
 ug_x_done:
 
-    LDA AL,[ghost_y]
-    LDA BL,[player_y]
+    MOV AL,[ghost_y]
+    MOV BL,[player_y]
     CMP AL,BL
     JMPZ ug_y_done
     JMPC ug_y_inc
@@ -987,57 +987,57 @@ ug_x_done:
 ug_y_inc:
     ADD AL,#1
 ug_y_store:
-    STA [ghost_y],AL
+    MOV [ghost_y],AL
 ug_y_done:
 
     ; choque con el jugador -- mismo criterio de cajas que check_collisions
-    LDA AL,[ghost_x]
+    MOV AL,[ghost_x]
     SUB AL,#GHOST_HALF
-    STA [ex],AL
-    LDA AL,[ghost_y]
+    MOV [ex],AL
+    MOV AL,[ghost_y]
     SUB AL,#GHOST_HALF
-    STA [ey],AL
+    MOV [ey],AL
 
-    LDA AL,[ex]
+    MOV AL,[ex]
     ADD AL,#GHOST_W
-    LDA BL,[player_x]
+    MOV BL,[player_x]
     CMP BL,AL
     JMPNC ug_tone
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#PLAYER_W
-    LDA BL,[ex]
+    MOV BL,[ex]
     CMP BL,AL
     JMPNC ug_tone
-    LDA AL,[ey]
+    MOV AL,[ey]
     ADD AL,#GHOST_H
-    LDA BL,[player_y]
+    MOV BL,[player_y]
     CMP BL,AL
     JMPNC ug_tone
-    LDA AL,[player_y]
+    MOV AL,[player_y]
     ADD AL,#PLAYER_H
-    LDA BL,[ey]
+    MOV BL,[ey]
     CMP BL,AL
     JMPNC ug_tone
 
     MOV AL,#0
     OUT (P_SND_NOTE),AL
-    STA [ghost_active],AL
-    STA [room_timer_lo],AL
-    STA [room_timer_hi],AL
+    MOV [ghost_active],AL
+    MOV [room_timer_lo],AL
+    MOV [room_timer_hi],AL
     CALL on_player_hit
     RET
 
 ug_tone:
-    LDA AL,[ghost_tone_timer]
+    MOV AL,[ghost_tone_timer]
     CMP AL,#0
     JMPZ ug_tone_toggle
     SUB AL,#1
-    STA [ghost_tone_timer],AL
+    MOV [ghost_tone_timer],AL
     RET
 
 ug_tone_toggle:
-    LDA AL,[ghost_x]
-    LDA BL,[player_x]
+    MOV AL,[ghost_x]
+    MOV BL,[player_x]
     SUB AL,BL
     JMPN ugt_xneg
     JMP ugt_xdone
@@ -1045,10 +1045,10 @@ ugt_xneg:
     NOT AL
     ADD AL,#1
 ugt_xdone:
-    STA [tmp1],AL
+    MOV [tmp1],AL
 
-    LDA AL,[ghost_y]
-    LDA BL,[player_y]
+    MOV AL,[ghost_y]
+    MOV BL,[player_y]
     SUB AL,BL
     JMPN ugt_yneg
     JMP ugt_ydone
@@ -1056,7 +1056,7 @@ ugt_yneg:
     NOT AL
     ADD AL,#1
 ugt_ydone:
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     ADD AL,BL                    ; distancia Manhattan (nunca pasa de 255)
     CMP AL,#GHOST_DIST_CAP
     JMPC ugt_dist_capped
@@ -1067,21 +1067,21 @@ ugt_dist_capped:
     MOV BL,#GHOST_DIST_CAP
     DIV BL                       ; AL = AX / GHOST_DIST_CAP (0..rango)
     ADD AL,#GHOST_TONE_MIN       ; periodo final (MIN..MAX fotogramas/nota)
-    STA [ghost_tone_timer],AL
+    MOV [ghost_tone_timer],AL
 
-    LDA AL,[ghost_tone_phase]
+    MOV AL,[ghost_tone_phase]
     CMP AL,#0
     JMPNZ ugt_mi
     MOV AL,#GHOST_NOTE_A
     OUT (P_SND_NOTE),AL
     MOV AL,#1
-    STA [ghost_tone_phase],AL
+    MOV [ghost_tone_phase],AL
     RET
 ugt_mi:
     MOV AL,#GHOST_NOTE_B
     OUT (P_SND_NOTE),AL
     MOV AL,#0
-    STA [ghost_tone_phase],AL
+    MOV [ghost_tone_phase],AL
 ug_ret:
     RET
 
@@ -1100,44 +1100,44 @@ ug_ret:
 ;  cross_room_gap, solo al CRUZAR, nunca al generar).
 ; ============================================================================
 gen_and_save_current_room:
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#room_entry_side
     ADD BX,CL
-    LDA AL,[BX]
-    STA [entry_side],AL
+    MOV AL,[BX]
+    MOV [entry_side],AL
 
     MOV AL,#255
-    STA [door_dir],AL        ; sin candado todavia en esta sala
+    MOV [door_dir],AL        ; sin candado todavia en esta sala
     MOV AL,#255
-    STA [key_cell],AL        ; sin llave propia todavia
+    MOV [key_cell],AL        ; sin llave propia todavia
     MOV AL,#0
-    STA [key_taken],AL
+    MOV [key_taken],AL
 
-    LDA AL,[entry_side]
+    MOV AL,[entry_side]
     CALL side_to_rc
-    LDA AL,[rc_row]
-    STA [entry_row],AL
-    LDA AL,[rc_col]
-    STA [entry_col],AL
+    MOV AL,[rc_row]
+    MOV [entry_row],AL
+    MOV AL,[rc_col]
+    MOV [entry_col],AL
 
     CALL gen_maze
 
     ; --- los 4 lados, uno a uno: abre, o candado si toca -------------------
     MOV AL,#0
-    STA [d],AL
+    MOV [d],AL
 gsc_side_l:
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     SHL AL,#2
-    LDA BL,[d]
+    MOV BL,[d]
     ADD AL,BL
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#room_link
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#254
     JMPZ gsc_side_next          ; nada por este lado -- pared, no hace falta nada
-    STA [tmp4],AL               ; tmp4 = sala vecina por este lado
+    MOV [tmp4],AL               ; tmp4 = sala vecina por este lado
 
     ; candado SOLO en la ZONA DE CANDADOS (4..23) y en la SALIDA hacia la sala
     ; siguiente del camino (room_num+1) -- NUNCA en la entrada: cruzar de sala
@@ -1145,63 +1145,63 @@ gsc_side_l:
     ; del punto medio de la entrada, asi que un candado ahi se abria solo e
     ; invisible al aparecer con una llave encima (bug real reportado, "se han
     ; perdido las puertas; las llaves se pierden al cruzar").
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#LOCK_ZONE_START
     JMPC gsc_side_open
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#(LOCK_ZONE_START+LOCK_ZONE_LEN)
     JMPNC gsc_side_open
-    LDA AL,[tmp4]
-    LDA BL,[room_num]
+    MOV AL,[tmp4]
+    MOV BL,[room_num]
     ADD BL,#1
     CMP AL,BL
     JMPNZ gsc_side_open         ; no es la salida hacia la siguiente
 
     ; --- candado en la salida -----------------------------------------------
-    LDA AL,[d]
-    STA [door_dir],AL
+    MOV AL,[d]
+    MOV [door_dir],AL
     CALL side_to_rc              ; AL=[d] -> rc_row/rc_col
-    LDA CL,[rc_row]
+    MOV CL,[rc_row]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[rc_col]
+    MOV AL,[BX]
+    MOV BL,[rc_col]
     ADD AL,BL
-    STA [door_cell],AL
+    MOV [door_cell],AL
 
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp3],AL
+    MOV AL,[BX]
+    MOV [tmp3],AL
 
-    LDA CL,[door_cell]
+    MOV CL,[door_cell]
     MOV BX,#door_bits
     ADD BX,CL
-    LDA AL,[tmp3]
-    STA [BX],AL                 ; marca la puerta (linea sencilla)
+    MOV AL,[tmp3]
+    MOV [BX],AL                 ; marca la puerta (linea sencilla)
     ; cell_walls se deja CERRADO aqui (nunca se llama a open_dir para este
     ; lado) -- door_check lo abrira al usar una llave.
     JMP gsc_side_next
 
 gsc_side_open:
-    LDA AL,[d]
+    MOV AL,[d]
     CALL side_to_rc
-    LDA CL,[rc_row]
+    MOV CL,[rc_row]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[rc_col]
+    MOV AL,[BX]
+    MOV BL,[rc_col]
     ADD AL,BL
-    STA [od_cell],AL
-    LDA AL,[d]
-    STA [od_dir],AL
+    MOV [od_cell],AL
+    MOV AL,[d]
+    MOV [od_dir],AL
     CALL open_dir
 
 gsc_side_next:
-    LDA AL,[d]
+    MOV AL,[d]
     ADD AL,#1
-    STA [d],AL
+    MOV [d],AL
     CMP AL,#4
     JMPNZ gsc_side_l
 
@@ -1209,10 +1209,10 @@ gsc_side_next:
     ; al azar a distancia Manhattan >= MIN_KEY_DIST de la entrada de la sala
     ; (nunca pegada a la puerta por la que se entra). Si tras 20 intentos no
     ; sale ninguna (no deberia: en 3x6 la mas lejana esta a 7), vale la ultima.
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#KEYBRANCH_START
     JMPC gsc_no_key
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#(KEYBRANCH_START+KEYBRANCH_LEN)
     JMPNC gsc_no_key
 gsc_key_roll:
@@ -1220,12 +1220,12 @@ gsc_key_roll:
     AND AL,#31
     CMP AL,#NCELLS
     JMPNC gsc_key_roll
-    STA [tmp5],AL
-    LDA CL,[tmp5]
+    MOV [tmp5],AL
+    MOV CL,[tmp5]
     MOV BX,#CELL_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[entry_row]
+    MOV AL,[BX]
+    MOV BL,[entry_row]
     SUB AL,BL
     JMPN gkd_row_neg
     JMP gkd_row_abs
@@ -1233,12 +1233,12 @@ gkd_row_neg:
     NOT AL
     ADD AL,#1
 gkd_row_abs:
-    STA [tmp6],AL
-    LDA CL,[tmp5]
+    MOV [tmp6],AL
+    MOV CL,[tmp5]
     MOV BX,#CELL_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[entry_col]
+    MOV AL,[BX]
+    MOV BL,[entry_col]
     SUB AL,BL
     JMPN gkd_col_neg
     JMP gkd_col_abs
@@ -1246,22 +1246,22 @@ gkd_col_neg:
     NOT AL
     ADD AL,#1
 gkd_col_abs:
-    LDA BL,[tmp6]
+    MOV BL,[tmp6]
     ADD AL,BL
     CMP AL,#MIN_KEY_DIST
     JMPNC gsc_key_have
-    LDA AL,[key_retry]
+    MOV AL,[key_retry]
     ADD AL,#1
-    STA [key_retry],AL
+    MOV [key_retry],AL
     CMP AL,#20
     JMPNZ gsc_key_roll
 gsc_key_have:
     MOV AL,#0
-    STA [key_retry],AL
-    LDA AL,[tmp5]
-    STA [key_cell],AL
+    MOV [key_retry],AL
+    MOV AL,[tmp5]
+    MOV [key_cell],AL
     MOV AL,#0
-    STA [key_taken],AL
+    MOV [key_taken],AL
 gsc_no_key:
 
     ; --- corazon de repuesto: de vez en cuando (mas a menudo si esta sala
@@ -1269,27 +1269,27 @@ gsc_no_key:
     ; tienen), o siempre si el jugador lleva 3 salas nuevas seguidas con una
     ; sola vida; nunca si ya esta a vidas maximas (no serviria de nada).
     ; Sin cambios respecto a antes -- ortogonal al esquema de llave/candado.
-    LDA AL,[lives]
+    MOV AL,[lives]
     CMP AL,#1
     JMPNZ gsc_life_reset
-    LDA AL,[low_life_rooms]
+    MOV AL,[low_life_rooms]
     ADD AL,#1
-    STA [low_life_rooms],AL
+    MOV [low_life_rooms],AL
     JMP gsc_life_done
 gsc_life_reset:
     MOV AL,#0
-    STA [low_life_rooms],AL
+    MOV [low_life_rooms],AL
 gsc_life_done:
 
-    LDA AL,[lives]
+    MOV AL,[lives]
     CMP AL,#MAX_LIVES
     JMPNC gsc_no_heart        ; ya a tope -- no coloca corazon
 
-    LDA AL,[low_life_rooms]
+    MOV AL,[low_life_rooms]
     CMP AL,#3
     JMPNC gsc_heart_yes       ; 3 salas nuevas seguidas a 1 vida -- lo fuerza
 
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#2
     JMPC gsc_heart_easy       ; room_num<2: todavia sin enemigos
     MOV AL,#3                 ; sala "dificil": 1 de cada 4
@@ -1297,16 +1297,16 @@ gsc_life_done:
 gsc_heart_easy:
     MOV AL,#7                 ; sala facil: 1 de cada 8
 gsc_heart_mask:
-    STA [tmp1],AL
+    MOV [tmp1],AL
     CALL rnd
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     AND AL,BL
     CMP AL,#0
     JMPNZ gsc_no_heart
 
 gsc_heart_yes:
     MOV AL,#0
-    STA [low_life_rooms],AL
+    MOV [low_life_rooms],AL
     ; celda al azar, distinta de la de la llave (para no amontonar las dos
     ; en el mismo sitio); mismo descarte-y-repite que key_cell, NCELLS(18)
     ; no es potencia de 2
@@ -1315,18 +1315,18 @@ gsc_heart_roll:
     AND AL,#31
     CMP AL,#NCELLS
     JMPNC gsc_heart_roll
-    LDA BL,[key_cell]
+    MOV BL,[key_cell]
     CMP AL,BL
     JMPZ gsc_heart_roll
-    STA [heart_cell],AL
+    MOV [heart_cell],AL
     MOV AL,#0
-    STA [heart_taken],AL
+    MOV [heart_taken],AL
     JMP gsc_heart_done
 gsc_no_heart:
     MOV AL,#255
-    STA [heart_cell],AL       ; celda imposible -- nunca coincide
+    MOV [heart_cell],AL       ; celda imposible -- nunca coincide
     MOV AL,#0
-    STA [heart_taken],AL
+    MOV [heart_taken],AL
 gsc_heart_done:
 
     CALL save_room_state
@@ -1341,31 +1341,31 @@ side_to_rc:
     CMP AL,#DIR_N
     JMPNZ s2rc_e
     MOV AL,#0
-    STA [rc_row],AL
+    MOV [rc_row],AL
     MOV AL,#3
-    STA [rc_col],AL
+    MOV [rc_col],AL
     RET
 s2rc_e:
     CMP AL,#DIR_E
     JMPNZ s2rc_s
     MOV AL,#1
-    STA [rc_row],AL
+    MOV [rc_row],AL
     MOV AL,#(MAZE_COLS-1)
-    STA [rc_col],AL
+    MOV [rc_col],AL
     RET
 s2rc_s:
     CMP AL,#DIR_S
     JMPNZ s2rc_w
     MOV AL,#(MAZE_ROWS-1)
-    STA [rc_row],AL
+    MOV [rc_row],AL
     MOV AL,#3
-    STA [rc_col],AL
+    MOV [rc_col],AL
     RET
 s2rc_w:
     MOV AL,#1
-    STA [rc_row],AL
+    MOV [rc_row],AL
     MOV AL,#0
-    STA [rc_col],AL
+    MOV [rc_col],AL
     RET
 
 ; --- place_player_spawn: coloca (player_x,player_y) justo dentro del hueco
@@ -1373,25 +1373,25 @@ s2rc_w:
 ; su lado (side_to_rc), las coordenadas de aparicion tambien lo estan.
 place_player_spawn:
     MOV AL,#DIR_S
-    STA [last_fire_dir],AL   ; mirando "hacia abajo" por defecto al aparecer
+    MOV [last_fire_dir],AL   ; mirando "hacia abajo" por defecto al aparecer
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 pps_clr_shots:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#shot_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
-    LDA AL,[i]
+    MOV [BX],AL
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#MAX_SHOTS
     JMPNZ pps_clr_shots
 
     MOV AL,#0
-    STA [walk_phase],AL      ; que no aparezca con un pie ya levantado
-    STA [walk_timer],AL
-    STA [walk_idle],AL
+    MOV [walk_phase],AL      ; que no aparezca con un pie ya levantado
+    MOV [walk_timer],AL
+    MOV [walk_idle],AL
 
     ; la sala 0 (la primera) no tiene "entrada" de verdad mientras el
     ; jugador no la haya dejado atras ni una sola vez -- aparece cerca del
@@ -1415,72 +1415,72 @@ pps_clr_shots:
     ; CELL_H-3). Celda central (fila 1, columna 3), desplazamiento local
     ; (5,5): bien lejos de los bordes (0,2 y 13,15) sea cual sea el
     ; laberinto que le toque a esta partida.
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#0
     JMPNZ pps_not_room0
-    LDA AL,[room0_entered]
+    MOV AL,[room0_entered]
     CMP AL,#0
     JMPNZ pps_not_room0      ; ya se ha DEJADO la sala 0 alguna vez (marcado
                              ; por cross_room_gap al salir, no aqui) -- como
                              ; cualquier sala
     MOV AL,#(3*CELL_W+5)
-    STA [player_x],AL
+    MOV [player_x],AL
     MOV AL,#(1*CELL_H+5)
-    STA [player_y],AL
+    MOV [player_y],AL
     RET
 pps_not_room0:
 
     ; posiciones para la rejilla de 6x3 celdas de 21x21: columna/fila
     ; central (side_to_rc) mas un margen de seguridad de ~5-8 px hacia
     ; dentro, lejos de cualquier borde de celda
-    LDA AL,[entry_side]
+    MOV AL,[entry_side]
     CMP AL,#DIR_N
     JMPNZ pps_e
     MOV AL,#(3*CELL_W+8)
-    STA [player_x],AL
+    MOV [player_x],AL
     MOV AL,#5
-    STA [player_y],AL
+    MOV [player_y],AL
     RET
 pps_e:
     CMP AL,#DIR_E
     JMPNZ pps_s
     MOV AL,#(MAZE_COLS*CELL_W-PLAYER_W-5)
-    STA [player_x],AL
+    MOV [player_x],AL
     MOV AL,#(1*CELL_H+7)
-    STA [player_y],AL
+    MOV [player_y],AL
     RET
 pps_s:
     CMP AL,#DIR_S
     JMPNZ pps_w
     MOV AL,#(3*CELL_W+8)
-    STA [player_x],AL
+    MOV [player_x],AL
     MOV AL,#(MAZE_ROWS*CELL_H-PLAYER_H-5)
-    STA [player_y],AL
+    MOV [player_y],AL
     RET
 pps_w:
     MOV AL,#5
-    STA [player_x],AL
+    MOV [player_x],AL
     MOV AL,#(1*CELL_H+7)
-    STA [player_y],AL
+    MOV [player_y],AL
     RET
 
 ; --- open_dir: pone a 1 (abierto) el bit de direccion [od_dir] en
 ; cell_walls[[od_cell]] -- usado por new_room para forzar el hueco de
 ; entrada/salida en el borde de la pantalla.
 open_dir:
-    LDA CL,[od_dir]
+    MOV CL,[od_dir]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
+    MOV AL,[BX]
+    MOV [tmp1],AL
 
-    LDA CL,[od_cell]
+    MOV CL,[od_cell]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[tmp1]
+    MOV AL,[BX]
+    MOV DL,[tmp1]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- room_off: entra BX ya cargado con la base de un array de NCELLS(18)
@@ -1496,26 +1496,26 @@ open_dir:
 ; en vez del dato real).
 room_off:
     MOV AL,BL
-    STA [ro_lo],AL
+    MOV [ro_lo],AL
     MOV AL,BH
-    STA [ro_hi],AL
+    MOV [ro_hi],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#ROOM_OFF_LO
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ro_off],AL
-    LDA CL,[room_num]
+    MOV AL,[BX]
+    MOV [ro_off],AL
+    MOV CL,[room_num]
     MOV BX,#ROOM_OFF_HI
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ro_offhi],AL
+    MOV AL,[BX]
+    MOV [ro_offhi],AL
 
-    LDA BL,[ro_lo]
-    LDA BH,[ro_hi]
-    LDA AL,[ro_off]
+    MOV BL,[ro_lo]
+    MOV BH,[ro_hi]
+    MOV AL,[ro_off]
     ADD BX,AL
-    LDA AL,[ro_offhi]
+    MOV AL,[ro_offhi]
     ADD BH,AL
     RET
 
@@ -1526,144 +1526,144 @@ room_off:
 ; escribe directamente donde hace falta (cross_room_gap/gen_and_save).
 save_room_state:
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 srs_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
+    MOV AL,[BX]
+    MOV [tmp1],AL
     MOV BX,#persist_walls
     CALL room_off
-    LDA CL,[i]
+    MOV CL,[i]
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
+    MOV AL,[tmp1]
+    MOV [BX],AL
 
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#door_bits
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
+    MOV AL,[BX]
+    MOV [tmp1],AL
     MOV BX,#persist_doors
     CALL room_off
-    LDA CL,[i]
+    MOV CL,[i]
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
+    MOV AL,[tmp1]
+    MOV [BX],AL
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NCELLS
     JMPNZ srs_l
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_key_taken
     ADD BX,CL
-    LDA AL,[key_taken]
-    STA [BX],AL
+    MOV AL,[key_taken]
+    MOV [BX],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_key_cell
     ADD BX,CL
-    LDA AL,[key_cell]
-    STA [BX],AL
+    MOV AL,[key_cell]
+    MOV [BX],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_door_cell
     ADD BX,CL
-    LDA AL,[door_cell]
-    STA [BX],AL
+    MOV AL,[door_cell]
+    MOV [BX],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_door_dir
     ADD BX,CL
-    LDA AL,[door_dir]
-    STA [BX],AL
+    MOV AL,[door_dir]
+    MOV [BX],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_heart_taken
     ADD BX,CL
-    LDA AL,[heart_taken]
-    STA [BX],AL
+    MOV AL,[heart_taken]
+    MOV [BX],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_heart_cell
     ADD BX,CL
-    LDA AL,[heart_cell]
-    STA [BX],AL
+    MOV AL,[heart_cell]
+    MOV [BX],AL
     RET
 
 restore_room_state:
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 rrs_l:
     MOV BX,#persist_walls
     CALL room_off
-    LDA CL,[i]
+    MOV CL,[i]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[i]
+    MOV AL,[BX]
+    MOV [tmp1],AL
+    MOV CL,[i]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
+    MOV AL,[tmp1]
+    MOV [BX],AL
 
     MOV BX,#persist_doors
     CALL room_off
-    LDA CL,[i]
+    MOV CL,[i]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[i]
+    MOV AL,[BX]
+    MOV [tmp1],AL
+    MOV CL,[i]
     MOV BX,#door_bits
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
+    MOV AL,[tmp1]
+    MOV [BX],AL
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NCELLS
     JMPNZ rrs_l
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_key_taken
     ADD BX,CL
-    LDA AL,[BX]
-    STA [key_taken],AL
+    MOV AL,[BX]
+    MOV [key_taken],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_key_cell
     ADD BX,CL
-    LDA AL,[BX]
-    STA [key_cell],AL
+    MOV AL,[BX]
+    MOV [key_cell],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_door_cell
     ADD BX,CL
-    LDA AL,[BX]
-    STA [door_cell],AL
+    MOV AL,[BX]
+    MOV [door_cell],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_door_dir
     ADD BX,CL
-    LDA AL,[BX]
-    STA [door_dir],AL
+    MOV AL,[BX]
+    MOV [door_dir],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_heart_taken
     ADD BX,CL
-    LDA AL,[BX]
-    STA [heart_taken],AL
+    MOV AL,[BX]
+    MOV [heart_taken],AL
 
-    LDA CL,[room_num]
+    MOV CL,[room_num]
     MOV BX,#persist_heart_cell
     ADD BX,CL
-    LDA AL,[BX]
-    STA [heart_cell],AL
+    MOV AL,[BX]
+    MOV [heart_cell],AL
     RET
 
 ; ============================================================================
@@ -1680,166 +1680,166 @@ rrs_l:
 ; ============================================================================
 gen_maze:
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 gm_clr_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#cell_walls
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
-    LDA CL,[i]
+    MOV [BX],AL
+    MOV CL,[i]
     MOV BX,#visited
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
-    LDA CL,[i]
+    MOV [BX],AL
+    MOV CL,[i]
     MOV BX,#door_bits
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
-    LDA AL,[i]
+    MOV [BX],AL
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NCELLS
     JMPNZ gm_clr_l
 
-    LDA CL,[entry_row]
+    MOV CL,[entry_row]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[entry_col]
+    MOV AL,[BX]
+    MOV BL,[entry_col]
     ADD AL,BL
-    STA [cur_cell],AL
-    LDA CL,[cur_cell]
+    MOV [cur_cell],AL
+    MOV CL,[cur_cell]
     MOV BX,#visited
     ADD BX,CL
     MOV AL,#1
-    STA [BX],AL
+    MOV [BX],AL
     MOV AL,#0
-    STA [stack_depth],AL
+    MOV [stack_depth],AL
 
 gm_loop:
-    LDA CL,[cur_cell]
+    MOV CL,[cur_cell]
     MOV BX,#CELL_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_row],AL
-    LDA CL,[cur_cell]
+    MOV AL,[BX]
+    MOV [cur_row],AL
+    MOV CL,[cur_cell]
     MOV BX,#CELL_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_col],AL
+    MOV AL,[BX]
+    MOV [cur_col],AL
 
     CALL rnd
     AND AL,#3
-    STA [start_dir],AL
+    MOV [start_dir],AL
     MOV AL,#0
-    STA [k],AL
+    MOV [k],AL
     MOV AL,#0
-    STA [found],AL
+    MOV [found],AL
 
 gm_scan_l:
-    LDA AL,[start_dir]
-    LDA BL,[k]
+    MOV AL,[start_dir]
+    MOV BL,[k]
     ADD AL,BL
     AND AL,#3
-    STA [d],AL
+    MOV [d],AL
 
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#DR_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cur_row]
+    MOV AL,[BX]
+    MOV BL,[cur_row]
     ADD AL,BL
-    STA [mz_row],AL
+    MOV [mz_row],AL
 
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#DC_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cur_col]
+    MOV AL,[BX]
+    MOV BL,[cur_col]
     ADD AL,BL
-    STA [mz_col],AL
+    MOV [mz_col],AL
 
-    LDA AL,[mz_row]
+    MOV AL,[mz_row]
     CMP AL,#MAZE_ROWS
     JMPNC gm_scan_next
-    LDA AL,[mz_col]
+    MOV AL,[mz_col]
     CMP AL,#MAZE_COLS
     JMPNC gm_scan_next
 
-    LDA CL,[mz_row]
+    MOV CL,[mz_row]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[mz_col]
+    MOV AL,[BX]
+    MOV BL,[mz_col]
     ADD AL,BL
-    STA [try_cell],AL
+    MOV [try_cell],AL
 
-    LDA CL,[try_cell]
+    MOV CL,[try_cell]
     MOV BX,#visited
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPNZ gm_scan_next
 
     ; abre cur->d y try->opuesta(d)
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[cur_cell]
+    MOV AL,[BX]
+    MOV [tmp1],AL
+    MOV CL,[cur_cell]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[tmp1]
+    MOV AL,[BX]
+    MOV DL,[tmp1]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#OPP_OF_DIR
     ADD BX,CL
-    LDA CL,[BX]
+    MOV CL,[BX]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[try_cell]
+    MOV AL,[BX]
+    MOV [tmp1],AL
+    MOV CL,[try_cell]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[tmp1]
+    MOV AL,[BX]
+    MOV DL,[tmp1]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA CL,[try_cell]
+    MOV CL,[try_cell]
     MOV BX,#visited
     ADD BX,CL
     MOV AL,#1
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA AL,[cur_cell]
+    MOV AL,[cur_cell]
     PUSH AL
-    LDA AL,[stack_depth]
+    MOV AL,[stack_depth]
     ADD AL,#1
-    STA [stack_depth],AL
-    LDA AL,[try_cell]
-    STA [cur_cell],AL
+    MOV [stack_depth],AL
+    MOV AL,[try_cell]
+    MOV [cur_cell],AL
 
     MOV AL,#1
-    STA [found],AL
+    MOV [found],AL
     JMP gm_after_scan
 
 gm_scan_next:
-    LDA AL,[k]
+    MOV AL,[k]
     ADD AL,#1
-    STA [k],AL
+    MOV [k],AL
     CMP AL,#4
     JMPNZ gm_scan_l
 
 gm_after_scan:
-    LDA AL,[found]
+    MOV AL,[found]
     CMP AL,#0
     JMPNZ gm_loop
 
@@ -1848,14 +1848,14 @@ gm_after_scan:
     ; antes del RET, porque estos PUSH comparten la misma pila que usan
     ; CALL/RET; terminar con alguno sin sacar dejaria un byte de mas ahi
     ; y el siguiente RET saltaria a basura en vez de volver bien.
-    LDA AL,[stack_depth]
+    MOV AL,[stack_depth]
     CMP AL,#0
     JMPZ gm_done
     POP AL
-    STA [cur_cell],AL
-    LDA AL,[stack_depth]
+    MOV [cur_cell],AL
+    MOV AL,[stack_depth]
     SUB AL,#1
-    STA [stack_depth],AL
+    MOV [stack_depth],AL
     JMP gm_loop
 
 gm_done:
@@ -1871,34 +1871,34 @@ gm_done:
 draw_maze:
     CALL clr_walls
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 dm_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#CELL_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_row],AL
-    LDA CL,[i]
+    MOV AL,[BX]
+    MOV [cur_row],AL
+    MOV CL,[i]
     MOV BX,#CELL_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_col],AL
+    MOV AL,[BX]
+    MOV [cur_col],AL
 
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cwv],AL
-    LDA CL,[i]
+    MOV AL,[BX]
+    MOV [cwv],AL
+    MOV CL,[i]
     MOV BX,#door_bits
     ADD BX,CL
-    LDA AL,[BX]
-    STA [dbv],AL
+    MOV AL,[BX]
+    MOV [dbv],AL
 
-    LDA AL,[cwv]
+    MOV AL,[cwv]
     AND AL,#1               ; bit0 = N
     JMPNZ dm_skip_n
-    LDA AL,[dbv]
+    MOV AL,[dbv]
     AND AL,#1
     JMPZ dm_n_wall
     CALL wall_hline_top_door
@@ -1906,10 +1906,10 @@ dm_l:
 dm_n_wall:
     CALL wall_hline_top
 dm_skip_n:
-    LDA AL,[cwv]
+    MOV AL,[cwv]
     AND AL,#8               ; bit3 = O
     JMPNZ dm_skip_w
-    LDA AL,[dbv]
+    MOV AL,[dbv]
     AND AL,#8
     JMPZ dm_w_wall
     CALL wall_vline_left_door
@@ -1918,34 +1918,34 @@ dm_w_wall:
     CALL wall_vline_left
 dm_skip_w:
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NCELLS
     JMPNZ dm_l
 
     MOV AL,#0
-    STA [cur_col],AL
+    MOV [cur_col],AL
 dm_s_l:
     MOV AL,#(MAZE_ROWS-1)
-    STA [cur_row],AL
-    LDA CL,[cur_row]
+    MOV [cur_row],AL
+    MOV CL,[cur_row]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cur_col]
+    MOV AL,[BX]
+    MOV BL,[cur_col]
     ADD AL,BL
-    STA [i],AL
-    LDA CL,[i]
+    MOV [i],AL
+    MOV CL,[i]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     AND AL,#4               ; bit2 = S
     JMPNZ dm_s_skip
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#door_bits
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     AND AL,#4
     JMPZ dm_s_wall
     CALL wall_hline_bottom_door
@@ -1953,34 +1953,34 @@ dm_s_l:
 dm_s_wall:
     CALL wall_hline_bottom
 dm_s_skip:
-    LDA AL,[cur_col]
+    MOV AL,[cur_col]
     ADD AL,#1
-    STA [cur_col],AL
+    MOV [cur_col],AL
     CMP AL,#MAZE_COLS
     JMPNZ dm_s_l
 
     MOV AL,#0
-    STA [cur_row],AL
+    MOV [cur_row],AL
 dm_e_l:
     MOV AL,#(MAZE_COLS-1)
-    STA [cur_col],AL
-    LDA CL,[cur_row]
+    MOV [cur_col],AL
+    MOV CL,[cur_row]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cur_col]
+    MOV AL,[BX]
+    MOV BL,[cur_col]
     ADD AL,BL
-    STA [i],AL
-    LDA CL,[i]
+    MOV [i],AL
+    MOV CL,[i]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     AND AL,#2               ; bit1 = E
     JMPNZ dm_e_skip
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#door_bits
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     AND AL,#2
     JMPZ dm_e_wall
     CALL wall_vline_right_door
@@ -1988,9 +1988,9 @@ dm_e_l:
 dm_e_wall:
     CALL wall_vline_right
 dm_e_skip:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     ADD AL,#1
-    STA [cur_row],AL
+    MOV [cur_row],AL
     CMP AL,#MAZE_ROWS
     JMPNZ dm_e_l
     RET
@@ -1999,115 +1999,115 @@ dm_e_skip:
 ; pared, usando (cur_row,cur_col) como celda -- dos trazos de 1 px, 2 px de
 ; distancia (0 y 2 desde el borde exterior de la celda).
 wall_hline_top:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 whl_top_l:
-    LDA AL,[wx0]
-    LDA BL,[wk]
+    MOV AL,[wx0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[wy0]
-    STA [px_y],AL
+    MOV [px_x],AL
+    MOV AL,[wy0]
+    MOV [px_y],AL
     CALL walls_set_px
-    LDA AL,[wy0]
+    MOV AL,[wy0]
     ADD AL,#2
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_W
     JMPNZ whl_top_l
     RET
 
 wall_hline_bottom:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 whl_bot_l:
-    LDA AL,[wx0]
-    LDA BL,[wk]
+    MOV AL,[wx0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[wy0]
+    MOV [px_x],AL
+    MOV AL,[wy0]
     ADD AL,#(CELL_H-1)
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL walls_set_px
-    LDA AL,[wy0]
+    MOV AL,[wy0]
     ADD AL,#(CELL_H-3)
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_W
     JMPNZ whl_bot_l
     RET
 
 wall_vline_left:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 wvl_left_l:
-    LDA AL,[wy0]
-    LDA BL,[wk]
+    MOV AL,[wy0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_y],AL
-    LDA AL,[wx0]
-    STA [px_x],AL
+    MOV [px_y],AL
+    MOV AL,[wx0]
+    MOV [px_x],AL
     CALL walls_set_px
-    LDA AL,[wx0]
+    MOV AL,[wx0]
     ADD AL,#2
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_H
     JMPNZ wvl_left_l
     RET
 
 wall_vline_right:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 wvl_right_l:
-    LDA AL,[wy0]
-    LDA BL,[wk]
+    MOV AL,[wy0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_y],AL
-    LDA AL,[wx0]
+    MOV [px_y],AL
+    MOV AL,[wx0]
     ADD AL,#(CELL_W-1)
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL walls_set_px
-    LDA AL,[wx0]
+    MOV AL,[wx0]
     ADD AL,#(CELL_W-3)
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_H
     JMPNZ wvl_right_l
     RET
@@ -2116,99 +2116,99 @@ wvl_right_l:
 ; anteriores, para la puerta con llave de la sala (siempre en un borde
 ; exterior, nunca interior -- por eso hacen falta las 4, no solo top/left).
 wall_hline_top_door:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 whtd_l:
-    LDA AL,[wx0]
-    LDA BL,[wk]
+    MOV AL,[wx0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[wy0]
-    STA [px_y],AL
+    MOV [px_x],AL
+    MOV AL,[wy0]
+    MOV [px_y],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_W
     JMPNZ whtd_l
     RET
 
 wall_hline_bottom_door:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 whbd_l:
-    LDA AL,[wx0]
-    LDA BL,[wk]
+    MOV AL,[wx0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[wy0]
+    MOV [px_x],AL
+    MOV AL,[wy0]
     ADD AL,#(CELL_H-1)
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_W
     JMPNZ whbd_l
     RET
 
 wall_vline_left_door:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 wvld_l:
-    LDA AL,[wy0]
-    LDA BL,[wk]
+    MOV AL,[wy0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_y],AL
-    LDA AL,[wx0]
-    STA [px_x],AL
+    MOV [px_y],AL
+    MOV AL,[wx0]
+    MOV [px_x],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_H
     JMPNZ wvld_l
     RET
 
 wall_vline_right_door:
-    LDA AL,[cur_row]
+    MOV AL,[cur_row]
     CALL row_to_px
-    STA [wy0],AL
-    LDA AL,[cur_col]
+    MOV [wy0],AL
+    MOV AL,[cur_col]
     CALL col_to_px
-    STA [wx0],AL
+    MOV [wx0],AL
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 wvrd_l:
-    LDA AL,[wy0]
-    LDA BL,[wk]
+    MOV AL,[wy0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_y],AL
-    LDA AL,[wx0]
+    MOV [px_y],AL
+    MOV AL,[wx0]
     ADD AL,#(CELL_W-1)
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL walls_set_px
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#CELL_H
     JMPNZ wvrd_l
     RET
@@ -2218,22 +2218,22 @@ wvrd_l:
 ; ============================================================================
 update_player:
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_pos_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_pos_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dir_pos_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_pos_prev],CL
     CALL clamp_delta
-    STA [dy],AL
+    MOV [dy],AL
 
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_pos_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_pos_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_pos_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_pos_prev],CL
     CALL clamp_delta
-    STA [pdx],AL
+    MOV [pdx],AL
 
     ; animacion de andar: alterna que pie queda levantado (1px) mientras se
     ; mueve por cualquiera de los dos ejes; parado, los dos pies vuelven a
@@ -2245,41 +2245,41 @@ update_player:
     ; nuevo la dejaba practicamente invisible. walk_idle cuenta fotogramas
     ; SEGUIDOS sin ningun detente; solo se resetea a quieto tras
     ; WALK_IDLE_FRAMES de esos, no al primero.
-    LDA AL,[pdx]
+    MOV AL,[pdx]
     CMP AL,#0
     JMPNZ uwa_moving
-    LDA AL,[dy]
+    MOV AL,[dy]
     CMP AL,#0
     JMPNZ uwa_moving
 
-    LDA AL,[walk_idle]
+    MOV AL,[walk_idle]
     ADD AL,#1
-    STA [walk_idle],AL
+    MOV [walk_idle],AL
     CMP AL,#WALK_IDLE_FRAMES
     JMPC uwa_done            ; todavia no lleva bastante quieto
     MOV AL,#0
-    STA [walk_phase],AL
-    STA [walk_timer],AL
+    MOV [walk_phase],AL
+    MOV [walk_timer],AL
     JMP uwa_done
 uwa_moving:
     MOV AL,#0
-    STA [walk_idle],AL
-    LDA AL,[walk_timer]
+    MOV [walk_idle],AL
+    MOV AL,[walk_timer]
     ADD AL,#1
-    STA [walk_timer],AL
+    MOV [walk_timer],AL
     CMP AL,#WALK_ANIM_FRAMES
     JMPC uwa_done            ; todavia no toca cambiar de pie
     MOV AL,#0
-    STA [walk_timer],AL
-    LDA AL,[walk_phase]
+    MOV [walk_timer],AL
+    MOV AL,[walk_phase]
     CMP AL,#1
     JMPZ uwa_right
     MOV AL,#1
-    STA [walk_phase],AL
+    MOV [walk_phase],AL
     JMP uwa_done
 uwa_right:
     MOV AL,#2
-    STA [walk_phase],AL
+    MOV [walk_phase],AL
 uwa_done:
 
     ; direccion de cara (para apuntar al disparar, ver update_fire) -- SOLO
@@ -2290,37 +2290,37 @@ uwa_done:
     ; procesarse despues (sencillo, y en la practica rara vez se giran los
     ; dos encoders exactamente en el mismo fotograma). El resto del tiempo
     ; se queda con la ultima conocida, para poder disparar quieto.
-    LDA AL,[pdx]
+    MOV AL,[pdx]
     CMP AL,#0
     JMPZ upd_facex_done
     AND AL,#0x80
     JMPZ upd_facex_pos
     MOV AL,#DIR_W
-    STA [last_fire_dir],AL
+    MOV [last_fire_dir],AL
     JMP upd_facex_done
 upd_facex_pos:
     MOV AL,#DIR_E
-    STA [last_fire_dir],AL
+    MOV [last_fire_dir],AL
 upd_facex_done:
 
-    LDA AL,[dy]
+    MOV AL,[dy]
     CMP AL,#0
     JMPZ upd_facey_done
     AND AL,#0x80
     JMPZ upd_facey_pos
     MOV AL,#DIR_N
-    STA [last_fire_dir],AL
+    MOV [last_fire_dir],AL
     JMP upd_facey_done
 upd_facey_pos:
     MOV AL,#DIR_S
-    STA [last_fire_dir],AL
+    MOV [last_fire_dir],AL
 upd_facey_done:
 
     ; --- eje X ---
-    LDA AL,[player_x]
-    LDA BL,[pdx]
+    MOV AL,[player_x]
+    MOV BL,[pdx]
     ADD AL,BL
-    STA [try_x],AL
+    MOV [try_x],AL
 
     ; ¿hay cruce de hueco de verdad? ESTE (pdx>=0) nunca necesita cuidado
     ; especial: 127+3 cabe de sobra en un byte, try_x nunca "envuelve", asi
@@ -2336,27 +2336,27 @@ upd_facey_done:
     ; SUR momentos antes) se trataba como si hubiera cruzado un hueco que
     ; no estaba ahi, matando al jugador contra el interior normal de la
     ; sala.
-    LDA AL,[pdx]
+    MOV AL,[pdx]
     AND AL,#0x80
     JMPZ upx_east_chk2        ; pdx>=0 (ESTE): nunca hay envoltura real
 
-    LDA AL,[pdx]
+    MOV AL,[pdx]
     NOT AL
     ADD AL,#1                  ; AL = |pdx|
-    LDA BL,[player_x]
+    MOV BL,[player_x]
     CMP BL,AL                  ; player_x - |pdx|
     JMPC upx_oob                ; hubo prestamo (player_x < |pdx|) -> cruce real
     JMP upx_normal               ; si no, es solo movimiento normal
 
 upx_east_chk2:
-    LDA AL,[try_x]
+    MOV AL,[try_x]
     CMP AL,#128
     JMPNC upx_oob
 upx_normal:
-    LDA AL,[try_x]
-    STA [test_x],AL
-    LDA AL,[player_y]
-    STA [test_y],AL
+    MOV AL,[try_x]
+    MOV [test_x],AL
+    MOV AL,[player_y]
+    MOV [test_y],AL
     CALL player_fits
     CMP AL,#0
     JMPZ upx_move
@@ -2367,8 +2367,8 @@ upx_normal:
     CALL on_player_hit
     RET                     ; la posicion ya cambio (respawn), no seguir
 upx_move:
-    LDA AL,[try_x]
-    STA [player_x],AL
+    MOV AL,[try_x]
+    MOV [player_x],AL
     JMP upx_done
 upx_oob:
     ; Los CUATRO lados se validan aqui igual, con un ULTIMO player_fits en
@@ -2382,21 +2382,21 @@ upx_oob:
     ; validar exactamente esa fila/columna extrema si el siguiente empujon
     ; salta directo a OOB), asi que se comprueba aqui tambien, sin excepcion,
     ; en vez de asumirlo.
-    LDA AL,[pdx]
+    MOV AL,[pdx]
     AND AL,#0x80
     JMPZ upx_east_chk
 
     ; OESTE: try_x envolvio (queria ir a negativo) -- columna extrema real: 0
     MOV AL,#0
-    STA [test_x],AL
+    MOV [test_x],AL
     JMP upx_edge_common
 upx_east_chk:
     ; ESTE: columna extrema real: 127
     MOV AL,#127
-    STA [test_x],AL
+    MOV [test_x],AL
 upx_edge_common:
-    LDA AL,[player_y]
-    STA [test_y],AL
+    MOV AL,[player_y]
+    MOV [test_y],AL
     CALL player_fits
     CMP AL,#0
     JMPZ upx_edge_ok
@@ -2407,7 +2407,7 @@ upx_edge_common:
     CALL on_player_hit
     RET                       ; la posicion ya cambio (respawn), no seguir
 upx_edge_ok:
-    LDA AL,[pdx]
+    MOV AL,[pdx]
     AND AL,#0x80
     JMPZ upx_east
     MOV AL,#DIR_W
@@ -2415,11 +2415,11 @@ upx_edge_ok:
 upx_east:
     MOV AL,#DIR_E
 upx_trigger:
-    STA [exit_dir_taken],AL
+    MOV [exit_dir_taken],AL
     MOV AL,#1
-    STA [room_transition_pending],AL
+    MOV [room_transition_pending],AL
 upx_done:
-    LDA AL,[room_transition_pending]
+    MOV AL,[room_transition_pending]
     CMP AL,#0
     JMPNZ up_ret            ; ya se cruzo un hueco -- no hace falta seguir
 
@@ -2427,32 +2427,32 @@ upx_done:
     ; nota: SUR nunca envuelve, umbral fijo 64 sobre try_y; NORTE solo
     ; cruza de verdad si |dy| > player_y, nunca por un try_y que "parezca"
     ; alto por coincidencia)
-    LDA AL,[player_y]
-    LDA BL,[dy]
+    MOV AL,[player_y]
+    MOV BL,[dy]
     ADD AL,BL
-    STA [try_y],AL
+    MOV [try_y],AL
 
-    LDA AL,[dy]
+    MOV AL,[dy]
     AND AL,#0x80
     JMPZ upy_south_chk2       ; dy>=0 (SUR): nunca hay envoltura real
 
-    LDA AL,[dy]
+    MOV AL,[dy]
     NOT AL
     ADD AL,#1                  ; AL = |dy|
-    LDA BL,[player_y]
+    MOV BL,[player_y]
     CMP BL,AL                  ; player_y - |dy|
     JMPC upy_oob                ; hubo prestamo (player_y < |dy|) -> cruce real
     JMP upy_normal                ; si no, es solo movimiento normal
 
 upy_south_chk2:
-    LDA AL,[try_y]
+    MOV AL,[try_y]
     CMP AL,#64
     JMPNC upy_oob
 upy_normal:
-    LDA AL,[player_x]
-    STA [test_x],AL
-    LDA AL,[try_y]
-    STA [test_y],AL
+    MOV AL,[player_x]
+    MOV [test_x],AL
+    MOV AL,[try_y]
+    MOV [test_y],AL
     CALL player_fits
     CMP AL,#0
     JMPZ upy_move
@@ -2463,28 +2463,28 @@ upy_normal:
     CALL on_player_hit
     RET
 upy_move:
-    LDA AL,[try_y]
-    STA [player_y],AL
+    MOV AL,[try_y]
+    MOV [player_y],AL
     JMP up_ret
 upy_oob:
     ; mismo refuerzo simetrico que upx_oob: SIEMPRE un ultimo player_fits en
     ; la fila extrema real (0 o 63) antes de cruzar, tambien para SUR (antes
     ; solo NORTE lo hacia) -- ver la nota de upx_oob.
-    LDA AL,[dy]
+    MOV AL,[dy]
     AND AL,#0x80
     JMPZ upy_south_chk
 
     ; NORTE: fila extrema real: 0
     MOV AL,#0
-    STA [test_y],AL
+    MOV [test_y],AL
     JMP upy_edge_common
 upy_south_chk:
     ; SUR: fila extrema real: 63
     MOV AL,#63
-    STA [test_y],AL
+    MOV [test_y],AL
 upy_edge_common:
-    LDA AL,[player_x]
-    STA [test_x],AL
+    MOV AL,[player_x]
+    MOV [test_x],AL
     CALL player_fits
     CMP AL,#0
     JMPZ upy_edge_ok
@@ -2495,7 +2495,7 @@ upy_edge_common:
     CALL on_player_hit
     RET
 upy_edge_ok:
-    LDA AL,[dy]
+    MOV AL,[dy]
     AND AL,#0x80
     JMPZ upy_south
     MOV AL,#DIR_N
@@ -2503,9 +2503,9 @@ upy_edge_ok:
 upy_south:
     MOV AL,#DIR_S
 upy_trigger:
-    STA [exit_dir_taken],AL
+    MOV [exit_dir_taken],AL
     MOV AL,#1
-    STA [room_transition_pending],AL
+    MOV [room_transition_pending],AL
 up_ret:
     RET
 
@@ -2513,25 +2513,25 @@ up_ret:
 ; del jugador, para que nunca pueda saltarse una pared de un solo fotograma
 ; (el trazo mas fino de pared mide 1 px, pero conviene margen de sobra).
 clamp_delta:
-    STA [tmp1],AL
+    MOV [tmp1],AL
     AND AL,#0x80
     JMPZ cd_pos
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     ADD AL,#3
     JMPN cd_neg_clamp
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     RET
 cd_neg_clamp:
     MOV AL,#0xFD
     RET
 cd_pos:
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     CMP AL,#4
     JMPC cd_ok
     MOV AL,#3
     RET
 cd_ok:
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     RET
 
 ; --- update_fire: DATOS o DIRECCION pulsados (flanco 0->1, igual patron
@@ -2540,115 +2540,115 @@ cd_ok:
 ; los enemigos tiradores -- si hay un hueco libre en shot_active[MAX_SHOTS].
 update_fire:
     MOV AL,#0
-    STA [tmp3],AL            ; ¿algun boton con flanco nuevo este fotograma?
+    MOV [tmp3],AL            ; ¿algun boton con flanco nuevo este fotograma?
 
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ uf_chk_dir
     CMP BL,#0
     JMPNZ uf_chk_dir         ; ya estaba pulsado -- no es un flanco nuevo
     MOV AL,#1
-    STA [tmp3],AL
+    MOV [tmp3],AL
 
 uf_chk_dir:
     IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
+    MOV BL,[dir_btn_prev]
+    MOV [dir_btn_prev],AL
     CMP AL,#0
     JMPZ uf_check_go
     CMP BL,#0
     JMPNZ uf_check_go
     MOV AL,#1
-    STA [tmp3],AL
+    MOV [tmp3],AL
 
 uf_check_go:
-    LDA AL,[tmp3]
+    MOV AL,[tmp3]
     CMP AL,#0
     JMPZ uf_ret
 
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 uf_find_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ uf_fire
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_SHOTS
     JMPNZ uf_find_l
     JMP uf_ret              ; sin hueco libre -- no dispara
 
 uf_fire:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_active
     ADD BX,CL
     MOV AL,#1
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_x
     ADD BX,CL
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#(PLAYER_W/2)
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_y
     ADD BX,CL
-    LDA AL,[player_y]
+    MOV AL,[player_y]
     ADD AL,#(PLAYER_H/2)
-    STA [BX],AL
+    MOV [BX],AL
 
     ; velocidad del disparo: SOLO una de las 4 cardinales (nunca diagonal
     ; -- misma regla que los enemigos tiradores) segun [last_fire_dir]
-    LDA AL,[last_fire_dir]
+    MOV AL,[last_fire_dir]
     CMP AL,#DIR_N
     JMPNZ uf_dir_e
     MOV AL,#0
-    STA [tmp1],AL
+    MOV [tmp1],AL
     MOV AL,#(0-SHOT_SPEED)
-    STA [tmp2],AL
+    MOV [tmp2],AL
     JMP uf_dir_done
 uf_dir_e:
     CMP AL,#DIR_E
     JMPNZ uf_dir_s
     MOV AL,#SHOT_SPEED
-    STA [tmp1],AL
+    MOV [tmp1],AL
     MOV AL,#0
-    STA [tmp2],AL
+    MOV [tmp2],AL
     JMP uf_dir_done
 uf_dir_s:
     CMP AL,#DIR_S
     JMPNZ uf_dir_w
     MOV AL,#0
-    STA [tmp1],AL
+    MOV [tmp1],AL
     MOV AL,#SHOT_SPEED
-    STA [tmp2],AL
+    MOV [tmp2],AL
     JMP uf_dir_done
 uf_dir_w:
     MOV AL,#(0-SHOT_SPEED)
-    STA [tmp1],AL
+    MOV [tmp1],AL
     MOV AL,#0
-    STA [tmp2],AL
+    MOV [tmp2],AL
 uf_dir_done:
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_vx
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
+    MOV AL,[tmp1]
+    MOV [BX],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_vy
     ADD BX,CL
-    LDA AL,[tmp2]
-    STA [BX],AL
+    MOV AL,[tmp2]
+    MOV [BX],AL
 
     ; P_SND_DUR antes que P_SND_NOTE: al reves, el disparo sonaria con la
     ; duracion que quedara armada de antes (p.ej. de la melodia del titulo)
@@ -2665,128 +2665,128 @@ uf_ret:
 ; (mismo AABB que check_collisions), lo mata, puntua y toca el jingle.
 update_shots:
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 us_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ us_next
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ex],AL
-    LDA CL,[e]
+    MOV AL,[BX]
+    MOV [ex],AL
+    MOV CL,[e]
     MOV BX,#shot_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ey],AL
+    MOV AL,[BX]
+    MOV [ey],AL
 
     ; barre el recorrido px a px (paso unitario segun el signo de vx/vy) en
     ; vez de saltar los SHOT_SPEED(2) de un salto y probar solo el destino
     ; -- si no, el disparo puede saltar por encima de una pared o puerta de
     ; 1-2px sin llegar a tocarla nunca (mismo fallo que tenia player_fits).
     ; [ex]/[ey] ya valen shot_x/shot_y (la posicion ANTES de moverse).
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_vx
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL sign_of
-    STA [stepx],AL
+    MOV [stepx],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_vy
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL sign_of
-    STA [stepy],AL
+    MOV [stepy],AL
 
     MOV AL,#0
-    STA [k],AL
+    MOV [k],AL
 us_sweep_l:
-    LDA AL,[ex]
-    LDA BL,[stepx]
+    MOV AL,[ex]
+    MOV BL,[stepx]
     ADD AL,BL
-    STA [ex],AL
-    LDA AL,[ey]
-    LDA BL,[stepy]
+    MOV [ex],AL
+    MOV AL,[ey]
+    MOV BL,[stepy]
     ADD AL,BL
-    STA [ey],AL
+    MOV [ey],AL
 
-    LDA AL,[ex]
+    MOV AL,[ex]
     CMP AL,#124
     JMPNC us_kill
-    LDA AL,[ey]
+    MOV AL,[ey]
     CMP AL,#60
     JMPNC us_kill
 
-    LDA AL,[ex]
-    STA [px_x],AL
-    LDA AL,[ey]
-    STA [px_y],AL
+    MOV AL,[ex]
+    MOV [px_x],AL
+    MOV AL,[ey]
+    MOV [px_y],AL
     CALL wall_test
     CMP AL,#0
     JMPNZ us_kill
 
-    LDA AL,[k]
+    MOV AL,[k]
     ADD AL,#1
-    STA [k],AL
+    MOV [k],AL
     CMP AL,#SHOT_SPEED
     JMPNZ us_sweep_l
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_x
     ADD BX,CL
-    LDA AL,[ex]
-    STA [BX],AL
-    LDA CL,[e]
+    MOV AL,[ex]
+    MOV [BX],AL
+    MOV CL,[e]
     MOV BX,#shot_y
     ADD BX,CL
-    LDA AL,[ey]
-    STA [BX],AL
+    MOV AL,[ey]
+    MOV [BX],AL
 
     MOV AL,#0
-    STA [j],AL
+    MOV [j],AL
 us_enemy_l:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#enemy_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ us_enemy_next
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SUB AL,#ENEMY_HALF
-    STA [tmp1],AL
-    LDA CL,[j]
+    MOV [tmp1],AL
+    MOV CL,[j]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SUB AL,#ENEMY_HALF
-    STA [tmp2],AL
+    MOV [tmp2],AL
 
-    LDA AL,[ex]
-    LDA BL,[tmp1]
+    MOV AL,[ex]
+    MOV BL,[tmp1]
     CMP AL,BL
     JMPC us_enemy_next
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     ADD AL,#ENEMY_W
-    LDA BL,[ex]
+    MOV BL,[ex]
     CMP BL,AL
     JMPNC us_enemy_next
-    LDA AL,[ey]
-    LDA BL,[tmp2]
+    MOV AL,[ey]
+    MOV BL,[tmp2]
     CMP AL,BL
     JMPC us_enemy_next
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     ADD AL,#ENEMY_H
-    LDA BL,[ey]
+    MOV BL,[ey]
     CMP BL,AL
     JMPNC us_enemy_next
 
@@ -2794,16 +2794,16 @@ us_enemy_l:
     ; morir del primero: si le queda vida, solo se apaga el disparo (pitido
     ; de impacto, sigue persiguiendo y disparando); al ultimo, pantalla de
     ; victoria en vez del jingle normal de siempre.
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#enemy_type
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#ENEMY_TYPE_BOSS
     JMPNZ us_normal_kill
 
-    LDA AL,[boss_hp]
+    MOV AL,[boss_hp]
     SUB AL,#1
-    STA [boss_hp],AL
+    MOV [boss_hp],AL
     CMP AL,#0
     JMPZ us_boss_dead
     MOV AL,#3                 ; DUR antes que NOTE (ver el aviso en update_fire)
@@ -2813,11 +2813,11 @@ us_enemy_l:
     JMP us_kill
 
 us_boss_dead:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#enemy_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
     MOV AL,#100
     CALL score_add
     CALL update_score_hud
@@ -2826,11 +2826,11 @@ us_boss_dead:
     RET
 
 us_normal_kill:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#enemy_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
 
     MOV AL,#25
     CALL score_add
@@ -2840,24 +2840,24 @@ us_normal_kill:
 
     JMP us_kill
 us_enemy_next:
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ us_enemy_l
     JMP us_next
 
 us_kill:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
 
 us_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_SHOTS
     JMPNZ us_l
     RET
@@ -2868,72 +2868,72 @@ us_next:
 ; celda dispara en esa direccion cardinal, con un tiempo de espera entre
 ; disparos (enemy_shot_cooldown) para que no ametralle.
 update_enemy_fire:
-    LDA AL,[enemy_shot_cooldown]
+    MOV AL,[enemy_shot_cooldown]
     CMP AL,#0
     JMPZ uef_ready
     SUB AL,#1
-    STA [enemy_shot_cooldown],AL
+    MOV [enemy_shot_cooldown],AL
     RET
 uef_ready:
-    LDA AL,[enemy_shot_active]
+    MOV AL,[enemy_shot_active]
     CMP AL,#0
     JMPNZ uef_ret
 
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#(PLAYER_W/2)
     CALL px_to_col
-    STA [pcol],AL
-    LDA AL,[player_y]
+    MOV [pcol],AL
+    MOV AL,[player_y]
     ADD AL,#(PLAYER_H/2)
     CALL px_to_row
-    STA [prow],AL
+    MOV [prow],AL
 
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 uef_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ uef_next
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_type
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ uef_next
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ex],AL
-    LDA CL,[e]
+    MOV AL,[BX]
+    MOV [ex],AL
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ey],AL
+    MOV AL,[BX]
+    MOV [ey],AL
 
-    LDA AL,[ex]
+    MOV AL,[ex]
     CALL px_to_col
-    STA [ecol],AL
-    LDA AL,[ey]
+    MOV [ecol],AL
+    MOV AL,[ey]
     CALL px_to_row
-    STA [erow],AL
+    MOV [erow],AL
 
-    LDA AL,[ecol]
-    LDA BL,[pcol]
+    MOV AL,[ecol]
+    MOV BL,[pcol]
     CMP AL,BL
     JMPZ uef_fire_col
-    LDA AL,[erow]
-    LDA BL,[prow]
+    MOV AL,[erow]
+    MOV BL,[prow]
     CMP AL,BL
     JMPNZ uef_next
 
     ; misma fila -- dispara horizontal
-    LDA AL,[player_x]
-    LDA BL,[ex]
+    MOV AL,[player_x]
+    MOV BL,[ex]
     CMP AL,BL
     JMPC uef_h_left
     MOV AL,#1
@@ -2942,15 +2942,15 @@ uef_h_left:
     MOV AL,#0xFF
 uef_h_sign:
     SHL AL,#1
-    STA [tmp1],AL
+    MOV [tmp1],AL
     MOV AL,#0
-    STA [tmp2],AL
+    MOV [tmp2],AL
     JMP uef_do_fire
 
 uef_fire_col:
     ; misma columna -- dispara vertical
-    LDA AL,[player_y]
-    LDA BL,[ey]
+    MOV AL,[player_y]
+    MOV BL,[ey]
     CMP AL,BL
     JMPC uef_v_up
     MOV AL,#1
@@ -2959,23 +2959,23 @@ uef_v_up:
     MOV AL,#0xFF
 uef_v_sign:
     SHL AL,#1
-    STA [tmp2],AL
+    MOV [tmp2],AL
     MOV AL,#0
-    STA [tmp1],AL
+    MOV [tmp1],AL
 
 uef_do_fire:
     MOV AL,#1
-    STA [enemy_shot_active],AL
-    LDA AL,[ex]
-    STA [enemy_shot_x],AL
-    LDA AL,[ey]
-    STA [enemy_shot_y],AL
-    LDA AL,[tmp1]
-    STA [enemy_shot_vx],AL
-    LDA AL,[tmp2]
-    STA [enemy_shot_vy],AL
+    MOV [enemy_shot_active],AL
+    MOV AL,[ex]
+    MOV [enemy_shot_x],AL
+    MOV AL,[ey]
+    MOV [enemy_shot_y],AL
+    MOV AL,[tmp1]
+    MOV [enemy_shot_vx],AL
+    MOV AL,[tmp2]
+    MOV [enemy_shot_vy],AL
     MOV AL,#60
-    STA [enemy_shot_cooldown],AL
+    MOV [enemy_shot_cooldown],AL
     ; P_SND_DUR antes que P_SND_NOTE (ver la nota en update_fire)
     MOV AL,#4
     OUT (P_SND_DUR),AL
@@ -2984,9 +2984,9 @@ uef_do_fire:
     RET
 
 uef_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ uef_l
 uef_ret:
@@ -2996,90 +2996,90 @@ uef_ret:
 ; sale de pantalla o choca con una pared; si alcanza al jugador, cuenta
 ; como golpe (on_player_hit) igual que tocar a un enemigo.
 update_enemy_shots:
-    LDA AL,[enemy_shot_active]
+    MOV AL,[enemy_shot_active]
     CMP AL,#0
     JMPZ ues_ret
 
     ; barre px a px, igual razon y mismo patron que update_shots (ver su
     ; comentario) -- si no, un disparo enemigo tambien puede saltar por
     ; encima de una pared o puerta sin tocarla.
-    LDA AL,[enemy_shot_x]
-    STA [ex],AL
-    LDA AL,[enemy_shot_y]
-    STA [ey],AL
+    MOV AL,[enemy_shot_x]
+    MOV [ex],AL
+    MOV AL,[enemy_shot_y]
+    MOV [ey],AL
 
-    LDA AL,[enemy_shot_vx]
+    MOV AL,[enemy_shot_vx]
     CALL sign_of
-    STA [stepx],AL
-    LDA AL,[enemy_shot_vy]
+    MOV [stepx],AL
+    MOV AL,[enemy_shot_vy]
     CALL sign_of
-    STA [stepy],AL
+    MOV [stepy],AL
 
     MOV AL,#0
-    STA [k],AL
+    MOV [k],AL
 ues_sweep_l:
-    LDA AL,[ex]
-    LDA BL,[stepx]
+    MOV AL,[ex]
+    MOV BL,[stepx]
     ADD AL,BL
-    STA [ex],AL
-    LDA AL,[ey]
-    LDA BL,[stepy]
+    MOV [ex],AL
+    MOV AL,[ey]
+    MOV BL,[stepy]
     ADD AL,BL
-    STA [ey],AL
+    MOV [ey],AL
 
-    LDA AL,[ex]
+    MOV AL,[ex]
     CMP AL,#124
     JMPNC ues_kill
-    LDA AL,[ey]
+    MOV AL,[ey]
     CMP AL,#60
     JMPNC ues_kill
 
-    LDA AL,[ex]
-    STA [px_x],AL
-    LDA AL,[ey]
-    STA [px_y],AL
+    MOV AL,[ex]
+    MOV [px_x],AL
+    MOV AL,[ey]
+    MOV [px_y],AL
     CALL wall_test
     CMP AL,#0
     JMPNZ ues_kill
 
-    LDA AL,[k]
+    MOV AL,[k]
     ADD AL,#1
-    STA [k],AL
+    MOV [k],AL
     CMP AL,#SHOT_SPEED
     JMPNZ ues_sweep_l
 
-    LDA AL,[ex]
-    STA [enemy_shot_x],AL
-    LDA AL,[ey]
-    STA [enemy_shot_y],AL
+    MOV AL,[ex]
+    MOV [enemy_shot_x],AL
+    MOV AL,[ey]
+    MOV [enemy_shot_y],AL
 
-    LDA AL,[ex]
-    LDA BL,[player_x]
+    MOV AL,[ex]
+    MOV BL,[player_x]
     CMP AL,BL
     JMPC ues_ret
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#PLAYER_W
-    LDA BL,[ex]
+    MOV BL,[ex]
     CMP BL,AL
     JMPNC ues_ret
-    LDA AL,[ey]
-    LDA BL,[player_y]
+    MOV AL,[ey]
+    MOV BL,[player_y]
     CMP AL,BL
     JMPC ues_ret
-    LDA AL,[player_y]
+    MOV AL,[player_y]
     ADD AL,#PLAYER_H
-    LDA BL,[ey]
+    MOV BL,[ey]
     CMP BL,AL
     JMPNC ues_ret
 
     MOV AL,#0
-    STA [enemy_shot_active],AL
+    MOV [enemy_shot_active],AL
     CALL on_player_hit
     RET
 
 ues_kill:
     MOV AL,#0
-    STA [enemy_shot_active],AL
+    MOV [enemy_shot_active],AL
 ues_ret:
     RET
 
@@ -3095,10 +3095,10 @@ ues_ret:
 ; normal) pero es el mismo riesgo para cualquier pared.
 player_fits:
     MOV AL,#0
-    STA [pfy],AL
+    MOV [pfy],AL
 pf_row:
-    LDA AL,[test_y]
-    LDA BL,[pfy]
+    MOV AL,[test_y]
+    MOV BL,[pfy]
     ADD AL,BL
     ; recorta a la ultima fila real (0-63): test_y puede pedirse por encima
     ; de eso a proposito (ver update_player, umbral de 64 a secas para el
@@ -3108,32 +3108,32 @@ pf_row:
     JMPC pf_y_ok
     MOV AL,#63
 pf_y_ok:
-    STA [px_y],AL
+    MOV [px_y],AL
     MOV AL,#0
-    STA [pfx],AL
+    MOV [pfx],AL
 pf_col:
-    LDA AL,[test_x]
-    LDA BL,[pfx]
+    MOV AL,[test_x]
+    MOV BL,[pfx]
     ADD AL,BL
     ; mismo recorte para la columna (0-127), borde ESTE
     CMP AL,#128
     JMPC pf_x_ok
     MOV AL,#127
 pf_x_ok:
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL wall_test
     CMP AL,#0
     JMPNZ pf_hit
 
-    LDA AL,[pfx]
+    MOV AL,[pfx]
     ADD AL,#1
-    STA [pfx],AL
+    MOV [pfx],AL
     CMP AL,#PLAYER_W
     JMPNZ pf_col
 
-    LDA AL,[pfy]
+    MOV AL,[pfy]
     ADD AL,#1
-    STA [pfy],AL
+    MOV [pfy],AL
     CMP AL,#PLAYER_H
     JMPNZ pf_row
 
@@ -3148,33 +3148,33 @@ pf_hit:
 ; vale 255 y nunca coincide con una celda real, asi que esto no hace nada),
 ; la coge.
 check_key_pickup:
-    LDA AL,[key_taken]
+    MOV AL,[key_taken]
     CMP AL,#0
     JMPNZ ckp_ret
 
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#(PLAYER_W/2)
     CALL px_to_col
-    STA [tmp1],AL
-    LDA AL,[player_y]
+    MOV [tmp1],AL
+    MOV AL,[player_y]
     ADD AL,#(PLAYER_H/2)
     CALL px_to_row
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[tmp1]
+    MOV AL,[BX]
+    MOV BL,[tmp1]
     ADD AL,BL
-    LDA BL,[key_cell]
+    MOV BL,[key_cell]
     CMP AL,BL
     JMPNZ ckp_ret
 
     MOV AL,#1
-    STA [key_taken],AL
-    LDA AL,[keys_held]
+    MOV [key_taken],AL
+    MOV AL,[keys_held]
     ADD AL,#1
-    STA [keys_held],AL
+    MOV [keys_held],AL
     CALL update_keys_hud
     CALL save_room_state      ; si no, al salir y volver la llave reaparece
                                ; (restore_room_state recargaria key_taken=0)
@@ -3200,39 +3200,39 @@ ckp_ret:
 ; todavia tenia pocas vidas, y para cuando vuelve puede que ya no le haga
 ; falta) y suena un arpegio corto y alegre (Do4-Mi4-Sol4).
 check_heart_pickup:
-    LDA AL,[heart_taken]
+    MOV AL,[heart_taken]
     CMP AL,#0
     JMPNZ chp_ret
-    LDA AL,[heart_cell]
+    MOV AL,[heart_cell]
     CMP AL,#255
     JMPZ chp_ret
 
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#(PLAYER_W/2)
     CALL px_to_col
-    STA [tmp1],AL
-    LDA AL,[player_y]
+    MOV [tmp1],AL
+    MOV AL,[player_y]
     ADD AL,#(PLAYER_H/2)
     CALL px_to_row
-    STA [tmp2],AL
-    LDA CL,[tmp2]
+    MOV [tmp2],AL
+    MOV CL,[tmp2]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[tmp1]
+    MOV AL,[BX]
+    MOV BL,[tmp1]
     ADD AL,BL
-    LDA BL,[heart_cell]
+    MOV BL,[heart_cell]
     CMP AL,BL
     JMPNZ chp_ret
 
     MOV AL,#1
-    STA [heart_taken],AL
+    MOV [heart_taken],AL
     CALL save_room_state       ; que no reaparezca al salir y volver
-    LDA AL,[lives]
+    MOV AL,[lives]
     CMP AL,#MAX_LIVES
     JMPNC chp_sound
     ADD AL,#1
-    STA [lives],AL
+    MOV [lives],AL
     CALL update_lives_hud
 chp_sound:
     ; sonido: Do4-Mi4-Sol4 ascendente
@@ -3260,7 +3260,7 @@ chp_ret:
 ; siquiera existe todavia, se generara su propio hueco de entrada la
 ; primera vez que se cruce), redibuja `walls` y persiste el cambio.
 door_check:
-    LDA AL,[door_dir]
+    MOV AL,[door_dir]
     CMP AL,#255
     JMPZ dc_ret
     ; llavero compartido: CUALQUIER llave abre CUALQUIER puerta -- basta con
@@ -3272,81 +3272,81 @@ door_check:
     ; era la de otra puerta en otra parte del laberinto. Lo que SIGUE en pie
     ; es que la llave de esta puerta nunca esta en esta misma sala (ver
     ; gen_and_save_current_room) -- eso es justo lo que se pidio conservar.
-    LDA AL,[keys_held]
+    MOV AL,[keys_held]
     CMP AL,#0
     JMPZ dc_ret
 
-    LDA CL,[door_dir]
+    MOV CL,[door_dir]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[door_cell]
+    MOV AL,[BX]
+    MOV [tmp1],AL
+    MOV CL,[door_cell]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[tmp1]
+    MOV AL,[BX]
+    MOV BL,[tmp1]
     AND AL,BL
     CMP AL,#0
     JMPNZ dc_ret            ; bit ya puesto -> ya estaba abierta
 
-    LDA CL,[door_cell]
+    MOV CL,[door_cell]
     MOV BX,#CELL_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
-    STA [drow],AL
-    LDA CL,[door_cell]
+    MOV AL,[BX]
+    MOV [drow],AL
+    MOV CL,[door_cell]
     MOV BX,#CELL_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
-    STA [dcol],AL
-    LDA AL,[drow]
+    MOV AL,[BX]
+    MOV [dcol],AL
+    MOV AL,[drow]
     CALL row_to_px
-    STA [tmp1],AL           ; fila*CELL_H
-    LDA AL,[dcol]
+    MOV [tmp1],AL           ; fila*CELL_H
+    MOV AL,[dcol]
     CALL col_to_px
-    STA [tmp2],AL           ; columna*CELL_W
+    MOV [tmp2],AL           ; columna*CELL_W
 
-    LDA AL,[door_dir]
+    MOV AL,[door_dir]
     CMP AL,#DIR_N
     JMPNZ dc_e
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     ADD AL,#(CELL_W/2)
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
-    STA [dy_pt],AL
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
+    MOV [dy_pt],AL
     JMP dc_dist
 dc_e:
     CMP AL,#DIR_E
     JMPNZ dc_s
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     ADD AL,#CELL_W
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
     ADD AL,#(CELL_H/2)
-    STA [dy_pt],AL
+    MOV [dy_pt],AL
     JMP dc_dist
 dc_s:
     CMP AL,#DIR_S
     JMPNZ dc_w
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     ADD AL,#(CELL_W/2)
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
     ADD AL,#CELL_H
-    STA [dy_pt],AL
+    MOV [dy_pt],AL
     JMP dc_dist
 dc_w:
-    LDA AL,[tmp2]
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
+    MOV AL,[tmp2]
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
     ADD AL,#(CELL_H/2)
-    STA [dy_pt],AL
+    MOV [dy_pt],AL
 
 dc_dist:
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#(PLAYER_W/2)
-    LDA BL,[dx_pt]
+    MOV BL,[dx_pt]
     SUB AL,BL
     JMPN dc_xneg
     JMP dc_xdone
@@ -3354,11 +3354,11 @@ dc_xneg:
     NOT AL
     ADD AL,#1
 dc_xdone:
-    STA [tmp1],AL
+    MOV [tmp1],AL
 
-    LDA AL,[player_y]
+    MOV AL,[player_y]
     ADD AL,#(PLAYER_H/2)
-    LDA BL,[dy_pt]
+    MOV BL,[dy_pt]
     SUB AL,BL
     JMPN dc_yneg
     JMP dc_ydone
@@ -3366,35 +3366,35 @@ dc_yneg:
     NOT AL
     ADD AL,#1
 dc_ydone:
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     ADD AL,BL
     CMP AL,#DOOR_OPEN_DIST
     JMPNC dc_ret            ; demasiado lejos todavia
 
-    LDA CL,[door_dir]
+    MOV CL,[door_dir]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[door_cell]
+    MOV AL,[BX]
+    MOV [tmp1],AL
+    MOV CL,[door_cell]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[tmp1]
+    MOV AL,[BX]
+    MOV DL,[tmp1]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
 
     ; la llave se gasta al abrir la puerta: desaparece del contador del
     ; marcador
-    LDA AL,[keys_held]
+    MOV AL,[keys_held]
     CMP AL,#0
     JMPZ dc_no_dec
     SUB AL,#1
-    STA [keys_held],AL
+    MOV [keys_held],AL
     CALL update_keys_hud
-    LDA AL,[keys_used]           ; llaves gastadas en la partida (ver
+    MOV AL,[keys_used]           ; llaves gastadas en la partida (ver
     ADD AL,#1                    ; on_room_entered: acorta la espera del fantasma)
-    STA [keys_used],AL
+    MOV [keys_used],AL
 dc_no_dec:
 
     CALL draw_maze
@@ -3407,67 +3407,67 @@ dc_ret:
 ; acercarse a abrirla (con o sin llave todavia) no cuente como "tocar una
 ; pared" y mate (ver update_player); si no, AL=0 (pared normal, mortal).
 near_door:
-    LDA AL,[door_dir]
+    MOV AL,[door_dir]
     CMP AL,#255
     JMPZ nd_no
 
-    LDA CL,[door_cell]
+    MOV CL,[door_cell]
     MOV BX,#CELL_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
-    STA [drow],AL
-    LDA CL,[door_cell]
+    MOV AL,[BX]
+    MOV [drow],AL
+    MOV CL,[door_cell]
     MOV BX,#CELL_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
-    STA [dcol],AL
-    LDA AL,[drow]
+    MOV AL,[BX]
+    MOV [dcol],AL
+    MOV AL,[drow]
     CALL row_to_px
-    STA [tmp1],AL
-    LDA AL,[dcol]
+    MOV [tmp1],AL
+    MOV AL,[dcol]
     CALL col_to_px
-    STA [tmp2],AL
+    MOV [tmp2],AL
 
-    LDA AL,[door_dir]
+    MOV AL,[door_dir]
     CMP AL,#DIR_N
     JMPNZ nd_e
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     ADD AL,#(CELL_W/2)
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
-    STA [dy_pt],AL
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
+    MOV [dy_pt],AL
     JMP nd_dist
 nd_e:
     CMP AL,#DIR_E
     JMPNZ nd_s
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     ADD AL,#CELL_W
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
     ADD AL,#(CELL_H/2)
-    STA [dy_pt],AL
+    MOV [dy_pt],AL
     JMP nd_dist
 nd_s:
     CMP AL,#DIR_S
     JMPNZ nd_w
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     ADD AL,#(CELL_W/2)
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
     ADD AL,#CELL_H
-    STA [dy_pt],AL
+    MOV [dy_pt],AL
     JMP nd_dist
 nd_w:
-    LDA AL,[tmp2]
-    STA [dx_pt],AL
-    LDA AL,[tmp1]
+    MOV AL,[tmp2]
+    MOV [dx_pt],AL
+    MOV AL,[tmp1]
     ADD AL,#(CELL_H/2)
-    STA [dy_pt],AL
+    MOV [dy_pt],AL
 
 nd_dist:
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#(PLAYER_W/2)
-    LDA BL,[dx_pt]
+    MOV BL,[dx_pt]
     SUB AL,BL
     JMPN nd_xneg
     JMP nd_xdone
@@ -3475,11 +3475,11 @@ nd_xneg:
     NOT AL
     ADD AL,#1
 nd_xdone:
-    STA [tmp1],AL
+    MOV [tmp1],AL
 
-    LDA AL,[player_y]
+    MOV AL,[player_y]
     ADD AL,#(PLAYER_H/2)
-    LDA BL,[dy_pt]
+    MOV BL,[dy_pt]
     SUB AL,BL
     JMPN nd_yneg
     JMP nd_ydone
@@ -3487,7 +3487,7 @@ nd_yneg:
     NOT AL
     ADD AL,#1
 nd_ydone:
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     ADD AL,BL
     CMP AL,#DOOR_SAFE_DIST
     JMPNC nd_no
@@ -3531,22 +3531,22 @@ play_zap:
 ; toquen segun [room_num]; el resto se desactivan. La velocidad ([move_delay]
 ; = fotogramas por paso) baja 1 por sala hasta MIN_DELAY.
 setup_enemies:
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#BOSS_ROOM_NUM
     JMPNZ se_not_boss
     ; sala del jefe: UN unico enemigo (slot 0), nada de la cuenta/tipo
     ; normal -- se_type_store mas abajo lo convierte en ENEMY_TYPE_BOSS
     ; en cuanto ve que esta en esta sala
     MOV AL,#1
-    STA [enemy_count],AL
+    MOV [enemy_count],AL
     MOV AL,#BOSS_HP_MAX
-    STA [boss_hp],AL
+    MOV [boss_hp],AL
     JMP se_speed
 se_not_boss:
     CMP AL,#FIRST_ENEMY_ROOM
     JMPNC se_have
     MOV AL,#0
-    STA [enemy_count],AL
+    MOV [enemy_count],AL
     JMP se_speed
 se_have:
     SUB AL,#(FIRST_ENEMY_ROOM-1)
@@ -3554,7 +3554,7 @@ se_have:
     JMPC se_cnt_ok
     MOV AL,#MAX_ENEMIES
 se_cnt_ok:
-    STA [enemy_count],AL
+    MOV [enemy_count],AL
 
 se_speed:
     ; move_delay = max(START_DELAY - room_num, MIN_DELAY) -- OJO: para
@@ -3569,29 +3569,29 @@ se_speed:
     ; ningun enemigo" en la mayoria de las salas de una partida (todas las
     ; que pasan de la sala 7). Por eso primero se comprueba el underflow
     ; ANTES de restar, en vez de fiarse del resultado ya envuelto.
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#START_DELAY
     JMPNC se_delay_floor
     MOV AL,#START_DELAY
-    LDA BL,[room_num]
+    MOV BL,[room_num]
     SUB AL,BL
     CMP AL,#MIN_DELAY
     JMPNC se_delay_ok
 se_delay_floor:
     MOV AL,#MIN_DELAY
 se_delay_ok:
-    STA [move_delay],AL
+    MOV [move_delay],AL
     MOV AL,#0
-    STA [enemy_shot_active],AL
-    STA [enemy_shot_cooldown],AL
+    MOV [enemy_shot_active],AL
+    MOV [enemy_shot_cooldown],AL
     MOV AL,#0
-    STA [move_counter],AL
+    MOV [move_counter],AL
 
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 se_l:
-    LDA AL,[e]
-    LDA BL,[enemy_count]
+    MOV AL,[e]
+    MOV BL,[enemy_count]
     CMP AL,BL
     JMPNC se_inactive
 
@@ -3603,28 +3603,28 @@ se_l:
     ; podia aparecer a menos de 20px de un enemigo ya puesto ahi, matando al
     ; jugador casi al instante, y otra vez igual al respawnear en la misma
     ; entrada (ver on_player_hit).
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#ENEMY_SPAWN_ROW
     ADD BX,CL
-    LDA AL,[BX]
-    STA [erow],AL
-    LDA CL,[e]
+    MOV AL,[BX]
+    MOV [erow],AL
+    MOV CL,[e]
     MOV BX,#ENEMY_SPAWN_COL
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ecol],AL
+    MOV AL,[BX]
+    MOV [ecol],AL
 
-    LDA AL,[erow]
+    MOV AL,[erow]
     CALL row_to_px
     ADD AL,#(CELL_H/2)
-    STA [tmp1],AL           ; y candidata
-    LDA AL,[ecol]
+    MOV [tmp1],AL           ; y candidata
+    MOV AL,[ecol]
     CALL col_to_px
     ADD AL,#(CELL_W/2)
-    STA [tmp2],AL           ; x candidata
+    MOV [tmp2],AL           ; x candidata
 
-    LDA AL,[tmp2]
-    LDA BL,[player_x]
+    MOV AL,[tmp2]
+    MOV BL,[player_x]
     SUB AL,BL
     JMPN se_xneg
     JMP se_xdone
@@ -3632,9 +3632,9 @@ se_xneg:
     NOT AL
     ADD AL,#1
 se_xdone:
-    STA [tmp3],AL
-    LDA AL,[tmp1]
-    LDA BL,[player_y]
+    MOV [tmp3],AL
+    MOV AL,[tmp1]
+    MOV BL,[player_y]
     SUB AL,BL
     JMPN se_yneg
     JMP se_ydone
@@ -3642,54 +3642,54 @@ se_yneg:
     NOT AL
     ADD AL,#1
 se_ydone:
-    LDA BL,[tmp3]
+    MOV BL,[tmp3]
     ADD AL,BL
     CMP AL,#MIN_ENEMY_SPAWN_DIST
     JMPNC se_pos_ok         ; ya suficientemente lejos del jugador
 
     MOV AL,#(MAZE_ROWS-1)
-    LDA BL,[erow]
+    MOV BL,[erow]
     SUB AL,BL
     CALL row_to_px
     ADD AL,#(CELL_H/2)
-    STA [tmp1],AL
+    MOV [tmp1],AL
     MOV AL,#(MAZE_COLS-1)
-    LDA BL,[ecol]
+    MOV BL,[ecol]
     SUB AL,BL
     CALL col_to_px
     ADD AL,#(CELL_W/2)
-    STA [tmp2],AL
+    MOV [tmp2],AL
 se_pos_ok:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
-    LDA CL,[e]
+    MOV AL,[tmp1]
+    MOV [BX],AL
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[tmp2]
-    STA [BX],AL
+    MOV AL,[tmp2]
+    MOV [BX],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_dir
     ADD BX,CL
     MOV AL,#DIR_N
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_active
     ADD BX,CL
     MOV AL,#1
-    STA [BX],AL
+    MOV [BX],AL
 
     ; tipo: a partir de la SEGUNDA sala con enemigos, 1 de cada 4 nace
     ; tirador; en la primera son todos persegidores, para una entrada mas
     ; suave (ver update_enemy_fire para el comportamiento del tirador)
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_type
     ADD BX,CL
-    LDA AL,[room_num]
+    MOV AL,[room_num]
     CMP AL,#BOSS_ROOM_NUM
     JMPNZ se_type_normal
     MOV AL,#ENEMY_TYPE_BOSS
@@ -3706,18 +3706,18 @@ se_type_normal:
 se_type_chaser:
     MOV AL,#0
 se_type_store:
-    STA [BX],AL
+    MOV [BX],AL
     JMP se_next
 se_inactive:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
 se_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ se_l
     RET
@@ -3726,29 +3726,29 @@ se_next:
 ; enemigo activo en su direccion actual (step_enemy decide una nueva
 ; direccion si acaba de llegar al centro de una celda).
 update_enemies:
-    LDA AL,[move_counter]
+    MOV AL,[move_counter]
     ADD AL,#1
-    STA [move_counter],AL
-    LDA BL,[move_delay]
+    MOV [move_counter],AL
+    MOV BL,[move_delay]
     CMP AL,BL
     JMPC ue_done
     MOV AL,#0
-    STA [move_counter],AL
+    MOV [move_counter],AL
 
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 ue_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ue_next
     CALL step_enemy
 ue_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ ue_l
 ue_done:
@@ -3757,77 +3757,77 @@ ue_done:
 ; --- step_enemy: entra [e]. Si esta centrado en una celda, decide direccion
 ; nueva (choose_enemy_dir); luego avanza 1 px en enemy_dir[e].
 step_enemy:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ex],AL
-    LDA CL,[e]
+    MOV AL,[BX]
+    MOV [ex],AL
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ey],AL
+    MOV AL,[BX]
+    MOV [ey],AL
 
     ; ¿esta exactamente en el centro de su celda? -- 21 no es potencia de 2,
     ; asi que no vale una mascara de bits: se recalcula el centro de SU
     ; columna/fila (col_to_px[px_to_col[ex]]+mitad) y se compara con la
     ; posicion real
-    LDA AL,[ex]
+    MOV AL,[ex]
     CALL px_to_col
     CALL col_to_px
     ADD AL,#(CELL_W/2)
-    LDA BL,[ex]
+    MOV BL,[ex]
     CMP AL,BL
     JMPNZ se_step_move
-    LDA AL,[ey]
+    MOV AL,[ey]
     CALL px_to_row
     CALL row_to_px
     ADD AL,#(CELL_H/2)
-    LDA BL,[ey]
+    MOV BL,[ey]
     CMP AL,BL
     JMPNZ se_step_move
     CALL choose_enemy_dir
 
 se_step_move:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_dir
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#DIR_N
     JMPNZ sm_e
-    LDA AL,[ey]
+    MOV AL,[ey]
     SUB AL,#1
-    STA [ey],AL
+    MOV [ey],AL
     JMP sm_store
 sm_e:
     CMP AL,#DIR_E
     JMPNZ sm_s
-    LDA AL,[ex]
+    MOV AL,[ex]
     ADD AL,#1
-    STA [ex],AL
+    MOV [ex],AL
     JMP sm_store
 sm_s:
     CMP AL,#DIR_S
     JMPNZ sm_w
-    LDA AL,[ey]
+    MOV AL,[ey]
     ADD AL,#1
-    STA [ey],AL
+    MOV [ey],AL
     JMP sm_store
 sm_w:
-    LDA AL,[ex]
+    MOV AL,[ex]
     SUB AL,#1
-    STA [ex],AL
+    MOV [ex],AL
 sm_store:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[ex]
-    STA [BX],AL
-    LDA CL,[e]
+    MOV AL,[ex]
+    MOV [BX],AL
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[ey]
-    STA [BX],AL
+    MOV AL,[ey]
+    MOV [BX],AL
     RET
 
 ; --- choose_enemy_dir: entra [e],[ex],[ey] (centro, YA alineado a celda).
@@ -3835,120 +3835,120 @@ sm_store:
 ; celda del jugador (distancia Manhattan); evita dar media vuelta salvo que
 ; sea la unica salida.
 choose_enemy_dir:
-    LDA AL,[ex]
+    MOV AL,[ex]
     CALL px_to_col
-    STA [ecol],AL
-    LDA AL,[ey]
+    MOV [ecol],AL
+    MOV AL,[ey]
     CALL px_to_row
-    STA [erow],AL
-    LDA CL,[erow]
+    MOV [erow],AL
+    MOV CL,[erow]
     MOV BX,#ROW_MUL
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ecol]
+    MOV AL,[BX]
+    MOV BL,[ecol]
     ADD AL,BL
-    STA [ecell],AL
+    MOV [ecell],AL
 
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#(PLAYER_W/2)
     CALL px_to_col
-    STA [pcol],AL
-    LDA AL,[player_y]
+    MOV [pcol],AL
+    MOV AL,[player_y]
     ADD AL,#(PLAYER_H/2)
     CALL px_to_row
-    STA [prow],AL
+    MOV [prow],AL
 
-    LDA CL,[ecell]
+    MOV CL,[ecell]
     MOV BX,#cell_walls
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cwv],AL
+    MOV AL,[BX]
+    MOV [cwv],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_dir
     ADD BX,CL
-    LDA CL,[BX]
+    MOV CL,[BX]
     MOV BX,#OPP_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    STA [banned_dir],AL
+    MOV AL,[BX]
+    MOV [banned_dir],AL
 
     MOV AL,#255
-    STA [best_dist],AL
-    STA [best_dir],AL
+    MOV [best_dist],AL
+    MOV [best_dir],AL
     MOV AL,#0
-    STA [d],AL
+    MOV [d],AL
 ced_l1:
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cwv]
+    MOV AL,[BX]
+    MOV BL,[cwv]
     AND BL,AL
     CMP BL,#0
     JMPZ ced_next1
-    LDA AL,[d]
-    LDA BL,[banned_dir]
+    MOV AL,[d]
+    MOV BL,[banned_dir]
     CMP AL,BL
     JMPZ ced_next1
     CALL ced_consider
 ced_next1:
-    LDA AL,[d]
+    MOV AL,[d]
     ADD AL,#1
-    STA [d],AL
+    MOV [d],AL
     CMP AL,#4
     JMPNZ ced_l1
 
-    LDA AL,[best_dir]
+    MOV AL,[best_dir]
     CMP AL,#255
     JMPNZ ced_store
 
     MOV AL,#0
-    STA [d],AL
+    MOV [d],AL
 ced_l2:
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#BIT_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cwv]
+    MOV AL,[BX]
+    MOV BL,[cwv]
     AND BL,AL
     CMP BL,#0
     JMPZ ced_next2
     CALL ced_consider
 ced_next2:
-    LDA AL,[d]
+    MOV AL,[d]
     ADD AL,#1
-    STA [d],AL
+    MOV [d],AL
     CMP AL,#4
     JMPNZ ced_l2
 
 ced_store:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_dir
     ADD BX,CL
-    LDA AL,[best_dir]
-    STA [BX],AL
+    MOV AL,[best_dir]
+    MOV [BX],AL
     RET
 
 ; --- ced_consider: para la direccion [d] (ya sabida abierta), mira su celda
 ; vecina (a partir de erow/ecol) y, si su distancia Manhattan a (prow,pcol)
 ; mejora [best_dist], actualiza [best_dist]/[best_dir].
 ced_consider:
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#DR_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[erow]
+    MOV AL,[BX]
+    MOV BL,[erow]
     ADD AL,BL
-    STA [trow],AL
+    MOV [trow],AL
 
-    LDA CL,[d]
+    MOV CL,[d]
     MOV BX,#DC_OF_DIR
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ecol]
+    MOV AL,[BX]
+    MOV BL,[ecol]
     ADD AL,BL
-    STA [tcol],AL
+    MOV [tcol],AL
 
     ; si (trow,tcol) cae FUERA de la rejilla de MAZE_ROWSxMAZE_COLS, esta
     ; direccion es la entrada de la sala o uno de sus huecos extra (abierto
@@ -3962,15 +3962,15 @@ ced_consider:
     ; y vagar en linea recta hasta desaparecer por el otro lado de la
     ; pantalla. Bug real reportado: "un sprite en forma de bola que cruza la
     ; pantalla despacio, no se puede matar ni te mata, atraviesa paredes".
-    LDA AL,[trow]
+    MOV AL,[trow]
     CMP AL,#MAZE_ROWS
     JMPNC ccd_no             ; trow >= MAZE_ROWS (incluye el envoltorio de -1 a 255)
-    LDA AL,[tcol]
+    MOV AL,[tcol]
     CMP AL,#MAZE_COLS
     JMPNC ccd_no             ; tcol >= MAZE_COLS (idem)
 
-    LDA AL,[trow]
-    LDA BL,[prow]
+    MOV AL,[trow]
+    MOV BL,[prow]
     SUB AL,BL
     JMPN cc_rowneg
     JMP cc_rowdone
@@ -3978,10 +3978,10 @@ cc_rowneg:
     NOT AL
     ADD AL,#1
 cc_rowdone:
-    STA [dist],AL
+    MOV [dist],AL
 
-    LDA AL,[tcol]
-    LDA BL,[pcol]
+    MOV AL,[tcol]
+    MOV BL,[pcol]
     SUB AL,BL
     JMPN cc_colneg
     JMP cc_coldone
@@ -3989,17 +3989,17 @@ cc_colneg:
     NOT AL
     ADD AL,#1
 cc_coldone:
-    LDA BL,[dist]
+    MOV BL,[dist]
     ADD AL,BL
-    STA [dist],AL
+    MOV [dist],AL
 
-    LDA AL,[dist]
-    LDA BL,[best_dist]
+    MOV AL,[dist]
+    MOV BL,[best_dist]
     CMP AL,BL
     JMPNC ccd_no
-    STA [best_dist],AL
-    LDA AL,[d]
-    STA [best_dir],AL
+    MOV [best_dist],AL
+    MOV AL,[d]
+    MOV [best_dir],AL
 ccd_no:
     RET
 
@@ -4009,55 +4009,55 @@ ccd_no:
 ; ============================================================================
 check_collisions:
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 cc_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ cc_next
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SUB AL,#ENEMY_HALF
-    STA [ex],AL
-    LDA CL,[e]
+    MOV [ex],AL
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SUB AL,#ENEMY_HALF
-    STA [ey],AL
+    MOV [ey],AL
 
-    LDA AL,[ex]
+    MOV AL,[ex]
     ADD AL,#ENEMY_W
-    LDA BL,[player_x]
+    MOV BL,[player_x]
     CMP BL,AL
     JMPNC cc_next
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     ADD AL,#PLAYER_W
-    LDA BL,[ex]
+    MOV BL,[ex]
     CMP BL,AL
     JMPNC cc_next
-    LDA AL,[ey]
+    MOV AL,[ey]
     ADD AL,#ENEMY_H
-    LDA BL,[player_y]
+    MOV BL,[player_y]
     CMP BL,AL
     JMPNC cc_next
-    LDA AL,[player_y]
+    MOV AL,[player_y]
     ADD AL,#PLAYER_H
-    LDA BL,[ey]
+    MOV BL,[ey]
     CMP BL,AL
     JMPNC cc_next
 
     CALL on_player_hit
     RET                     ; una colision basta este fotograma
 cc_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ cc_l
     RET
@@ -4073,11 +4073,11 @@ on_player_hit:
     MOV AL,#0
     OUT (P_LED),AL
 
-    LDA AL,[lives]
+    MOV AL,[lives]
     SUB AL,#1
-    STA [lives],AL          ; el icono se redibuja solo cada fotograma en
+    MOV [lives],AL          ; el icono se redibuja solo cada fotograma en
     CALL update_lives_hud   ; draw_frame, pero el NUMERO (texto) hay que
-    LDA AL,[lives]          ; actualizarlo aparte, igual que la puntuacion
+    MOV AL,[lives]          ; actualizarlo aparte, igual que la puntuacion
     CMP AL,#0
     JMPNZ oph_respawn
     CALL show_game_over
@@ -4098,28 +4098,28 @@ oph_respawn:
 ; misma regla para cuando ya llevan un rato movidos por la sala.
 enforce_enemy_safe_dist:
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 eesd_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ eesd_next
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
-    LDA CL,[e]
+    MOV AL,[BX]
+    MOV [tmp1],AL
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp2],AL
+    MOV AL,[BX]
+    MOV [tmp2],AL
 
-    LDA AL,[tmp1]
-    LDA BL,[player_x]
+    MOV AL,[tmp1]
+    MOV BL,[player_x]
     SUB AL,BL
     JMPN eesd_xneg
     JMP eesd_xdone
@@ -4127,9 +4127,9 @@ eesd_xneg:
     NOT AL
     ADD AL,#1
 eesd_xdone:
-    STA [tmp3],AL
-    LDA AL,[tmp2]
-    LDA BL,[player_y]
+    MOV [tmp3],AL
+    MOV AL,[tmp2]
+    MOV BL,[player_y]
     SUB AL,BL
     JMPN eesd_yneg
     JMP eesd_ydone
@@ -4137,7 +4137,7 @@ eesd_yneg:
     NOT AL
     ADD AL,#1
 eesd_ydone:
-    LDA BL,[tmp3]
+    MOV BL,[tmp3]
     ADD AL,BL
     CMP AL,#MIN_ENEMY_SPAWN_DIST
     JMPNC eesd_next          ; ya bastante lejos
@@ -4149,39 +4149,39 @@ eesd_ydone:
     ; "centrado" para step_enemy -- se queda caminando en linea recta para
     ; siempre en la ultima direccion que tuviera, atravesando paredes, que es
     ; lo que se veia como "el enemigo se para/se pierde"
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     CALL px_to_col
     MOV BL,AL
     MOV AL,#(MAZE_COLS-1)
     SUB AL,BL
     CALL col_to_px
     ADD AL,#(CELL_W/2)
-    STA [tmp1],AL
+    MOV [tmp1],AL
 
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     CALL px_to_row
     MOV BL,AL
     MOV AL,#(MAZE_ROWS-1)
     SUB AL,BL
     CALL row_to_px
     ADD AL,#(CELL_H/2)
-    STA [tmp2],AL
+    MOV [tmp2],AL
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
-    LDA CL,[e]
+    MOV AL,[tmp1]
+    MOV [BX],AL
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[tmp2]
-    STA [BX],AL
+    MOV AL,[tmp2]
+    MOV [BX],AL
 
 eesd_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ eesd_l
     RET
@@ -4192,29 +4192,29 @@ eesd_next:
 draw_frame:
     CALL copy_walls_to_shadow
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 df_pl_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#PLAYER_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[player_x]
+    MOV AL,[BX]
+    MOV BL,[player_x]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#PLAYER_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
 
     ; pie izquierdo (indice 10) o derecho (11) de PLAYER_SPRITE_DX/DY: sube
     ; 1px si le toca levantarse en esta fase de la animacion de andar (ver
     ; update_player) -- el otro pie, y el resto del cuerpo, se quedan tal
     ; cual dice la tabla.
-    LDA CL,[i]
+    MOV CL,[i]
     CMP CL,#10
     JMPNZ dfp_foot_r
-    LDA CL,[walk_phase]
+    MOV CL,[walk_phase]
     CMP CL,#1
     JMPNZ dfp_dy_done
     SUB AL,#1
@@ -4222,175 +4222,175 @@ df_pl_l:
 dfp_foot_r:
     CMP CL,#11
     JMPNZ dfp_dy_done
-    LDA CL,[walk_phase]
+    MOV CL,[walk_phase]
     CMP CL,#2
     JMPNZ dfp_dy_done
     SUB AL,#1
 dfp_dy_done:
-    LDA BL,[player_y]
+    MOV BL,[player_y]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#PLAYER_SPRITE_N
     JMPNZ df_pl_l
 
     ; disparos del jugador: un solo pixel basta (son pequeños y rapidos)
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 df_shot_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ df_shot_next
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#shot_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [px_x],AL
-    LDA CL,[e]
+    MOV AL,[BX]
+    MOV [px_x],AL
+    MOV CL,[e]
     MOV BX,#shot_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [px_y],AL
+    MOV AL,[BX]
+    MOV [px_y],AL
     CALL shadow_set_px
 df_shot_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_SHOTS
     JMPNZ df_shot_l
 
     ; disparo enemigo (uno solo, tambien un pixel)
-    LDA AL,[enemy_shot_active]
+    MOV AL,[enemy_shot_active]
     CMP AL,#0
     JMPZ df_no_eshot
-    LDA AL,[enemy_shot_x]
-    STA [px_x],AL
-    LDA AL,[enemy_shot_y]
-    STA [px_y],AL
+    MOV AL,[enemy_shot_x]
+    MOV [px_x],AL
+    MOV AL,[enemy_shot_y]
+    MOV [px_y],AL
     CALL shadow_set_px
 df_no_eshot:
 
     MOV AL,#0
-    STA [e],AL
+    MOV [e],AL
 df_en_l:
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ df_en_next
 
-    LDA CL,[e]
+    MOV CL,[e]
     MOV BX,#enemy_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ex],AL
-    LDA CL,[e]
+    MOV AL,[BX]
+    MOV [ex],AL
+    MOV CL,[e]
     MOV BX,#enemy_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ey],AL
+    MOV AL,[BX]
+    MOV [ey],AL
 
     MOV AL,#0
-    STA [j],AL
-    LDA CL,[e]
+    MOV [j],AL
+    MOV CL,[e]
     MOV BX,#enemy_type
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#ENEMY_TYPE_BOSS
     JMPZ df_boss_es_l
 df_es_l:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#ENEMY_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ex]
+    MOV AL,[BX]
+    MOV BL,[ex]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#ENEMY_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ey]
+    MOV AL,[BX]
+    MOV BL,[ey]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#ENEMY_SPRITE_N
     JMPNZ df_es_l
     JMP df_en_next
 
 ; --- jefe: mismo bucle, pero con BOSS_SPRITE_* (ver su comentario) --------
 df_boss_es_l:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#BOSS_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ex]
+    MOV AL,[BX]
+    MOV BL,[ex]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#BOSS_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ey]
+    MOV AL,[BX]
+    MOV BL,[ey]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#BOSS_SPRITE_N
     JMPNZ df_boss_es_l
 
 df_en_next:
-    LDA AL,[e]
+    MOV AL,[e]
     ADD AL,#1
-    STA [e],AL
+    MOV [e],AL
     CMP AL,#MAX_ENEMIES
     JMPNZ df_en_l
 
     ; fantasma (si esta activo en esta sala, ver update_ghost)
-    LDA AL,[ghost_active]
+    MOV AL,[ghost_active]
     CMP AL,#0
     JMPZ df_no_ghost
     MOV AL,#0
-    STA [j],AL
+    MOV [j],AL
 df_ghost_l:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#GHOST_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ghost_x]
+    MOV AL,[BX]
+    MOV BL,[ghost_x]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#GHOST_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ghost_y]
+    MOV AL,[BX]
+    MOV BL,[ghost_y]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#GHOST_SPRITE_N
     JMPNZ df_ghost_l
 df_no_ghost:
@@ -4399,51 +4399,51 @@ df_no_ghost:
     ; propia, si la llave es para la puerta de un hijo suyo -- y todavia no
     ; se ha cogido). Antes se miraba [door_dir] aqui, pero eso ya no vale:
     ; la llave puede vivir en una sala que no tiene puerta propia.
-    LDA AL,[key_cell]
+    MOV AL,[key_cell]
     CMP AL,#255
     JMPZ df_no_key
-    LDA AL,[key_taken]
+    MOV AL,[key_taken]
     CMP AL,#0
     JMPNZ df_no_key
 
-    LDA CL,[key_cell]
+    MOV CL,[key_cell]
     MOV BX,#CELL_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL row_to_px
     ADD AL,#(CELL_H/2)
-    STA [ey],AL              ; centro Y de la celda de la llave
-    LDA CL,[key_cell]
+    MOV [ey],AL              ; centro Y de la celda de la llave
+    MOV CL,[key_cell]
     MOV BX,#CELL_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL col_to_px
     ADD AL,#(CELL_W/2)
-    STA [ex],AL              ; centro X
+    MOV [ex],AL              ; centro X
 
     MOV AL,#0
-    STA [j],AL
+    MOV [j],AL
 df_key_l:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#KEY_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ex]
+    MOV AL,[BX]
+    MOV BL,[ex]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#KEY_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ey]
+    MOV AL,[BX]
+    MOV BL,[ey]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#KEY_SPRITE_N
     JMPNZ df_key_l
 df_no_key:
@@ -4452,53 +4452,53 @@ df_no_key:
     ; se ha cogido) -- mismo patron que la llave, reutilizando el sprite del
     ; marcador (HEART_SPRITE_DX/DY es top-left, no centrado, asi que se resta
     ; medio sprite para centrarlo en la celda)
-    LDA AL,[heart_cell]
+    MOV AL,[heart_cell]
     CMP AL,#255
     JMPZ df_no_heart
-    LDA AL,[heart_taken]
+    MOV AL,[heart_taken]
     CMP AL,#0
     JMPNZ df_no_heart
 
-    LDA CL,[heart_cell]
+    MOV CL,[heart_cell]
     MOV BX,#CELL_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL row_to_px
     ADD AL,#(CELL_H/2)
     SUB AL,#2
-    STA [ey],AL              ; esquina superior izq. del corazon (5x5)
-    LDA CL,[heart_cell]
+    MOV [ey],AL              ; esquina superior izq. del corazon (5x5)
+    MOV CL,[heart_cell]
     MOV BX,#CELL_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL col_to_px
     ADD AL,#(CELL_W/2)
     SUB AL,#2
-    STA [ex],AL
+    MOV [ex],AL
 
     MOV AL,#0
-    STA [j],AL
+    MOV [j],AL
 df_heart_floor_l:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#HEART_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ex]
+    MOV AL,[BX]
+    MOV BL,[ex]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#HEART_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ey]
+    MOV AL,[BX]
+    MOV BL,[ey]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#HEART_SPRITE_N
     JMPNZ df_heart_floor_l
 df_no_heart:
@@ -4511,94 +4511,94 @@ df_no_heart:
     ; un recuadro negro solido debajo de los dos (por si una pared de la
     ; sala pasara justo por esa zona).
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 df_hud_clr_row:
     MOV AL,#0
-    STA [k],AL
+    MOV [k],AL
 df_hud_clr_col:
     MOV AL,#HEART_AREA_X0
-    LDA BL,[k]
+    MOV BL,[k]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
     MOV AL,#HEART_AREA_Y0
-    LDA BL,[wk]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_clear_px
 
-    LDA AL,[k]
+    MOV AL,[k]
     ADD AL,#1
-    STA [k],AL
+    MOV [k],AL
     CMP AL,#HEART_AREA_W
     JMPNZ df_hud_clr_col
 
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#HEART_AREA_H
     JMPNZ df_hud_clr_row
 
     ; icono de corazon (uno solo, tamaño fijo -- el numero de al lado dice
     ; cuantas vidas quedan)
     MOV AL,#HEART_ICON_X
-    STA [ex],AL
+    MOV [ex],AL
     MOV AL,#HEART_ICON_Y
-    STA [ey],AL
+    MOV [ey],AL
     MOV AL,#0
-    STA [j],AL
+    MOV [j],AL
 df_heart_pt:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#HEART_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ex]
+    MOV AL,[BX]
+    MOV BL,[ex]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#HEART_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ey]
+    MOV AL,[BX]
+    MOV BL,[ey]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#HEART_SPRITE_N
     JMPNZ df_heart_pt
 
     ; icono de llave (siempre visible, es solo el contador -- no depende
     ; de si esta sala tiene llave o no)
     MOV AL,#KEY_ICON_CX
-    STA [ex],AL
+    MOV [ex],AL
     MOV AL,#KEY_ICON_CY
-    STA [ey],AL
+    MOV [ey],AL
     MOV AL,#0
-    STA [j],AL
+    MOV [j],AL
 df_hudkey_pt:
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#KEY_SPRITE_DX
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ex]
+    MOV AL,[BX]
+    MOV BL,[ex]
     ADD AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#KEY_SPRITE_DY
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ey]
+    MOV AL,[BX]
+    MOV BL,[ey]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
+    MOV [j],AL
     CMP AL,#KEY_SPRITE_N
     JMPNZ df_hudkey_pt
 
@@ -4615,13 +4615,13 @@ df_hudkey_pt:
 ; regeneran sin limite cada vez que se reentra a una sala (persistida o no),
 ; asi que no hay techo real de puntos posibles en una partida larga.
 score_add:
-    LDA BL,[score_lo]
+    MOV BL,[score_lo]
     ADD BL,AL
-    STA [score_lo],BL
+    MOV [score_lo],BL
     JMPNC sca_done
-    LDA AL,[score_hi]
+    MOV AL,[score_hi]
     ADD AL,#1
-    STA [score_hi],AL
+    MOV [score_hi],AL
 sca_done:
     RET
 
@@ -4629,30 +4629,30 @@ sca_done:
 ; columnas 0-4 de la fila 0 (antes 3 cifras para un solo byte -- de sobra
 ; hueco libre hasta la columna 17 del corazon, ver LIVES_DIGIT_COL).
 update_score_hud:
-    LDA AL,[score_lo]
-    STA [nd_val_lo],AL
-    LDA AL,[score_hi]
-    STA [nd_val_hi],AL
+    MOV AL,[score_lo]
+    MOV [nd_val_lo],AL
+    MOV AL,[score_hi]
+    MOV [nd_val_hi],AL
     CALL u16_digits
 
     MOV DH,#0x04
-    LDA AL,[dig10000]
+    MOV AL,[dig10000]
     ADD AL,#0x30
     MOV DL,#0
     OUT (DX),AL
-    LDA AL,[dig1000]
+    MOV AL,[dig1000]
     ADD AL,#0x30
     MOV DL,#1
     OUT (DX),AL
-    LDA AL,[dig100]
+    MOV AL,[dig100]
     ADD AL,#0x30
     MOV DL,#2
     OUT (DX),AL
-    LDA AL,[dig10]
+    MOV AL,[dig10]
     ADD AL,#0x30
     MOV DL,#3
     OUT (DX),AL
-    LDA AL,[dig1]
+    MOV AL,[dig1]
     ADD AL,#0x30
     MOV DL,#4
     OUT (DX),AL
@@ -4661,7 +4661,7 @@ update_score_hud:
 ; --- update_lives_hud: numero de vidas, justo al lado del icono de
 ; corazon (0-3, siempre cabe en 1 digito -- MAX_LIVES)
 update_lives_hud:
-    LDA AL,[lives]
+    MOV AL,[lives]
     ADD AL,#0x30
     MOV DX,#0x04*256+LIVES_DIGIT_COL
     OUT (DX),AL
@@ -4671,7 +4671,7 @@ update_lives_hud:
 ; del icono de llave (1 sola cifra -- nunca llega a 10, ver comentario junto
 ; a KEYS_DIGIT_COL)
 update_keys_hud:
-    LDA AL,[keys_held]
+    MOV AL,[keys_held]
     ADD AL,#0x30
     MOV DX,#0x04*256+KEYS_DIGIT_COL
     OUT (DX),AL
@@ -4686,15 +4686,15 @@ update_keys_hud:
 u16_digits:
     PUSH AH
     CALL div10_16
-    STA [dig1],AL
+    MOV [dig1],AL
     CALL div10_16
-    STA [dig10],AL
+    MOV [dig10],AL
     CALL div10_16
-    STA [dig100],AL
+    MOV [dig100],AL
     CALL div10_16
-    STA [dig1000],AL
+    MOV [dig1000],AL
     CALL div10_16
-    STA [dig10000],AL
+    MOV [dig10000],AL
     POP AH
     RET
 
@@ -4702,12 +4702,12 @@ u16_digits:
 div10_16:
     MOV BL,#10
     MOV AH,#0
-    LDA AL,[nd_val_hi]
+    MOV AL,[nd_val_hi]
     DIV BL
-    STA [nd_val_hi],AL
-    LDA AL,[nd_val_lo]      ; AH = resto del byte alto
+    MOV [nd_val_hi],AL
+    MOV AL,[nd_val_lo]      ; AH = resto del byte alto
     DIV BL
-    STA [nd_val_lo],AL
+    MOV [nd_val_lo],AL
     MOV AL,AH
     RET
 
@@ -4718,15 +4718,15 @@ div10_16:
 load_record:
     OUT (P_EEP_LOAD),AL
     MOV AL,#0
-    STA [record_lo],AL
-    STA [record_hi],AL
+    MOV [record_lo],AL
+    MOV [record_hi],AL
     IN  AL,(P_EEP_BASE)
     CMP AL,#REC_MAGIC
     JMPNZ lr_done
     IN  AL,(P_EEP_BASE+1)
-    STA [record_lo],AL
+    MOV [record_lo],AL
     IN  AL,(P_EEP_BASE+2)
-    STA [record_hi],AL
+    MOV [record_hi],AL
 lr_done:
     RET
 
@@ -4735,26 +4735,26 @@ show_record:
     PUSH CL
     PUSH CH
     CALL load_record
-    LDA AL,[record_lo]
-    STA [nd_val_lo],AL
-    LDA AL,[record_hi]
-    STA [nd_val_hi],AL
+    MOV AL,[record_lo]
+    MOV [nd_val_lo],AL
+    MOV AL,[record_hi]
+    MOV [nd_val_hi],AL
     CALL u16_digits
-    LDA AL,[dig10000]
+    MOV AL,[dig10000]
     ADD AL,#'0'
-    STA [rec_d],AL
-    LDA AL,[dig1000]
+    MOV [rec_d],AL
+    MOV AL,[dig1000]
     ADD AL,#'0'
-    STA [rec_d+1],AL
-    LDA AL,[dig100]
+    MOV [rec_d+1],AL
+    MOV AL,[dig100]
     ADD AL,#'0'
-    STA [rec_d+2],AL
-    LDA AL,[dig10]
+    MOV [rec_d+2],AL
+    MOV AL,[dig10]
     ADD AL,#'0'
-    STA [rec_d+3],AL
-    LDA AL,[dig1]
+    MOV [rec_d+3],AL
+    MOV AL,[dig1]
     ADD AL,#'0'
-    STA [rec_d+4],AL
+    MOV [rec_d+4],AL
     POP CH
     POP CL
     MOV BX,#s_record
@@ -4764,13 +4764,13 @@ show_record:
 ; --- save_record: si la puntuacion (16 bits) supera el record, lo graba en
 ; la flash. Sale AL = 1 si es record nuevo, 0 si no. -----------------------
 save_record:
-    LDA AL,[score_hi]
-    LDA BL,[record_hi]
+    MOV AL,[score_hi]
+    MOV BL,[record_hi]
     CMP BL,AL
     JMPC svr_new            ; record_hi < score_hi
     JMPNZ svr_no            ; record_hi > score_hi
-    LDA AL,[score_lo]
-    LDA BL,[record_lo]
+    MOV AL,[score_lo]
+    MOV BL,[record_lo]
     CMP BL,AL
     JMPC svr_new            ; mismos altos, record_lo < score_lo
 svr_no:
@@ -4778,11 +4778,11 @@ svr_no:
     RET
 svr_new:
     OUT (P_EEP_LOAD),AL     ; parte del contenido real de la EEPROM
-    LDA AL,[score_lo]
-    STA [record_lo],AL
+    MOV AL,[score_lo]
+    MOV [record_lo],AL
     OUT (P_EEP_BASE+1),AL
-    LDA AL,[score_hi]
-    STA [record_hi],AL
+    MOV AL,[score_hi]
+    MOV [record_hi],AL
     OUT (P_EEP_BASE+2),AL
     MOV AL,#REC_MAGIC
     OUT (P_EEP_BASE),AL
@@ -4885,53 +4885,53 @@ sgn_zero:
 ; con CELL_H/CELL_W=21 (no potencia de 2) no hay division real, de ahi la
 ; tabla.
 px_to_row:
-    STA [tmp3],AL
-    LDA CL,[tmp3]
+    MOV [tmp3],AL
+    MOV CL,[tmp3]
     MOV BX,#PX_TO_ROW
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     RET
 
 px_to_col:
-    STA [tmp3],AL
-    LDA CL,[tmp3]
+    MOV [tmp3],AL
+    MOV CL,[tmp3]
     MOV BX,#PX_TO_COL
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     RET
 
 ; --- row_to_px/col_to_px: entra AL = fila o columna ; sale AL =
 ; fila*CELL_H o columna*CELL_W -- igual razon, tabla en vez de un SHL.
 row_to_px:
-    STA [tmp3],AL
-    LDA CL,[tmp3]
+    MOV [tmp3],AL
+    MOV CL,[tmp3]
     MOV BX,#ROW_PX
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     RET
 
 col_to_px:
-    STA [tmp3],AL
-    LDA CL,[tmp3]
+    MOV [tmp3],AL
+    MOV CL,[tmp3]
     MOV BX,#COL_PX
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     RET
 
 ; --- calc_pix: de (px_x,px_y) saca puerto/offset (pix_lo/pix_hi) + mascara -
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -4942,21 +4942,21 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; --- shadow_set_px: enciende (px_x,px_y) en `shadow` --------------------
 shadow_set_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- shadow_clear_px: apaga (px_x,px_y) en `shadow` (lo contrario de
@@ -4966,29 +4966,29 @@ shadow_set_px:
 shadow_clear_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     NOT DL
     AND AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- walls_set_px: enciende (px_x,px_y) en `walls` (draw_maze) ----------
 walls_set_px:
     CALL calc_pix
     MOV BX,#walls
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- fb_set_px: enciende (px_x,px_y) DIRECTO en el framebuffer real (no en
@@ -4997,12 +4997,12 @@ walls_set_px:
 fb_set_px:
     CALL calc_pix
     MOV BX,#0x0000
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
     IN  AL,(BX)
-    LDA DL,[pix_mask]
+    MOV DL,[pix_mask]
     OR  AL,DL
     OUT (BX),AL
     RET
@@ -5011,12 +5011,12 @@ fb_set_px:
 wall_test:
     CALL calc_pix
     MOV BX,#walls
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     AND AL,DL
     RET
 
@@ -5028,7 +5028,7 @@ clr_walls:
     ; (origen y destino solapados a 1 byte de distancia, copia siempre
     ; hacia adelante -- docs/isa.md SS4d): 1023 copias en una instruccion
     MOV AL,#0
-    STA [walls],AL
+    MOV [walls],AL
     MOV BX,#walls
     MOV DX,#walls+1
     MOV CX,#0x03FF
@@ -5049,7 +5049,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL
@@ -5094,7 +5094,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -5115,12 +5115,12 @@ rnd:
     MOV AL,DL
     RET
 rnd_raw:
-    LDA AL,[seed]
+    MOV AL,[seed]
     SHR AL
     JMPNC rr_n
     XOR AL,#0xB8
 rr_n:
-    STA [seed],AL
+    MOV [seed],AL
     RET
 
 ; --- frame_wait: AL = pasos del temporizador 3 (8 ms/paso) --------------
@@ -5139,27 +5139,27 @@ fw_l:
 ; propia tabla.
 play_tune:
     MOV AL,BL
-    STA [pt_lo],AL
+    MOV [pt_lo],AL
     MOV AL,BH
-    STA [pt_hi],AL
+    MOV [pt_hi],AL
 pt_nx:
-    LDA BL,[pt_lo]
-    LDA BH,[pt_hi]
-    LDA AL,[BX]
+    MOV BL,[pt_lo]
+    MOV BH,[pt_hi]
+    MOV AL,[BX]
     CMP AL,#0xFF
     JMPZ pt_done
-    STA [pt_note],AL
+    MOV [pt_note],AL
     CALL pt_inc
 
-    LDA BL,[pt_lo]
-    LDA BH,[pt_hi]
-    LDA AL,[BX]
-    STA [pt_dur],AL
+    MOV BL,[pt_lo]
+    MOV BH,[pt_hi]
+    MOV AL,[BX]
+    MOV [pt_dur],AL
     CALL pt_inc
 
-    LDA AL,[pt_note]
+    MOV AL,[pt_note]
     OUT (P_SND_NOTE),AL
-    LDA AL,[pt_dur]
+    MOV AL,[pt_dur]
     CALL frame_wait
     MOV AL,#0
     OUT (P_SND_NOTE),AL
@@ -5172,13 +5172,13 @@ pt_done:
     RET
 
 pt_inc:
-    LDA AL,[pt_lo]
+    MOV AL,[pt_lo]
     ADD AL,#1
-    STA [pt_lo],AL
+    MOV [pt_lo],AL
     JMPNC pt_inc_d
-    LDA AL,[pt_hi]
+    MOV AL,[pt_hi]
     ADD AL,#1
-    STA [pt_hi],AL
+    MOV [pt_hi],AL
 pt_inc_d:
     RET
 
@@ -5189,79 +5189,79 @@ pt_inc_d:
 ; [lp_x0]/[lp_y0] (esquina superior izquierda en pantalla).
 draw_big_letter:
     MOV AL,BL
-    STA [lp_dx_lo],AL
+    MOV [lp_dx_lo],AL
     MOV AL,BH
-    STA [lp_dx_hi],AL
+    MOV [lp_dx_hi],AL
     MOV AL,DL
-    STA [lp_dy_lo],AL
+    MOV [lp_dy_lo],AL
     MOV AL,DH
-    STA [lp_dy_hi],AL
+    MOV [lp_dy_hi],AL
 
     MOV AL,#0
-    STA [j],AL
+    MOV [j],AL
 dbl_l:
-    LDA CL,[j]
-    LDA BL,[lp_dx_lo]
-    LDA BH,[lp_dx_hi]
+    MOV CL,[j]
+    MOV BL,[lp_dx_lo]
+    MOV BH,[lp_dx_hi]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL            ; dx (0-4)
+    MOV AL,[BX]
+    MOV [tmp1],AL            ; dx (0-4)
 
-    LDA CL,[j]
-    LDA BL,[lp_dy_lo]
-    LDA BH,[lp_dy_hi]
+    MOV CL,[j]
+    MOV BL,[lp_dy_lo]
+    MOV BH,[lp_dy_hi]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp2],AL            ; dy (0-6)
+    MOV AL,[BX]
+    MOV [tmp2],AL            ; dy (0-6)
 
-    LDA CL,[tmp1]
+    MOV CL,[tmp1]
     MOV BX,#MUL3
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[lp_x0]
+    MOV AL,[BX]
+    MOV BL,[lp_x0]
     ADD AL,BL
-    STA [wx0],AL              ; x0 + dx*LETTER_SCALE
+    MOV [wx0],AL              ; x0 + dx*LETTER_SCALE
 
-    LDA CL,[tmp2]
+    MOV CL,[tmp2]
     MOV BX,#MUL3
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[lp_y0]
+    MOV AL,[BX]
+    MOV BL,[lp_y0]
     ADD AL,BL
-    STA [wy0],AL              ; y0 + dy*LETTER_SCALE
+    MOV [wy0],AL              ; y0 + dy*LETTER_SCALE
 
     MOV AL,#0
-    STA [wk],AL
+    MOV [wk],AL
 dbl_row:
     MOV AL,#0
-    STA [k],AL
+    MOV [k],AL
 dbl_col:
-    LDA AL,[wx0]
-    LDA BL,[k]
+    MOV AL,[wx0]
+    MOV BL,[k]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[wy0]
-    LDA BL,[wk]
+    MOV [px_x],AL
+    MOV AL,[wy0]
+    MOV BL,[wk]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL fb_set_px
 
-    LDA AL,[k]
+    MOV AL,[k]
     ADD AL,#1
-    STA [k],AL
+    MOV [k],AL
     CMP AL,#LETTER_SCALE
     JMPNZ dbl_col
 
-    LDA AL,[wk]
+    MOV AL,[wk]
     ADD AL,#1
-    STA [wk],AL
+    MOV [wk],AL
     CMP AL,#LETTER_SCALE
     JMPNZ dbl_row
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [j],AL
-    LDA BL,[lp_n]
+    MOV [j],AL
+    MOV BL,[lp_n]
     CMP AL,BL
     JMPNZ dbl_l
     RET
@@ -5275,59 +5275,59 @@ title_screen:
     CALL clst
 
     MOV AL,#TITLE_Y
-    STA [lp_y0],AL           ; misma fila (y) para las 6 letras
+    MOV [lp_y0],AL           ; misma fila (y) para las 6 letras
 
     MOV AL,#TITLE_X0
-    STA [lp_x0],AL
+    MOV [lp_x0],AL
     MOV BX,#LETTER_S_DX
     MOV DX,#LETTER_S_DY
     MOV AL,#LETTER_S_N
-    STA [lp_n],AL
+    MOV [lp_n],AL
     CALL draw_big_letter
 
-    LDA AL,[lp_x0]
+    MOV AL,[lp_x0]
     ADD AL,#TITLE_STEP
-    STA [lp_x0],AL
+    MOV [lp_x0],AL
     MOV BX,#LETTER_H_DX
     MOV DX,#LETTER_H_DY
     MOV AL,#LETTER_H_N
-    STA [lp_n],AL
+    MOV [lp_n],AL
     CALL draw_big_letter
 
-    LDA AL,[lp_x0]
+    MOV AL,[lp_x0]
     ADD AL,#TITLE_STEP
-    STA [lp_x0],AL
+    MOV [lp_x0],AL
     MOV BX,#LETTER_A_DX
     MOV DX,#LETTER_A_DY
     MOV AL,#LETTER_A_N
-    STA [lp_n],AL
+    MOV [lp_n],AL
     CALL draw_big_letter
 
-    LDA AL,[lp_x0]
+    MOV AL,[lp_x0]
     ADD AL,#TITLE_STEP
-    STA [lp_x0],AL
+    MOV [lp_x0],AL
     MOV BX,#LETTER_M_DX
     MOV DX,#LETTER_M_DY
     MOV AL,#LETTER_M_N
-    STA [lp_n],AL
+    MOV [lp_n],AL
     CALL draw_big_letter
 
-    LDA AL,[lp_x0]
+    MOV AL,[lp_x0]
     ADD AL,#TITLE_STEP
-    STA [lp_x0],AL
+    MOV [lp_x0],AL
     MOV BX,#LETTER_U_DX
     MOV DX,#LETTER_U_DY
     MOV AL,#LETTER_U_N
-    STA [lp_n],AL
+    MOV [lp_n],AL
     CALL draw_big_letter
 
-    LDA AL,[lp_x0]
+    MOV AL,[lp_x0]
     ADD AL,#TITLE_STEP
-    STA [lp_x0],AL
+    MOV [lp_x0],AL
     MOV BX,#LETTER_S_DX
     MOV DX,#LETTER_S_DY
     MOV AL,#LETTER_S_N
-    STA [lp_n],AL
+    MOV [lp_n],AL
     CALL draw_big_letter
 
     MOV BX,#title_sub
@@ -5337,9 +5337,9 @@ title_screen:
     CALL show_record
 
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
 
     ; la melodia suena UNA sola vez (con salida anticipada si se pulsa
     ; durante ella); si termina sin pulsar nada, se espera en silencio --
@@ -5351,16 +5351,16 @@ title_screen:
 
 ts_wait:
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ ts_wait_dir
     CMP BL,#0
     JMPZ ts_done
 ts_wait_dir:
     IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
+    MOV BL,[dir_btn_prev]
+    MOV [dir_btn_prev],AL
     CMP AL,#0
     JMPZ ts_wait_gap
     CMP BL,#0
@@ -5381,42 +5381,42 @@ ts_done:
 ; quien llama la repita).
 play_tune_check:
     MOV AL,BL
-    STA [pt_lo],AL
+    MOV [pt_lo],AL
     MOV AL,BH
-    STA [pt_hi],AL
+    MOV [pt_hi],AL
 ptc_nx:
-    LDA BL,[pt_lo]
-    LDA BH,[pt_hi]
-    LDA AL,[BX]
+    MOV BL,[pt_lo]
+    MOV BH,[pt_hi]
+    MOV AL,[BX]
     CMP AL,#0xFF
     JMPZ ptc_done_noplay
-    STA [pt_note],AL
+    MOV [pt_note],AL
     CALL pt_inc
 
-    LDA BL,[pt_lo]
-    LDA BH,[pt_hi]
-    LDA AL,[BX]
-    STA [pt_dur],AL
+    MOV BL,[pt_lo]
+    MOV BH,[pt_hi]
+    MOV AL,[BX]
+    MOV [pt_dur],AL
     CALL pt_inc
 
-    LDA AL,[pt_note]
+    MOV AL,[pt_note]
     OUT (P_SND_NOTE),AL
-    LDA AL,[pt_dur]
+    MOV AL,[pt_dur]
     CALL frame_wait
     MOV AL,#0
     OUT (P_SND_NOTE),AL
 
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ ptc_chk_dir
     CMP BL,#0
     JMPZ ptc_pressed
 ptc_chk_dir:
     IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
+    MOV BL,[dir_btn_prev]
+    MOV [dir_btn_prev],AL
     CMP AL,#0
     JMPZ ptc_gap
     CMP BL,#0

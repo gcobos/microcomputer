@@ -58,37 +58,37 @@ start:
     MOV CX,#0x0204
     CALL puts
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
 
 ; ============================================================================
 ;  BUCLE PRINCIPAL: reproduce la melodia, en bucle, hasta DIRECCION
 ; ============================================================================
 ms_rs:
     MOV AL,#lo(melody)
-    STA [mel_lo],AL
+    MOV [mel_lo],AL
     MOV AL,#hi(melody)
-    STA [mel_hi],AL
+    MOV [mel_hi],AL
 ms_nx:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ ms_x
 
-    LDA BL,[mel_lo]
-    LDA BH,[mel_hi]
-    LDA AL,[BX]               ; nota
+    MOV BL,[mel_lo]
+    MOV BH,[mel_hi]
+    MOV AL,[BX]               ; nota
     CMP AL,#0xFF
     JMPZ ms_rs                ; fin de la tabla -> repite desde el principio
-    STA [cur_note],AL
+    MOV [cur_note],AL
     CALL mel_inc
 
-    LDA BL,[mel_lo]
-    LDA BH,[mel_hi]
-    LDA AL,[BX]               ; duracion (en ticks de ~24 ms)
-    STA [cur_dur],AL
+    MOV BL,[mel_lo]
+    MOV BH,[mel_hi]
+    MOV AL,[BX]               ; duracion (en ticks de ~24 ms)
+    MOV [cur_dur],AL
     CALL mel_inc
 
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
     CMP AL,#0
     JMPZ ms_rest
     OUT (P_SND_N),AL
@@ -100,7 +100,7 @@ ms_rest:
     OUT (P_SND_N),AL
     OUT (P_LED),AL
 ms_wt:
-    LDA AL,[cur_dur]
+    MOV AL,[cur_dur]
     CALL frame_wait_n          ; nota sonando
     MOV AL,#0
     OUT (P_SND_N),AL           ; corte breve entre notas (se oyen separadas
@@ -121,13 +121,13 @@ ms_x:
 
 ; --- mel_inc:  suma 1 a mel_lo/mel_hi propagando el acarreo a mano ---------
 mel_inc:
-    LDA AL,[mel_lo]
+    MOV AL,[mel_lo]
     ADD AL,#1
-    STA [mel_lo],AL
+    MOV [mel_lo],AL
     JMPNC mel_inc_d
-    LDA AL,[mel_hi]
+    MOV AL,[mel_hi]
     ADD AL,#1
-    STA [mel_hi],AL
+    MOV [mel_hi],AL
 mel_inc_d:
     RET
 
@@ -143,7 +143,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04                ; puerto texto = 0x0400 + fila*32 + col
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -174,13 +174,13 @@ fw_l:
 
 ; --- frame_wait_n:  AL = numero de frames de ~24 ms -------------------------
 frame_wait_n:
-    STA [fwn_n],AL
+    MOV [fwn_n],AL
 fwn_l:
-    LDA AL,[fwn_n]
+    MOV AL,[fwn_n]
     CMP AL,#0
     JMPZ fwn_d
     SUB AL,#1
-    STA [fwn_n],AL
+    MOV [fwn_n],AL
     MOV AL,#3
     CALL frame_wait
     JMP fwn_l
@@ -193,7 +193,7 @@ poll_exit:
     CMP AL,#0
     JMPZ pe_d
     MOV AL,#1
-    STA [g_exit],AL
+    MOV [g_exit],AL
 pe_d:
     RET
 

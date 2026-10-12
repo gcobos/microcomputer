@@ -59,20 +59,20 @@ BRIGHT_STEP = 16      ; paso de brillo por detente de DATOS (0..255, 16 pasos)
 start:
     CALL txt_clear
     MOV AL,#0
-    STA [view],AL              ; 0 = carpetas, 1 = programas de una carpeta
-    STA [cur_folder],AL
-    STA [cur_prog],AL
-    STA [list_top],AL
+    MOV [view],AL              ; 0 = carpetas, 1 = programas de una carpeta
+    MOV [cur_folder],AL
+    MOV [cur_prog],AL
+    MOV [list_top],AL
     CALL build_menus
 
     IN  AL,(P_DIR_POS)
-    STA [dir_pos_prev],AL
+    MOV [dir_pos_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_pos_prev],AL
+    MOV [dat_pos_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
 
     CALL redraw
 
@@ -80,17 +80,17 @@ main_l:
     ; SETTINGS (view=2) tiene su propio manejo de DATOS (gira=brillo,
     ; pulsa=zumbador/Bluetooth) -- ver ml_settings, mas abajo, que comparte con el resto
     ; de vistas el pulsador de DIRECCION (volver) y la espera del final.
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#2
     JMPZ ml_settings
 
     ; --- encoder DIRECCION: mueve la seleccion --------------------------
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_pos_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_pos_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dir_pos_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_pos_prev],CL
     CMP AL,#0
     JMPZ ml_datpos
 
@@ -106,11 +106,11 @@ ml_datpos:
     ; DIRECCION) -- asi se puede elegir y pulsar con una sola mano, sin
     ; tener que ir de un mando al otro para entrar/arrancar un programa ---
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_pos_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_pos_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_pos_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_pos_prev],CL
     CMP AL,#0
     JMPZ ml_datbtn
 
@@ -124,8 +124,8 @@ ml_datdown:
 ml_datbtn:
     ; --- pulsador DATOS: entra en la carpeta / arranca el programa ------
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ ml_dirbtn
     CMP BL,#0
@@ -142,8 +142,8 @@ ml_settings:
 ml_dirbtn:
     ; --- pulsador DIRECCION: vuelve a la lista de carpetas --------------
     IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
+    MOV BL,[dir_btn_prev]
+    MOV [dir_btn_prev],AL
     CMP AL,#0
     JMPZ ml_wait
     CMP BL,#0
@@ -159,48 +159,48 @@ ml_wait:
 ; con tope en 0 y en el numero de elementos de la lista actual (nunca dan la
 ; vuelta -- mas sencillo de seguir con solo 4-5 elementos por lista).
 move_up:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ mu_prog
-    LDA AL,[cur_folder]
+    MOV AL,[cur_folder]
     CMP AL,#0
     JMPZ mu_ret
     SUB AL,#1
-    STA [cur_folder],AL
+    MOV [cur_folder],AL
     JMP mu_redraw
 mu_prog:
-    LDA AL,[cur_prog]
+    MOV AL,[cur_prog]
     CMP AL,#0
     JMPZ mu_ret
     SUB AL,#1
-    STA [cur_prog],AL
+    MOV [cur_prog],AL
 mu_redraw:
     CALL redraw
 mu_ret:
     RET
 
 move_down:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ md_prog
-    LDA AL,[cur_folder]
+    MOV AL,[cur_folder]
     ADD AL,#1
-    LDA BL,[num_vis]
+    MOV BL,[num_vis]
     CMP AL,BL
     JMPC md_store_f
     RET                     ; ya en la ultima carpeta -- sin cambios
 md_store_f:
-    STA [cur_folder],AL
+    MOV [cur_folder],AL
     JMP md_redraw
 md_prog:
-    LDA AL,[cur_prog]
+    MOV AL,[cur_prog]
     ADD AL,#1
-    LDA BL,[cur_folder_count]
+    MOV BL,[cur_folder_count]
     CMP AL,BL
     JMPC md_store_p
     RET                     ; ya en el ultimo programa de la carpeta
 md_store_p:
-    STA [cur_prog],AL
+    MOV [cur_prog],AL
 md_redraw:
     CALL redraw
     RET
@@ -211,7 +211,7 @@ md_redraw:
 ; aporta nada al ser un solo programa). En programas, arranca el marcado
 ; (y no vuelve -- PORT_PROG_LOAD reinicia la CPU con otro programa).
 on_select:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ os_launch
 
@@ -221,22 +221,22 @@ on_select:
 
     MOV BX,#fcount
     ADD BX,AL
-    LDA AL,[BX]
-    STA [cur_folder_count],AL
+    MOV AL,[BX]
+    MOV [cur_folder_count],AL
     CMP AL,#1
     JMPZ os_direct          ; carpeta de un solo elemento -> saltar directo
 
     MOV AL,#1
-    STA [view],AL
+    MOV [view],AL
     MOV AL,#0
-    STA [cur_prog],AL
-    STA [list_top],AL
+    MOV [cur_prog],AL
+    MOV [list_top],AL
     CALL redraw
     RET
 
 os_direct:
     MOV AL,#0
-    STA [cur_prog],AL
+    MOV [cur_prog],AL
 
 os_launch:
     CALL get_selected_slot
@@ -251,11 +251,11 @@ os_launch:
 ; usuario hubiera tocado el mando mientras estaba en la lista de carpetas.
 os_settings:
     MOV AL,#2
-    STA [view],AL
+    MOV [view],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_pos_prev],AL
+    MOV [dat_pos_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
     CALL redraw
     RET
 
@@ -265,7 +265,7 @@ os_settings:
 ; tanto, sin esto la vuelta a la lista de carpetas interpretaria ese giro
 ; acumulado como un salto brusco de seleccion.
 on_back:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPZ ob_ret
     CMP AL,#2
@@ -274,9 +274,9 @@ on_back:
                              ; (una sola vez, no en cada detente del dial)
 ob_folders:
     MOV AL,#0
-    STA [view],AL
+    MOV [view],AL
     IN  AL,(P_DIR_POS)
-    STA [dir_pos_prev],AL
+    MOV [dir_pos_prev],AL
     CALL redraw
 ob_ret:
     RET
@@ -288,36 +288,36 @@ ob_ret:
 ; hace de "memoria" (IN devuelve el ultimo valor escrito, ver iomap.h).
 settings_dial_dat:
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_pos_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_pos_prev]
     SUB AL,BL                   ; AL = giro de este fotograma (con signo)
-    LDA CL,[tmp0]
-    STA [dat_pos_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_pos_prev],CL
     CMP AL,#0
     JMPZ sdd_ret
 
-    STA [sdd_cnt],AL            ; se guarda ANTES del AND de signo (que lo destruye)
+    MOV [sdd_cnt],AL            ; se guarda ANTES del AND de signo (que lo destruye)
     AND AL,#0x80
     JMPNZ sdd_neg
 sdd_up_l:
     CALL bright_up
-    LDA AL,[sdd_cnt]
+    MOV AL,[sdd_cnt]
     SUB AL,#1
-    STA [sdd_cnt],AL
+    MOV [sdd_cnt],AL
     JMPNZ sdd_up_l
     CALL redraw_bright
     JMP sdd_ret
 
 sdd_neg:
-    LDA AL,[sdd_cnt]
+    MOV AL,[sdd_cnt]
     NOT AL
     ADD AL,#1                   ; AL = numero de detentes hacia abajo
-    STA [sdd_cnt],AL
+    MOV [sdd_cnt],AL
 sdd_dn_l:
     CALL bright_down
-    LDA AL,[sdd_cnt]
+    MOV AL,[sdd_cnt]
     SUB AL,#1
-    STA [sdd_cnt],AL
+    MOV [sdd_cnt],AL
     JMPNZ sdd_dn_l
     CALL redraw_bright
 sdd_ret:
@@ -352,34 +352,34 @@ bd_apply:
 ; apenas lo refleje.
 redraw_bright:
     IN  AL,(P_CFG_BRIGHTNESS)
-    STA [bv_pv],AL
-    LDA AL,[bv_pv]
+    MOV [bv_pv],AL
+    MOV AL,[bv_pv]
     PUSH AH
     MOV AH,#0
     MOV DL,#100
     DIV DL                  ; DL = cociente, resto -> [bv_pv]
-    STA [bv_pv],AH
+    MOV [bv_pv],AH
     MOV DL,AL
     POP AH
 bv_hd:
     MOV AL,DL
     ADD AL,#'0'
-    STA [bv_buf+7],AL
-    LDA AL,[bv_pv]
+    MOV [bv_buf+7],AL
+    MOV AL,[bv_pv]
     PUSH AH
     MOV AH,#0
     MOV DL,#10
     DIV DL                  ; DL = cociente, resto -> [bv_pv]
-    STA [bv_pv],AH
+    MOV [bv_pv],AH
     MOV DL,AL
     POP AH
 bv_td:
     MOV AL,DL
     ADD AL,#'0'
-    STA [bv_buf+8],AL
-    LDA AL,[bv_pv]
+    MOV [bv_buf+8],AL
+    MOV AL,[bv_pv]
     ADD AL,#'0'
-    STA [bv_buf+9],AL
+    MOV [bv_buf+9],AL
     MOV BX,#bv_buf
     MOV CX,#0x0401
     CALL txt_puts
@@ -391,8 +391,8 @@ bv_td:
 ; redibujar la palabra BUZZER/BLUETOOTH en pantalla.
 settings_press_dat:
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ spd_ret
     CMP BL,#0
@@ -420,17 +420,17 @@ get_selected_slot:
     MOV BX,#fslots
     ADD BX,AL
     ADD BH,AH
-    LDA CL,[cur_prog]
+    MOV CL,[cur_prog]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     RET
 
 ; --- cur_fid: AL = carpeta "real" (0..6) de la marcada en la lista ------
 cur_fid:
     MOV BX,#vis
-    LDA CL,[cur_folder]
+    MOV CL,[cur_folder]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     RET
 
 ; ============================================================================
@@ -442,14 +442,14 @@ build_menus:
     MOV BX,#fcount
     MOV CL,#6
 bm_clr:
-    STA [BX],AL
+    MOV [BX],AL
     INC BX
     SUB CL,#1
     JMPNZ bm_clr
     MOV AL,#1
-    STA [bm_slot],AL
+    MOV [bm_slot],AL
 bm_l:
-    LDA AL,[bm_slot]
+    MOV AL,[bm_slot]
     OUT (P_SLOT_QUERY),AL
     IN  AL,(P_SLOT_QUERY)
     CMP AL,#0
@@ -466,14 +466,14 @@ bm_l:
 bm_other:
     MOV AL,#FOLDER_OTHER
 bm_put:
-    STA [bm_fid],AL
+    MOV [bm_fid],AL
     MOV BX,#fcount
     ADD BX,AL
-    LDA AL,[BX]              ; posicion libre en esa carpeta
+    MOV AL,[BX]              ; posicion libre en esa carpeta
     PUSH AL
     ADD AL,#1
-    STA [BX],AL
-    LDA AL,[bm_fid]
+    MOV [BX],AL
+    MOV AL,[bm_fid]
     MOV BL,#SLOTS_PER_FOLDER
     MUL BL
     MOV BX,#fslots
@@ -481,31 +481,31 @@ bm_put:
     ADD BH,AH
     POP AL
     ADD BX,AL
-    LDA AL,[bm_slot]
-    STA [BX],AL
+    MOV AL,[bm_slot]
+    MOV [BX],AL
 bm_next:
-    LDA AL,[bm_slot]
+    MOV AL,[bm_slot]
     ADD AL,#1
-    STA [bm_slot],AL
+    MOV [bm_slot],AL
     CMP AL,#60
     JMPNZ bm_l
     ; carpetas visibles: las que tienen algo, en orden, y SETTINGS al final
     MOV AL,#0
-    STA [num_vis],AL
-    STA [bm_fid],AL
+    MOV [num_vis],AL
+    MOV [bm_fid],AL
 bm_v:
     MOV BX,#fcount
-    LDA CL,[bm_fid]
+    MOV CL,[bm_fid]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ bm_vnext
-    LDA AL,[bm_fid]
+    MOV AL,[bm_fid]
     CALL vis_add
 bm_vnext:
-    LDA AL,[bm_fid]
+    MOV AL,[bm_fid]
     ADD AL,#1
-    STA [bm_fid],AL
+    MOV [bm_fid],AL
     CMP AL,#SETTINGS_FOLDER
     JMPNZ bm_v
     MOV AL,#SETTINGS_FOLDER
@@ -514,12 +514,12 @@ bm_vnext:
 
 vis_add:
     MOV BX,#vis
-    LDA CL,[num_vis]
+    MOV CL,[num_vis]
     ADD BX,CL
-    STA [BX],AL
-    LDA AL,[num_vis]
+    MOV [BX],AL
+    MOV AL,[num_vis]
     ADD AL,#1
-    STA [num_vis],AL
+    MOV [num_vis],AL
     RET
 
 ; ============================================================================
@@ -527,7 +527,7 @@ vis_add:
 ; ============================================================================
 redraw:
     CALL txt_clear
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ rd_1
     CALL redraw_folders
@@ -547,14 +547,14 @@ redraw_folders:
     CALL txt_puts
 
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 rdf_l:
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
     MOV CH,AL                ; fila i+1
     MOV CL,#2
-    LDA AL,[i]
-    LDA BL,[cur_folder]
+    MOV AL,[i]
+    MOV BL,[cur_folder]
     CMP AL,BL
     JMPNZ rdf_nomark
     MOV BX,#s_mark
@@ -566,9 +566,9 @@ rdf_domark:
     PUSH CL
     PUSH CH
     MOV BX,#vis
-    LDA CL,[i]
+    MOV CL,[i]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHL AL,#1
     MOV CL,AL
     MOV BX,#FOLDER_NAMES
@@ -577,10 +577,10 @@ rdf_domark:
     POP CL
     CALL txt_puts
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
-    LDA BL,[num_vis]
+    MOV [i],AL
+    MOV BL,[num_vis]
     CMP AL,BL
     JMPNZ rdf_l
     RET
@@ -598,36 +598,36 @@ redraw_programs:
     CALL txt_puts
 
     ; ventana: que cur_prog quede dentro de [list_top, list_top+ROWS)
-    LDA AL,[cur_prog]
-    LDA BL,[list_top]
+    MOV AL,[cur_prog]
+    MOV BL,[list_top]
     CMP AL,BL
     JMPNC rdp_t1
-    STA [list_top],AL
+    MOV [list_top],AL
     JMP rdp_t2
 rdp_t1:
     SUB AL,BL
     CMP AL,#LIST_ROWS
     JMPC rdp_t2
-    LDA AL,[cur_prog]
+    MOV AL,[cur_prog]
     SUB AL,#(LIST_ROWS-1)
-    STA [list_top],AL
+    MOV [list_top],AL
 rdp_t2:
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 rdp_l:
-    LDA AL,[list_top]
-    LDA BL,[i]
+    MOV AL,[list_top]
+    MOV BL,[i]
     ADD AL,BL
-    STA [rd_k],AL            ; elemento de la lista
-    LDA BL,[cur_folder_count]
+    MOV [rd_k],AL            ; elemento de la lista
+    MOV BL,[cur_folder_count]
     CMP AL,BL
     JMPNC rdp_done
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
     MOV CH,AL
     MOV CL,#2
-    LDA AL,[rd_k]
-    LDA BL,[cur_prog]
+    MOV AL,[rd_k]
+    MOV BL,[cur_prog]
     CMP AL,BL
     JMPNZ rdp_nomark
     MOV BX,#s_mark
@@ -638,21 +638,21 @@ rdp_domark:
     CALL txt_puts
     PUSH CL
     PUSH CH
-    LDA AL,[cur_prog]
+    MOV AL,[cur_prog]
     PUSH AL
-    LDA AL,[rd_k]
-    STA [cur_prog],AL        ; get_selected_slot mira cur_prog
+    MOV AL,[rd_k]
+    MOV [cur_prog],AL        ; get_selected_slot mira cur_prog
     CALL get_selected_slot
-    STA [rd_slot],AL
+    MOV [rd_slot],AL
     POP AL
-    STA [cur_prog],AL
+    MOV [cur_prog],AL
     POP CH
     POP CL
-    LDA AL,[rd_slot]
+    MOV AL,[rd_slot]
     CALL put_slot_name
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#LIST_ROWS
     JMPNZ rdp_l
 rdp_done:
@@ -661,7 +661,7 @@ rdp_done:
 ; --- put_slot_name: AL = slot -> su nombre en CH/CL ("SLOT nn" si no
 ; tiene) ----------------------------------------------------------------
 put_slot_name:
-    STA [rd_slot],AL
+    MOV [rd_slot],AL
     OUT (P_SLOT_QUERY),AL
     MOV BX,#name_buf
     MOV DX,#(P_SLOT_INFO+1)
@@ -669,13 +669,13 @@ put_slot_name:
     MOV CL,#14
 psn_l:
     IN  AL,(DX)
-    STA [BX],AL
+    MOV [BX],AL
     INC BX
     INC DX
     SUB CL,#1
     JMPNZ psn_l
     POP CL
-    LDA AL,[name_buf]
+    MOV AL,[name_buf]
     CMP AL,#0
     JMPZ psn_noname
     MOV BX,#name_buf
@@ -684,7 +684,7 @@ psn_l:
 psn_noname:
     MOV BX,#s_slot
     CALL txt_puts
-    LDA AL,[rd_slot]
+    MOV AL,[rd_slot]
     CALL txt_put2
     RET
 
@@ -704,7 +704,7 @@ redraw_settings:
     CALL txt_puts
 
     MOV AL,#255             ; ningun valor real -> fuerza pintar el sonido
-    STA [snd_shown],AL
+    MOV [snd_shown],AL
     CALL settings_sound
 
     MOV BX,#s_set_back
@@ -712,7 +712,7 @@ redraw_settings:
     CALL txt_puts
     CALL redraw_bright
     MOV AL,#253             ; ningun valor real -> fuerza pintar la bateria
-    STA [bat_shown],AL
+    MOV [bat_shown],AL
     CALL settings_battery
     RET
 
@@ -721,10 +721,10 @@ redraw_settings:
 ; el boton BOOT del ESP32, no solo el de pulsar DATOS aqui.
 settings_sound:
     IN  AL,(P_CFG_SOUND_EN)
-    LDA BL,[snd_shown]
+    MOV BL,[snd_shown]
     CMP AL,BL
     JMPZ ss_ret
-    STA [snd_shown],AL
+    MOV [snd_shown],AL
     MOV BX,#s_sound_off     ; 0 = Bluetooth
     CMP AL,#0
     JMPZ ss_puts
@@ -751,10 +751,10 @@ settings_battery:
 sb_pct:
     IN  AL,(P_BAT_PCT)
 sb_cmp:
-    LDA BL,[bat_shown]
+    MOV BL,[bat_shown]
     CMP AL,BL
     JMPZ sb_ret
-    STA [bat_shown],AL
+    MOV [bat_shown],AL
     MOV CX,#0x0601
     CMP AL,#254
     JMPZ sb_usb
@@ -762,7 +762,7 @@ sb_cmp:
     JMPZ sb_none
     MOV BX,#s_bat
     CALL txt_puts
-    LDA AL,[bat_shown]
+    MOV AL,[bat_shown]
     CALL txt_putn
     MOV BX,#s_bat_pct
     CALL txt_puts
@@ -782,13 +782,13 @@ sb_ret:
 ; de tabla[CL].
 read_ptr16:
     ADD BX,CL
-    LDA AL,[BX]
-    STA [rp_lo],AL
+    MOV AL,[BX]
+    MOV [rp_lo],AL
     INC BX
-    LDA AL,[BX]
-    STA [rp_hi],AL
-    LDA BL,[rp_lo]
-    LDA BH,[rp_hi]
+    MOV AL,[BX]
+    MOV [rp_hi],AL
+    MOV BL,[rp_lo]
+    MOV BH,[rp_hi]
     RET
 
     .include "text.asm"

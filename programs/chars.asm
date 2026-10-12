@@ -105,35 +105,35 @@ set_cell:
 ; 96 caracteres / 21 por fila = 5 filas (2..6), la 7 queda libre.
 show_charset:
     MOV AL,#0x20
-    STA [cs_ch],AL
+    MOV [cs_ch],AL
     MOV AL,#0
-    STA [cs_col],AL
+    MOV [cs_col],AL
     MOV AL,#2
-    STA [cs_row],AL
+    MOV [cs_row],AL
 sc_l:
-    LDA AL,[cs_row]
+    MOV AL,[cs_row]
     SHL AL,#5                 ; fila*32
-    LDA BL,[cs_col]
+    MOV BL,[cs_col]
     ADD AL,BL
     MOV DL,AL
     MOV DH,#0x04               ; puerto texto = 0x0400 + fila*32 + col
-    LDA AL,[cs_ch]
+    MOV AL,[cs_ch]
     OUT (DX),AL
-    LDA AL,[cs_ch]
+    MOV AL,[cs_ch]
     ADD AL,#1
-    STA [cs_ch],AL
+    MOV [cs_ch],AL
     CMP AL,#0x80
     JMPZ sc_d
-    LDA AL,[cs_col]
+    MOV AL,[cs_col]
     ADD AL,#1
-    STA [cs_col],AL
+    MOV [cs_col],AL
     CMP AL,#21
     JMPNZ sc_l
     MOV AL,#0
-    STA [cs_col],AL
-    LDA AL,[cs_row]
+    MOV [cs_col],AL
+    MOV AL,[cs_row]
     ADD AL,#1
-    STA [cs_row],AL
+    MOV [cs_row],AL
     JMP sc_l
 sc_d:
     RET
@@ -146,7 +146,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL

@@ -11,6 +11,7 @@
     python3 tools/compi.py rm 30                    # vacia un slot (pregunta)
     python3 tools/compi.py ports                    # que puertos parecen un compi
     python3 tools/compi.py wifi MiRed               # Wi-Fi para la hora (pide la clave)
+    python3 tools/compi.py wifi --forget            # borra la red y la clave guardadas
     python3 tools/compi.py net                      # hora, red y zona horaria
     python3 tools/compi.py time                     # pone la hora del PC
     python3 tools/compi.py tz "CET-1CEST,M3.5.0,M10.5.0/3"
@@ -280,6 +281,10 @@ def cmd_time(args):
 
 
 def cmd_wifi(args):
+    if args.forget:
+        if args.ssid:
+            raise CompiError("--forget no lleva nombre de red", transient=False)
+        args.password = None
     password = args.password
     if args.ssid and password is None:
         import getpass  # noqa: PLC0415
@@ -287,7 +292,7 @@ def cmd_wifi(args):
     with Link(args.port, auto_time=False) as link:
         link.set_wifi(args.ssid or "", password or "")
     say(f"Wi-Fi: {args.ssid} -- el aparato se conecta un momento para poner la hora"
-        if args.ssid else "Wi-Fi quitado")
+        if args.ssid else "Wi-Fi quitado: borrados la red y la clave de la flash del aparato")
     return 0
 
 
@@ -503,9 +508,11 @@ def main(argv=None):
     p.add_argument("out", choices=["bt", "buzzer", "off"])
     sub.add_parser("time", help="pone la hora del PC en el aparato")
     sub.add_parser("sync", help="que el aparato pida ya la hora por Wi-Fi")
-    p = sub.add_parser("wifi", help="red Wi-Fi para la hora (sin nombre: quitarla)")
+    p = sub.add_parser("wifi", help="red Wi-Fi para la hora (sin nombre o --forget: quitarla)")
     p.add_argument("ssid", nargs="?")
     p.add_argument("password", nargs="?", help="si no se da, se pregunta")
+    p.add_argument("--forget", action="store_true",
+                   help="borra la red y la clave guardadas en la flash del aparato")
     p = sub.add_parser("tz", help="zona horaria POSIX")
     p.add_argument("tz")
 

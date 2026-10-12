@@ -157,16 +157,16 @@ MOUNTAIN_LEN = 32        ; muestras de la silueta de montañas (cada 4 columnas)
 start:
     IN  AL,(P_DAT_POS)          ; siembra el LFSR con algo poco predecible
     ADD AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
     JMPNZ title_init
     MOV AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
 
 title_init:
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
     CALL clsg
     CALL clst
 
@@ -202,32 +202,32 @@ game_init:
     CALL clr_shadow
 
     MOV AL,#0
-    STA [score],AL
+    MOV [score],AL
     MOV AL,#LIVES_START
-    STA [lives],AL
+    MOV [lives],AL
     MOV AL,#1
-    STA [speed],AL
+    MOV [speed],AL
     MOV AL,#64
-    STA [ship_x],AL
+    MOV [ship_x],AL
     MOV AL,#0
-    STA [curve_slope],AL
-    STA [curve_target],AL
-    STA [invuln],AL
-    STA [tree_scroll],AL
-    STA [ship_lane],AL
-    STA [shot_active],AL
-    STA [jump_active],AL
+    MOV [curve_slope],AL
+    MOV [curve_target],AL
+    MOV [invuln],AL
+    MOV [tree_scroll],AL
+    MOV [ship_lane],AL
+    MOV [shot_active],AL
+    MOV [jump_active],AL
     MOV AL,#CURVE_PERIOD
-    STA [curve_timer],AL
+    MOV [curve_timer],AL
     MOV AL,#SPAWN_PERIOD
-    STA [spawn_timer],AL
+    MOV [spawn_timer],AL
     MOV AL,#CHASE_PERIOD
-    STA [chase_timer],AL
+    MOV [chase_timer],AL
 
     IN  AL,(P_DIR_POS)
-    STA [dir_prev],AL
+    MOV [dir_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_prev],AL
+    MOV [dat_prev],AL
 
     MOV DL,#0
 gi_clr_obst:
@@ -235,7 +235,7 @@ gi_clr_obst:
     MOV BX,#obst_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
     ADD DL,#1
     CMP DL,#N_OBST
     JMPNZ gi_clr_obst
@@ -243,22 +243,22 @@ gi_clr_obst:
     ; row_center_cache empieza plana (todas las filas centradas en 64):
     ; scroll_road ya se encarga de irla curvando vuelta a vuelta.
     MOV AL,#0
-    STA [row_i],AL
+    MOV [row_i],AL
 gi_ric_l:
-    LDA CL,[row_i]
+    MOV CL,[row_i]
     MOV BX,#row_center_cache
     ADD BX,CL
     MOV AL,#64
-    STA [BX],AL
-    LDA AL,[row_i]
+    MOV [BX],AL
+    MOV AL,[row_i]
     ADD AL,#1
-    STA [row_i],AL
+    MOV [row_i],AL
     CMP AL,#32
     JMPNZ gi_ric_l
 
     MOV AL,#1
-    STA [score_dirty],AL
-    STA [lives_dirty],AL
+    MOV [score_dirty],AL
+    MOV [lives_dirty],AL
     CALL update_hud
 
 ; ============================================================================
@@ -282,7 +282,7 @@ game_l:
     CALL blit
     CALL update_hud
 
-    LDA AL,[lives]
+    MOV AL,[lives]
     CMP AL,#0
     JMPZ game_over
 
@@ -303,13 +303,13 @@ game_over:
     MOV CX,#0x0403
     CALL puts
     CALL score_digits
-    LDA BL,[digit_h]
+    MOV BL,[digit_h]
     MOV CX,#0x040C
     CALL putc
-    LDA BL,[digit_t]
+    MOV BL,[digit_t]
     MOV CX,#0x040D
     CALL putc
-    LDA BL,[digit_u]
+    MOV BL,[digit_u]
     MOV CX,#0x040E
     CALL putc
 
@@ -326,9 +326,9 @@ game_over:
 go_norec:
 
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
 go_l:
     CALL read_start_press
     CMP AL,#0
@@ -342,35 +342,35 @@ go_l:
 ; ============================================================================
 read_start_press:
     MOV AL,#0
-    STA [start_hit],AL
+    MOV [start_hit],AL
 
     IN  AL,(P_DIR_BTN)
-    STA [tmp0],AL
-    LDA BL,[dir_btn_prev]
-    LDA CL,[tmp0]
-    STA [dir_btn_prev],CL
+    MOV [tmp0],AL
+    MOV BL,[dir_btn_prev]
+    MOV CL,[tmp0]
+    MOV [dir_btn_prev],CL
     CMP CL,#0
     JMPZ rsp_dir_done
     CMP BL,#0
     JMPNZ rsp_dir_done
     MOV AL,#1
-    STA [start_hit],AL
+    MOV [start_hit],AL
 rsp_dir_done:
 
     IN  AL,(P_DAT_BTN)
-    STA [tmp0],AL
-    LDA BL,[dat_btn_prev]
-    LDA CL,[tmp0]
-    STA [dat_btn_prev],CL
+    MOV [tmp0],AL
+    MOV BL,[dat_btn_prev]
+    MOV CL,[tmp0]
+    MOV [dat_btn_prev],CL
     CMP CL,#0
     JMPZ rsp_dat_done
     CMP BL,#0
     JMPNZ rsp_dat_done
     MOV AL,#1
-    STA [start_hit],AL
+    MOV [start_hit],AL
 rsp_dat_done:
 
-    LDA AL,[start_hit]
+    MOV AL,[start_hit]
     RET
 
 ; ============================================================================
@@ -379,79 +379,79 @@ rsp_dat_done:
 ; ============================================================================
 control_ship:
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dir_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_prev],CL
     MOV BL,AL
-    LDA AL,[ship_x]
+    MOV AL,[ship_x]
     ADD AL,BL
     ADD AL,BL
-    STA [ship_x],AL
+    MOV [ship_x],AL
 
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_prev],CL
     CMP AL,#0
     JMPZ cs_speed_done
     AND AL,#0x80
     JMPZ cs_speed_up
-    LDA AL,[speed]
+    MOV AL,[speed]
     CMP AL,#SPEED_MIN
     JMPZ cs_speed_done
     SUB AL,#1
-    STA [speed],AL
+    MOV [speed],AL
     JMP cs_speed_done
 cs_speed_up:
-    LDA AL,[speed]
+    MOV AL,[speed]
     CMP AL,#SPEED_MAX
     JMPZ cs_speed_done
     ADD AL,#1
-    STA [speed],AL
+    MOV [speed],AL
 cs_speed_done:
 
     MOV AL,#0
-    STA [wall_hit],AL
+    MOV [wall_hit],AL
 
-    LDA AL,[left31]
+    MOV AL,[left31]
     AND AL,#0x80
     JMPNZ cs_no_left
-    LDA AL,[ship_x]
-    LDA BL,[left31]
+    MOV AL,[ship_x]
+    MOV BL,[left31]
     ADD BL,#SHIP_HALF_W
     CMP AL,BL
     JMPNC cs_no_left
     MOV AL,BL
-    STA [ship_x],AL
+    MOV [ship_x],AL
     MOV AL,#1
-    STA [wall_hit],AL
+    MOV [wall_hit],AL
 cs_no_left:
 
-    LDA AL,[right31]
+    MOV AL,[right31]
     AND AL,#0x80
     JMPNZ cs_no_right
-    LDA AL,[ship_x]
-    LDA BL,[right31]
+    MOV AL,[ship_x]
+    MOV BL,[right31]
     SUB BL,#SHIP_HALF_W
     CMP AL,BL
     JMPC cs_no_right
     MOV AL,BL
-    STA [ship_x],AL
+    MOV [ship_x],AL
     MOV AL,#1
-    STA [wall_hit],AL
+    MOV [wall_hit],AL
 cs_no_right:
 
     ; tocar un borde resetea la velocidad de golpe -- hay que acelerar otra
     ; vez a mano con el encoder DATOS (no quita vidas, solo frena)
-    LDA AL,[wall_hit]
+    MOV AL,[wall_hit]
     CMP AL,#0
     JMPZ cs_done
     MOV AL,#SPEED_MIN
-    STA [speed],AL
+    MOV [speed],AL
 cs_done:
     RET
 
@@ -465,39 +465,39 @@ cs_done:
 ; ============================================================================
 control_weapons:
     IN  AL,(P_DIR_BTN)
-    STA [tmp0],AL
-    LDA BL,[dir_btn_prev]
-    LDA CL,[tmp0]
-    STA [dir_btn_prev],CL
+    MOV [tmp0],AL
+    MOV BL,[dir_btn_prev]
+    MOV CL,[tmp0]
+    MOV [dir_btn_prev],CL
     CMP CL,#0
     JMPZ cw_jump_done
     CMP BL,#0
     JMPNZ cw_jump_done           ; ya estaba pulsado -> no es flanco
-    LDA AL,[jump_active]
+    MOV AL,[jump_active]
     CMP AL,#0
     JMPNZ cw_jump_done           ; ya esta saltando
     MOV AL,#JUMP_TICKS
-    STA [jump_active],AL
+    MOV [jump_active],AL
 cw_jump_done:
 
     IN  AL,(P_DAT_BTN)
-    STA [tmp0],AL
-    LDA BL,[dat_btn_prev]
-    LDA CL,[tmp0]
-    STA [dat_btn_prev],CL
+    MOV [tmp0],AL
+    MOV BL,[dat_btn_prev]
+    MOV CL,[tmp0]
+    MOV [dat_btn_prev],CL
     CMP CL,#0
     JMPZ cw_fire_done
     CMP BL,#0
     JMPNZ cw_fire_done           ; ya estaba pulsado -> no es flanco
-    LDA AL,[shot_active]
+    MOV AL,[shot_active]
     CMP AL,#0
     JMPNZ cw_fire_done           ; ya hay un disparo en el aire
     MOV AL,#1
-    STA [shot_active],AL
+    MOV [shot_active],AL
     MOV AL,#SHOT_START_ROW
-    STA [shot_row],AL
-    LDA AL,[ship_x]
-    STA [shot_x],AL
+    MOV [shot_row],AL
+    MOV AL,[ship_x]
+    MOV [shot_x],AL
     MOV AL,#4                ; PRIMERO la duracion: PORT_SND_DUR es "pegajoso"
     OUT (P_SND_DUR),AL       ; (arma la duracion de la SIGUIENTE nota que
     MOV AL,#69               ; suene) -- escrito despues de NOTE, este pitido
@@ -511,38 +511,38 @@ cw_fire_done:
 ;  se aplica en `scroll_road`, no aqui (ver la nota de la cabecera).
 ; ============================================================================
 update_curve:
-    LDA AL,[curve_timer]
+    MOV AL,[curve_timer]
     CMP AL,#0
     JMPNZ uc_dec
     MOV AL,#CURVE_PERIOD
-    STA [curve_timer],AL
+    MOV [curve_timer],AL
 
     CALL rnd
     AND AL,#0x01
     MOV CL,AL
     MOV BX,#curve_options
     ADD BX,CL
-    LDA AL,[BX]
-    STA [curve_target],AL
+    MOV AL,[BX]
+    MOV [curve_target],AL
     JMP uc_move
 uc_dec:
     SUB AL,#1
-    STA [curve_timer],AL
+    MOV [curve_timer],AL
 uc_move:
-    LDA AL,[curve_slope]
-    LDA BL,[curve_target]
+    MOV AL,[curve_slope]
+    MOV BL,[curve_target]
     CMP AL,BL
     JMPZ uc_done
     SUB AL,BL
     JMPN uc_inc
-    LDA AL,[curve_slope]
+    MOV AL,[curve_slope]
     SUB AL,#1
-    STA [curve_slope],AL
+    MOV [curve_slope],AL
     JMP uc_done
 uc_inc:
-    LDA AL,[curve_slope]
+    MOV AL,[curve_slope]
     ADD AL,#1
-    STA [curve_slope],AL
+    MOV [curve_slope],AL
 uc_done:
     RET
 
@@ -554,37 +554,37 @@ uc_done:
 ; ranura libre no puede vivir en DL a traves de un CALL rnd, asi que se
 ; guarda en `spawn_slot` y se recarga en CL justo antes de cada idx_ptr.
 try_spawn:
-    LDA AL,[spawn_timer]
+    MOV AL,[spawn_timer]
     CMP AL,#0
     JMPNZ ts_dec
     MOV AL,#SPAWN_PERIOD
-    STA [spawn_timer],AL
+    MOV [spawn_timer],AL
 
     MOV AL,#0
-    STA [spawn_slot],AL
+    MOV [spawn_slot],AL
 ts_find:
-    LDA CL,[spawn_slot]
+    MOV CL,[spawn_slot]
     MOV BX,#obst_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ts_spawn
-    LDA AL,[spawn_slot]
+    MOV AL,[spawn_slot]
     ADD AL,#1
-    STA [spawn_slot],AL
+    MOV [spawn_slot],AL
     CMP AL,#N_OBST
     JMPNZ ts_find
     RET
 
 ts_spawn:
     MOV AL,#1
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA CL,[spawn_slot]
+    MOV CL,[spawn_slot]
     MOV BX,#obst_row
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
 
     CALL rnd
     AND AL,#0x03
@@ -592,27 +592,27 @@ ts_spawn:
     JMPNZ ts_lane_ok
     MOV AL,#0
 ts_lane_ok:
-    STA [tmp1],AL
-    LDA CL,[spawn_slot]
+    MOV [tmp1],AL
+    MOV CL,[spawn_slot]
     MOV BX,#obst_lane
     ADD BX,CL
-    LDA AL,[tmp1]
-    STA [BX],AL
+    MOV AL,[tmp1]
+    MOV [BX],AL
     RET
 ts_dec:
     SUB AL,#1
-    STA [spawn_timer],AL
+    MOV [spawn_timer],AL
     RET
 
 ; ============================================================================
 ;  tick_invuln: cuenta atras los fotogramas de invulnerabilidad tras un choque
 ; ============================================================================
 tick_invuln:
-    LDA AL,[invuln]
+    MOV AL,[invuln]
     CMP AL,#0
     JMPZ ti_done
     SUB AL,#1
-    STA [invuln],AL
+    MOV [invuln],AL
 ti_done:
     RET
 
@@ -620,11 +620,11 @@ ti_done:
 ;  tick_jump: cuenta atras los fotogramas que quedan de salto
 ; ============================================================================
 tick_jump:
-    LDA AL,[jump_active]
+    MOV AL,[jump_active]
     CMP AL,#0
     JMPZ tj_done
     SUB AL,#1
-    STA [jump_active],AL
+    MOV [jump_active],AL
 tj_done:
     RET
 
@@ -635,18 +635,18 @@ tj_done:
 ;  update_obstacles (ahi ya se recorre cada obstaculo activo).
 ; ============================================================================
 update_shot:
-    LDA AL,[shot_active]
+    MOV AL,[shot_active]
     CMP AL,#0
     JMPZ us2_done
-    LDA AL,[shot_row]
+    MOV AL,[shot_row]
     CMP AL,#SHOT_SPEED
     JMPNC us2_advance             ; shot_row >= SHOT_SPEED -> no hay problema
     MOV AL,#0
-    STA [shot_active],AL          ; ha llegado al horizonte sin acertar
+    MOV [shot_active],AL          ; ha llegado al horizonte sin acertar
     RET
 us2_advance:
     SUB AL,#SHOT_SPEED
-    STA [shot_row],AL
+    MOV [shot_row],AL
 us2_done:
     RET
 
@@ -658,23 +658,23 @@ us2_done:
 ;  vuelta, antes de draw_road.
 ; ============================================================================
 scroll_road:
-    LDA AL,[speed]
-    STA [scroll_n],AL
+    MOV AL,[speed]
+    MOV [scroll_n],AL
 sr_outer:
-    LDA AL,[scroll_n]
+    MOV AL,[scroll_n]
     CMP AL,#0
     JMPZ sr_outer_done
     CALL scroll_road_once
-    LDA AL,[scroll_n]
+    MOV AL,[scroll_n]
     SUB AL,#1
-    STA [scroll_n],AL
+    MOV [scroll_n],AL
     JMP sr_outer
 sr_outer_done:
     ; los arbustos del arcen "fluyen" al mismo ritmo que se avanza
-    LDA AL,[tree_scroll]
-    LDA BL,[speed]
+    MOV AL,[tree_scroll]
+    MOV BL,[speed]
     ADD AL,BL
-    STA [tree_scroll],AL
+    MOV [tree_scroll],AL
     RET
 
 ; --- scroll_road_once: UN paso de lo de arriba -- desplaza
@@ -684,30 +684,30 @@ sr_outer_done:
 ; la cabecera. --------------------------------------------------------------
 scroll_road_once:
     MOV AL,#31
-    STA [row_i],AL
+    MOV [row_i],AL
 sro_l:
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     SUB AL,#1
     MOV CL,AL
     MOV BX,#row_center_cache
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp0],AL                ; tmp0 = row_center_cache[i-1]
+    MOV AL,[BX]
+    MOV [tmp0],AL                ; tmp0 = row_center_cache[i-1]
 
-    LDA CL,[row_i]
+    MOV CL,[row_i]
     MOV BX,#row_center_cache
     ADD BX,CL
-    LDA AL,[tmp0]
-    STA [BX],AL                  ; row_center_cache[i] = row_center_cache[i-1]
+    MOV AL,[tmp0]
+    MOV [BX],AL                  ; row_center_cache[i] = row_center_cache[i-1]
 
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     SUB AL,#1
-    STA [row_i],AL
+    MOV [row_i],AL
     JMPZ sro_done                 ; row_i llego a 0 -> ya copiamos [0]->[1]
     JMP sro_l
 sro_done:
-    LDA AL,[row_center_cache]
-    LDA BL,[curve_slope]
+    MOV AL,[row_center_cache]
+    MOV BL,[curve_slope]
     ADD AL,BL
     CMP AL,#35
     JMPNC sro_min_ok
@@ -717,7 +717,7 @@ sro_min_ok:
     JMPC sro_max_ok
     MOV AL,#92
 sro_max_ok:
-    STA [row_center_cache],AL
+    MOV [row_center_cache],AL
     RET
 
 ; ============================================================================
@@ -732,37 +732,37 @@ sro_max_ok:
 ; cada CALL idx_ptr (nunca se espera que sobreviva a un CALL plot).
 draw_road:
     MOV AL,#0
-    STA [row_i],AL
+    MOV [row_i],AL
 dr_l:
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     ADD AL,#32
-    STA [px_y],AL
+    MOV [px_y],AL
 
-    LDA CL,[row_i]
+    MOV CL,[row_i]
     MOV BX,#road_width
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHR AL
-    STA [half_w],AL
+    MOV [half_w],AL
 
-    LDA CL,[row_i]
+    MOV CL,[row_i]
     MOV BX,#row_center_cache
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL                 ; tmp1 = centro de esta fila
+    MOV AL,[BX]
+    MOV [tmp1],AL                 ; tmp1 = centro de esta fila
 
-    LDA AL,[tmp1]
-    LDA BL,[half_w]
+    MOV AL,[tmp1]
+    MOV BL,[half_w]
     SUB AL,BL
-    STA [edge_l],AL
-    STA [px_x],AL
+    MOV [edge_l],AL
+    MOV [px_x],AL
     CALL plot
 
-    LDA AL,[tmp1]
-    LDA BL,[half_w]
+    MOV AL,[tmp1]
+    MOV BL,[half_w]
     ADD AL,BL
-    STA [edge_r],AL
-    STA [px_x],AL
+    MOV [edge_r],AL
+    MOV [px_x],AL
     CALL plot
 
     ; pinos en el arcen: (fila - tree_scroll) mod 4 == 0 -- tree_scroll
@@ -770,43 +770,43 @@ dr_l:
     ; patron "fluye" hacia la camara para dar sensacion de movimiento.
     ; Ademas alterna pequeño/grande segun el numero de pino, para que se note
     ; que son arboles distintos y no una hilera continua.
-    LDA AL,[row_i]
-    LDA BL,[tree_scroll]
+    MOV AL,[row_i]
+    MOV BL,[tree_scroll]
     SUB AL,BL
-    STA [tmp3],AL
+    MOV [tmp3],AL
     AND AL,#0x03
     JMPNZ dr_no_tree
 
-    LDA AL,[tmp3]
+    MOV AL,[tmp3]
     SHR AL,#2
     AND AL,#0x01
-    STA [tmp3],AL                 ; tmp3: 0 = pino pequeño, 1 = pino grande
+    MOV [tmp3],AL                 ; tmp3: 0 = pino pequeño, 1 = pino grande
 
-    LDA AL,[edge_l]
+    MOV AL,[edge_l]
     SUB AL,#4
-    STA [tree_x],AL
-    LDA AL,[row_i]
+    MOV [tree_x],AL
+    MOV AL,[row_i]
     ADD AL,#32
-    STA [tree_y],AL
+    MOV [tree_y],AL
     CALL draw_tree
 
-    LDA AL,[edge_r]
+    MOV AL,[edge_r]
     ADD AL,#4
-    STA [tree_x],AL
+    MOV [tree_x],AL
     CALL draw_tree
 dr_no_tree:
 
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     CMP AL,#31
     JMPNZ dr_next
-    LDA AL,[edge_l]
-    STA [left31],AL
-    LDA AL,[edge_r]
-    STA [right31],AL
+    MOV AL,[edge_l]
+    MOV [left31],AL
+    MOV AL,[edge_r]
+    MOV [right31],AL
 dr_next:
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     ADD AL,#1
-    STA [row_i],AL
+    MOV [row_i],AL
     CMP AL,#32
     JMPNZ dr_l
     RET
@@ -817,18 +817,18 @@ dr_next:
 ; de copa mas ancha y un tronco, para las filas mas cercanas). Usa `tp` para
 ; no repetir tree_x+desplazamiento en cada punto. ---------------------------
 draw_tree:
-    LDA AL,[tmp3]
+    MOV AL,[tmp3]
     CMP AL,#0
     JMPNZ dt_big
 
-    LDA AL,[tree_y]
+    MOV AL,[tree_y]
     SUB AL,#1
-    STA [px_y],AL
+    MOV [px_y],AL
     MOV DL,#0
     CALL tp
 
-    LDA AL,[tree_y]
-    STA [px_y],AL
+    MOV AL,[tree_y]
+    MOV [px_y],AL
     MOV DL,#0xFF                  ; -1
     CALL tp
     MOV DL,#0
@@ -838,15 +838,15 @@ draw_tree:
     RET
 
 dt_big:
-    LDA AL,[tree_y]
+    MOV AL,[tree_y]
     SUB AL,#3
-    STA [px_y],AL
+    MOV [px_y],AL
     MOV DL,#0
     CALL tp
 
-    LDA AL,[tree_y]
+    MOV AL,[tree_y]
     SUB AL,#2
-    STA [px_y],AL
+    MOV [px_y],AL
     MOV DL,#0xFF                  ; -1
     CALL tp
     MOV DL,#0
@@ -854,9 +854,9 @@ dt_big:
     MOV DL,#1
     CALL tp
 
-    LDA AL,[tree_y]
+    MOV AL,[tree_y]
     SUB AL,#1
-    STA [px_y],AL
+    MOV [px_y],AL
     MOV DL,#0xFE                  ; -2
     CALL tp
     MOV DL,#0xFF
@@ -868,8 +868,8 @@ dt_big:
     MOV DL,#2
     CALL tp
 
-    LDA AL,[tree_y]
-    STA [px_y],AL
+    MOV AL,[tree_y]
+    MOV [px_y],AL
     MOV DL,#0                     ; tronco
     CALL tp
     RET
@@ -878,9 +878,9 @@ dt_big:
 ; el desplazamiento horizontal con signo. Solo la usa draw_tree, para no
 ; repetir "tree_x + desplazamiento -> px_x -> plot" en cada punto ----------
 tp:
-    LDA AL,[tree_x]
+    MOV AL,[tree_x]
     ADD AL,DL
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL plot
     RET
 
@@ -891,34 +891,34 @@ tp:
 ;  -- ver la nota de la cabecera.
 ; ============================================================================
 draw_mountains:
-    LDA AL,[row_center_cache]
+    MOV AL,[row_center_cache]
     SUB AL,#64
-    STA [mtn_shift],AL            ; con signo; el AND 0x1F de abajo lo
+    MOV [mtn_shift],AL            ; con signo; el AND 0x1F de abajo lo
                                    ; envuelve bien tanto en positivo como en
                                    ; negativo (256 es multiplo de 32)
     MOV AL,#0
-    STA [row_i],AL
+    MOV [row_i],AL
 dm_l:
-    LDA AL,[row_i]
-    LDA BL,[mtn_shift]
+    MOV AL,[row_i]
+    MOV BL,[mtn_shift]
     ADD AL,BL
     AND AL,#0x1F
     MOV CL,AL
     MOV BX,#mountain_h
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp2],AL                 ; tmp2 = altura de esta columna
+    MOV AL,[BX]
+    MOV [tmp2],AL                 ; tmp2 = altura de esta columna
 
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     SHL AL,#2                      ; x = row_i*4 (0,4,8..124)
-    STA [px_x],AL
+    MOV [px_x],AL
 
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     CALL draw_mtn_col
 
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     ADD AL,#1
-    STA [row_i],AL
+    MOV [row_i],AL
     CMP AL,#MOUNTAIN_LEN
     JMPNZ dm_l
     RET
@@ -926,20 +926,20 @@ dm_l:
 ; --- draw_mtn_col: columna vertical de AL pixeles de alto, subiendo desde la
 ; fila 31 en la columna px_x (px_x ya puesto) ------------------------------
 draw_mtn_col:
-    STA [tmp3],AL
+    MOV [tmp3],AL
     MOV AL,#31
-    STA [px_y],AL
+    MOV [px_y],AL
 dmc_l:
-    LDA AL,[tmp3]
+    MOV AL,[tmp3]
     CMP AL,#0
     JMPZ dmc_done
     CALL plot
-    LDA AL,[px_y]
+    MOV AL,[px_y]
     SUB AL,#1
-    STA [px_y],AL
-    LDA AL,[tmp3]
+    MOV [px_y],AL
+    MOV AL,[tmp3]
     SUB AL,#1
-    STA [tmp3],AL
+    MOV [tmp3],AL
     JMP dmc_l
 dmc_done:
     RET
@@ -949,22 +949,22 @@ dmc_done:
 ;  3 pixeles en (shot_x, 32+shot_row).
 ; ============================================================================
 draw_shot:
-    LDA AL,[shot_active]
+    MOV AL,[shot_active]
     CMP AL,#0
     JMPZ dsh_done
-    LDA AL,[shot_x]
-    STA [px_x],AL
-    LDA AL,[shot_row]
+    MOV AL,[shot_x]
+    MOV [px_x],AL
+    MOV AL,[shot_row]
     ADD AL,#32
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL plot
-    LDA AL,[px_y]
+    MOV AL,[px_y]
     SUB AL,#1
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL plot
-    LDA AL,[px_y]
+    MOV AL,[px_y]
     ADD AL,#2
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL plot
 dsh_done:
     RET
@@ -978,39 +978,39 @@ compute_ship_lane:
     MOV CL,#31
     MOV BX,#row_center_cache
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp0],AL                 ; tmp0 = centro de la fila 31
+    MOV AL,[BX]
+    MOV [tmp0],AL                 ; tmp0 = centro de la fila 31
 
     MOV CL,#31
     MOV BX,#road_width
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHR AL,#2
-    STA [tmp1],AL                 ; tmp1 = umbral (ancho31/4)
+    MOV [tmp1],AL                 ; tmp1 = umbral (ancho31/4)
 
-    LDA AL,[ship_x]
-    LDA BL,[tmp0]
+    MOV AL,[ship_x]
+    MOV BL,[tmp0]
     SUB AL,BL                     ; AL = ship_x - centro31 (con signo)
     JMPNN csl_pos
 
     NOT AL
     ADD AL,#1                     ; AL = |ship_x - centro31|
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     CMP AL,BL
     JMPC csl_center                ; distancia < umbral -> centro
     MOV AL,#0                      ; a la izquierda del centro
-    STA [ship_lane],AL
+    MOV [ship_lane],AL
     RET
 csl_pos:
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     CMP AL,BL
     JMPC csl_center
     MOV AL,#2                      ; a la derecha del centro
-    STA [ship_lane],AL
+    MOV [ship_lane],AL
     RET
 csl_center:
     MOV AL,#1
-    STA [ship_lane],AL
+    MOV [ship_lane],AL
     RET
 
 ; ============================================================================
@@ -1024,28 +1024,28 @@ csl_center:
 update_obstacles:
     ; persecucion horizontal lenta: cada CHASE_PERIOD vueltas, cada obstaculo
     ; activo se acerca un carril hacia el carril actual de la nave
-    LDA AL,[chase_timer]
+    MOV AL,[chase_timer]
     CMP AL,#0
     JMPNZ uo_chase_dec
     MOV AL,#CHASE_PERIOD
-    STA [chase_timer],AL
+    MOV [chase_timer],AL
     CALL compute_ship_lane
 
     MOV AL,#0
-    STA [row_i],AL
+    MOV [row_i],AL
 uo_chase_l:
-    LDA CL,[row_i]
+    MOV CL,[row_i]
     MOV BX,#obst_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ uo_chase_next
 
-    LDA CL,[row_i]
+    MOV CL,[row_i]
     MOV BX,#obst_lane
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[ship_lane]      ; DL, no BL: BX sigue apuntando a obst_lane[row_i]
+    MOV AL,[BX]
+    MOV DL,[ship_lane]      ; DL, no BL: BX sigue apuntando a obst_lane[row_i]
     CMP AL,DL
     JMPZ uo_chase_next
     JMPC uo_chase_inc            ; obst_lane < ship_lane -> subir un carril
@@ -1054,84 +1054,84 @@ uo_chase_l:
 uo_chase_inc:
     ADD AL,#1
 uo_chase_store:
-    STA [BX],AL
+    MOV [BX],AL
 uo_chase_next:
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     ADD AL,#1
-    STA [row_i],AL
+    MOV [row_i],AL
     CMP AL,#N_OBST
     JMPNZ uo_chase_l
     JMP uo_chase_done
 uo_chase_dec:
     SUB AL,#1
-    STA [chase_timer],AL
+    MOV [chase_timer],AL
 uo_chase_done:
 
     MOV AL,#0
-    STA [obst_i],AL
+    MOV [obst_i],AL
 uo_l:
-    LDA CL,[obst_i]
+    MOV CL,[obst_i]
     MOV BX,#obst_active
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ uo_next
 
-    LDA CL,[obst_i]
+    MOV CL,[obst_i]
     MOV BX,#obst_row
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[speed]          ; DL, no BL: BX sigue apuntando a obst_row[obst_i]
+    MOV AL,[BX]
+    MOV DL,[speed]          ; DL, no BL: BX sigue apuntando a obst_row[obst_i]
     ADD AL,DL
-    STA [BX],AL
-    STA [row_raw],AL
+    MOV [BX],AL
+    MOV [row_raw],AL
 
     CMP AL,#31
     JMPC uo_clamp_ok
     MOV AL,#31
 uo_clamp_ok:
-    STA [tmp0],AL
+    MOV [tmp0],AL
 
-    LDA CL,[tmp0]
+    MOV CL,[tmp0]
     MOV BX,#row_center_cache
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp1],AL
+    MOV AL,[BX]
+    MOV [tmp1],AL
 
-    LDA CL,[tmp0]
+    MOV CL,[tmp0]
     MOV BX,#road_width
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHR AL,#2
-    STA [tmp2],AL
+    MOV [tmp2],AL
 
-    LDA CL,[obst_i]
+    MOV CL,[obst_i]
     MOV BX,#obst_lane
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#1
     JMPZ uo_lane_c
     JMPC uo_lane_l
-    LDA AL,[tmp1]
-    LDA BL,[tmp2]
+    MOV AL,[tmp1]
+    MOV BL,[tmp2]
     ADD AL,BL
     JMP uo_lane_done
 uo_lane_l:
-    LDA AL,[tmp1]
-    LDA BL,[tmp2]
+    MOV AL,[tmp1]
+    MOV BL,[tmp2]
     SUB AL,BL
     JMP uo_lane_done
 uo_lane_c:
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
 uo_lane_done:
-    STA [obst_x],AL
+    MOV [obst_x],AL
 
     ; --- disparo: si hay uno activo cerca de este obstaculo, lo destruye ---
-    LDA AL,[shot_active]
+    MOV AL,[shot_active]
     CMP AL,#0
     JMPZ uo_no_shot
-    LDA AL,[tmp0]
-    LDA BL,[shot_row]
+    MOV AL,[tmp0]
+    MOV BL,[shot_row]
     SUB AL,BL
     JMPNN uo_shot_rowabs
     NOT AL
@@ -1139,11 +1139,11 @@ uo_lane_done:
 uo_shot_rowabs:
     CMP AL,#2
     JMPNC uo_no_shot             ; distancia de fila >= 2 -> no hay impacto
-    LDA AL,[obst_x]
+    MOV AL,[obst_x]
     AND AL,#0x80
     JMPNZ uo_no_shot
-    LDA AL,[obst_x]
-    LDA BL,[shot_x]
+    MOV AL,[obst_x]
+    MOV BL,[shot_x]
     SUB AL,BL
     JMPNN uo_shot_xabs
     NOT AL
@@ -1153,41 +1153,41 @@ uo_shot_xabs:
     JMPNC uo_no_shot             ; distancia en X >= COLLIDE_DIST -> no hay impacto
 
     MOV AL,#0
-    STA [shot_active],AL
-    LDA AL,[score]
+    MOV [shot_active],AL
+    MOV AL,[score]
     CMP AL,#255
     JMPZ uo_shot_score_ok
     ADD AL,#1
-    STA [score],AL
+    MOV [score],AL
     MOV AL,#1
-    STA [score_dirty],AL
+    MOV [score_dirty],AL
 uo_shot_score_ok:
     MOV AL,#6                ; duracion primero (ver el aviso en cw_fire_done)
     OUT (P_SND_DUR),AL
     MOV AL,#81
     OUT (P_SND_NOTE),AL
-    LDA CL,[obst_i]
+    MOV CL,[obst_i]
     MOV BX,#obst_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
     JMP uo_next
 uo_no_shot:
 
-    LDA AL,[row_raw]
+    MOV AL,[row_raw]
     CMP AL,#31
     JMPC uo_draw_now
 
-    LDA AL,[jump_active]
+    MOV AL,[jump_active]
     CMP AL,#0
     JMPNZ uo_dodge               ; saltando -> esquiva automatica, sin carril
 
     ; ha llegado a la fila de la nave: comprobar choque
-    LDA AL,[obst_x]
+    MOV AL,[obst_x]
     AND AL,#0x80
     JMPNZ uo_dodge          ; posicion invalida (fuera de rango) -> no choca
-    LDA AL,[obst_x]
-    LDA BL,[ship_x]
+    MOV AL,[obst_x]
+    MOV BL,[ship_x]
     SUB AL,BL
     JMPNN uo_dist_pos
     NOT AL
@@ -1196,60 +1196,60 @@ uo_dist_pos:
     CMP AL,#COLLIDE_DIST
     JMPC uo_hit
 uo_dodge:
-    LDA AL,[score]
+    MOV AL,[score]
     CMP AL,#255
     JMPZ uo_deactivate
     ADD AL,#1
-    STA [score],AL
+    MOV [score],AL
     MOV AL,#1
-    STA [score_dirty],AL
+    MOV [score_dirty],AL
     JMP uo_deactivate
 uo_hit:
     CALL on_collision
 uo_deactivate:
-    LDA CL,[obst_i]
+    MOV CL,[obst_i]
     MOV BX,#obst_active
     ADD BX,CL
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
     JMP uo_next
 
 uo_draw_now:
     ; dibuja el obstaculo como una cruz de 5 pixeles (OBST_PIX), no solo uno
-    LDA AL,[tmp0]
+    MOV AL,[tmp0]
     ADD AL,#32
-    STA [obst_y],AL
+    MOV [obst_y],AL
 
     MOV AL,#0
-    STA [row_i],AL
+    MOV [row_i],AL
 od_l:
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     SHL AL
     MOV CL,AL
     MOV BX,#obst_pix
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[obst_x]
+    MOV AL,[BX]
+    MOV DL,[obst_x]
     ADD AL,DL
-    STA [px_x],AL
+    MOV [px_x],AL
 
     INC BX
-    LDA AL,[BX]
-    LDA DL,[obst_y]
+    MOV AL,[BX]
+    MOV DL,[obst_y]
     ADD AL,DL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL plot
 
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     ADD AL,#1
-    STA [row_i],AL
+    MOV [row_i],AL
     CMP AL,#OBST_PIX_LEN
     JMPNZ od_l
 
 uo_next:
-    LDA AL,[obst_i]
+    MOV AL,[obst_i]
     ADD AL,#1
-    STA [obst_i],AL
+    MOV [obst_i],AL
     CMP AL,#N_OBST
     JMPNZ uo_l
     RET
@@ -1263,18 +1263,18 @@ on_collision:
     MOV AL,#36
     OUT (P_SND_NOTE),AL
 
-    LDA AL,[invuln]
+    MOV AL,[invuln]
     CMP AL,#0
     JMPNZ oc_done
-    LDA AL,[lives]
+    MOV AL,[lives]
     CMP AL,#0
     JMPZ oc_done
     SUB AL,#1
-    STA [lives],AL
+    MOV [lives],AL
     MOV AL,#1
-    STA [lives_dirty],AL
+    MOV [lives_dirty],AL
     MOV AL,#INVULN_TICKS
-    STA [invuln],AL
+    MOV [invuln],AL
 oc_done:
     RET
 
@@ -1286,36 +1286,36 @@ oc_done:
 ; destruiria.
 draw_ship:
     MOV AL,#SHIP_BASE_Y
-    LDA BL,[jump_active]
+    MOV BL,[jump_active]
     CMP BL,#0
     JMPZ ds_base_ok
     SUB AL,#JUMP_RISE
 ds_base_ok:
-    STA [ship_draw_y],AL
+    MOV [ship_draw_y],AL
 
     MOV AL,#0
-    STA [row_i],AL
+    MOV [row_i],AL
 ds_l:
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     SHL AL
     MOV CL,AL
     MOV BX,#ship_pix
     ADD BX,CL
-    LDA AL,[BX]
-    LDA DL,[ship_x]
+    MOV AL,[BX]
+    MOV DL,[ship_x]
     ADD AL,DL
-    STA [px_x],AL
+    MOV [px_x],AL
 
     INC BX
-    LDA AL,[BX]
-    LDA DL,[ship_draw_y]
+    MOV AL,[BX]
+    MOV DL,[ship_draw_y]
     ADD AL,DL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL plot
 
-    LDA AL,[row_i]
+    MOV AL,[row_i]
     ADD AL,#1
-    STA [row_i],AL
+    MOV [row_i],AL
     CMP AL,#SHIP_PIX_LEN
     JMPNZ ds_l
     RET
@@ -1324,36 +1324,36 @@ ds_l:
 ;  update_hud: reescribe puntuacion/vidas en la fila 0 solo si han cambiado
 ; ============================================================================
 update_hud:
-    LDA AL,[score_dirty]
+    MOV AL,[score_dirty]
     CMP AL,#0
     JMPZ uh_lives
     MOV AL,#0
-    STA [score_dirty],AL
+    MOV [score_dirty],AL
 
     MOV BX,#s_pts
     MOV CX,#0x0000
     CALL puts
     CALL score_digits
-    LDA BL,[digit_h]
+    MOV BL,[digit_h]
     MOV CX,#0x0004
     CALL putc
-    LDA BL,[digit_t]
+    MOV BL,[digit_t]
     MOV CX,#0x0005
     CALL putc
-    LDA BL,[digit_u]
+    MOV BL,[digit_u]
     MOV CX,#0x0006
     CALL putc
 uh_lives:
-    LDA AL,[lives_dirty]
+    MOV AL,[lives_dirty]
     CMP AL,#0
     JMPZ uh_done
     MOV AL,#0
-    STA [lives_dirty],AL
+    MOV [lives_dirty],AL
 
     MOV BX,#s_vidas
     MOV CX,#0x000A
     CALL puts
-    LDA BL,[lives]
+    MOV BL,[lives]
     ADD BL,#'0'
     MOV CX,#0x0010
     CALL putc
@@ -1362,19 +1362,19 @@ uh_done:
 
 ; --- score_digits: separa [score] (0..255) en digit_h/digit_t/digit_u ------
 score_digits:
-    LDA AL,[score]
+    MOV AL,[score]
     CALL div10
-    LDA CL,[tmp_rem]
+    MOV CL,[tmp_rem]
     ADD CL,#'0'
-    STA [digit_u],CL
+    MOV [digit_u],CL
 
     CALL div10
-    LDA CL,[tmp_rem]
+    MOV CL,[tmp_rem]
     ADD CL,#'0'
-    STA [digit_t],CL
+    MOV [digit_t],CL
 
     ADD AL,#'0'
-    STA [digit_h],AL
+    MOV [digit_h],AL
     RET
 
 ; --- div10:  entrada AL (0..255) -> AL = AL/10, [tmp_rem] = AL mod 10 -------
@@ -1384,7 +1384,7 @@ div10:
     MOV AH,#0
     MOV DL,#10
     DIV DL
-    STA [tmp_rem],AH
+    MOV [tmp_rem],AH
     MOV DL,AL
     RET
 
@@ -1395,7 +1395,7 @@ div10:
 ; --- plot: dibuja (px_x,px_y) en `shadow`, salvo que px_x este fuera de
 ; 0..127 (bit 7 puesto) -- ver la nota de seguridad de rango en la cabecera.
 plot:
-    LDA AL,[px_x]
+    MOV AL,[px_x]
     AND AL,#0x80
     JMPNZ plot_skip
     CALL shadow_set_px
@@ -1413,14 +1413,14 @@ idx_ptr:
 shadow_set_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- clr_shadow:  pone a 0 los 1024 bytes de `shadow` (contador de 16 bits
@@ -1434,7 +1434,7 @@ shadow_set_px:
 ; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
     MOV AL,#0
-    STA [shadow],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
@@ -1447,7 +1447,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL
@@ -1463,18 +1463,18 @@ bl_same:
 
 ; --- calc_pix:  de (px_x,px_y) saca puerto (pix_lo/pix_hi) + mascara -------
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -1485,7 +1485,7 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------
@@ -1524,27 +1524,27 @@ load_record:
     JMPNZ lr_set
     IN  AL,(P_EEP_BASE+1)
 lr_set:
-    STA [record],AL
+    MOV [record],AL
     RET
 
 ; --- show_record: carga el record y escribe "RECORD nnn" en CH=fila, CL=col --
 show_record:
     CALL load_record
-    LDA AL,[record]
+    MOV AL,[record]
     MOV AH,#0
     MOV BL,#100
     DIV BL
     ADD AL,#'0'
-    STA [rec_d],AL
+    MOV [rec_d],AL
     MOV AL,AH
     MOV AH,#0
     MOV BL,#10
     DIV BL
     ADD AL,#'0'
-    STA [rec_d+1],AL
+    MOV [rec_d+1],AL
     MOV AL,AH
     ADD AL,#'0'
-    STA [rec_d+2],AL
+    MOV [rec_d+2],AL
     MOV BX,#s_record
     CALL puts
     RET
@@ -1552,13 +1552,13 @@ show_record:
 ; --- save_record: si [score] supera el record, lo graba en la flash.
 ; Sale AL = 1 si es record nuevo, 0 si no. ----------------------------------
 save_record:
-    LDA AL,[score]
-    LDA BL,[record]
+    MOV AL,[score]
+    MOV BL,[record]
     CMP BL,AL
     MOV AL,#0
     JMPNC svr_done          ; record >= puntos: nada que grabar
-    LDA AL,[score]
-    STA [record],AL
+    MOV AL,[score]
+    MOV [record],AL
     OUT (P_EEP_LOAD),AL     ; parte del contenido real de la EEPROM
     OUT (P_EEP_BASE+1),AL
     MOV AL,#REC_MAGIC
@@ -1586,7 +1586,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -1609,12 +1609,12 @@ rnd:
 
 ; --- rnd_raw:  un paso de LFSR de 8 bits (taps 0xB8) ------------------------
 rnd_raw:
-    LDA AL,[seed]
+    MOV AL,[seed]
     SHR AL
     JMPNC rr_n
     XOR AL,#0xB8
 rr_n:
-    STA [seed],AL
+    MOV [seed],AL
     RET
 
 ; --- frame_wait:  AL = pasos del temporizador 3 (8 ms/paso) ----------------

@@ -223,34 +223,34 @@ P_T3      = 0x0623
 ; ============================================================================
 start:
     MOV AL,#0
-    STA [angle],AL
-    STA [g_exit],AL
-    STA [mode],AL               ; arranca en cubo (0)
-    STA [dat_btn_prev],AL
+    MOV [angle],AL
+    MOV [g_exit],AL
+    MOV [mode],AL               ; arranca en cubo (0)
+    MOV [dat_btn_prev],AL
     MOV AL,#SCALE_DEFAULT
-    STA [scale],AL               ; tamano normal al arrancar
+    MOV [scale],AL               ; tamano normal al arrancar
     IN  AL,(P_DAT_POS)
-    STA [dat_pos_prev],AL        ; lo que marque DATOS ya de entrada, no 0 --
+    MOV [dat_pos_prev],AL        ; lo que marque DATOS ya de entrada, no 0 --
                                   ; si no, el primer poll_scale podria leer un
                                   ; salto grande de golpe si el encoder no
                                   ; estaba a 0
     MOV AL,#64
-    STA [cen_x],AL             ; el cubo arranca centrado...
+    MOV [cen_x],AL             ; el cubo arranca centrado...
     MOV AL,#32
-    STA [cen_y],AL
+    MOV [cen_y],AL
     MOV AL,#2
-    STA [vel_x],AL           ; ...y enseguida empieza a moverse
+    MOV [vel_x],AL           ; ...y enseguida empieza a moverse
     MOV AL,#1
-    STA [vel_y],AL
+    MOV [vel_y],AL
 
     MOV AL,#TORO_CX_DEFAULT
-    STA [toro_cx],AL           ; el toro tambien arranca centrado y rebota,
+    MOV [toro_cx],AL           ; el toro tambien arranca centrado y rebota,
     MOV AL,#TORO_CY_DEFAULT    ; con su propia velocidad -- independiente de
-    STA [toro_cy],AL           ; la del cubo, para que no se muevan identicos
+    MOV [toro_cy],AL           ; la del cubo, para que no se muevan identicos
     MOV AL,#0xFF               ; al alternar con DATOS (ver poll_toggle)
-    STA [toro_vel_x],AL        ; -1
+    MOV [toro_vel_x],AL        ; -1
     MOV AL,#1
-    STA [toro_vel_y],AL        ; +1
+    MOV [toro_vel_y],AL        ; +1
 
     CALL clsg                  ; parte en blanco (defensivo; el firmware ya
                                 ; limpia el framebuffer real al entrar en
@@ -258,7 +258,7 @@ start:
 
 main_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ main_x
 
@@ -266,10 +266,10 @@ main_l:
     CALL poll_scale             ; DATOS al girar -> [scale] (los dos modos)
 
     ; avanza el angulo de giro (0..63); lo usan los dos modos por igual
-    LDA AL,[angle]
+    MOV AL,[angle]
     ADD AL,#2
     AND AL,#0x3F
-    STA [angle],AL
+    MOV [angle],AL
 
     ; inclinacion sobre X: directa de la posicion de DIRECCION, sin flanco ni
     ; delta -- ver la nota de cabecera sobre por que la mascara de 6 bits no
@@ -277,11 +277,11 @@ main_l:
     ; roto_debug.asm)
     IN  AL,(P_DIR_POS)
     AND AL,#0x3F
-    STA [xangle],AL
+    MOV [xangle],AL
 
     CALL clr_shadow
 
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#0
     JMPNZ main_toro
 
@@ -322,24 +322,24 @@ main_x:
 ; ============================================================================
 compute_margins:
     MOV AL,#BX_MARGIN
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64
-    STA [eff_bx_margin],AL
+    MOV [eff_bx_margin],AL
     MOV BL,#127
     SUB BL,AL
-    STA [eff_bx_hi],BL
+    MOV [eff_bx_hi],BL
 
     MOV AL,#BY_MARGIN
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64
-    STA [eff_by_margin],AL
+    MOV [eff_by_margin],AL
     MOV BL,#63
     SUB BL,AL
-    STA [eff_by_hi],BL
+    MOV [eff_by_hi],BL
     RET
 
 ; ============================================================================
@@ -350,47 +350,47 @@ compute_margins:
 ;  [scale] para que el recorte sea el correcto al tamano actual.
 ; ============================================================================
 move_center:
-    LDA AL,[cen_x]
-    LDA BL,[vel_x]
+    MOV AL,[cen_x]
+    MOV BL,[vel_x]
     ADD AL,BL
-    STA [cen_x],AL
-    LDA BL,[eff_bx_margin]
+    MOV [cen_x],AL
+    MOV BL,[eff_bx_margin]
     CMP AL,BL
     JMPNC mc_xhi                ; cen_x >= margen bajo -> no ha tocado el borde izquierdo
-    LDA AL,[eff_bx_margin]
-    STA [cen_x],AL
-    LDA AL,[vel_x]
+    MOV AL,[eff_bx_margin]
+    MOV [cen_x],AL
+    MOV AL,[vel_x]
     NOT AL
     ADD AL,#1
-    STA [vel_x],AL
+    MOV [vel_x],AL
     JMP mc_y
 mc_xhi:
     ; la columna valida mas alta es 127, no 128 -- si no, con cen_x en el
     ; limite y Rx en su maximo (+eff_bx_margin) se pintaria en la columna
     ; 128, que no existe (se desborda a la fila de abajo, o peor).
-    LDA BL,[eff_bx_hi]
+    MOV BL,[eff_bx_hi]
     CMP AL,BL
     JMPC mc_y                   ; cen_x < margen alto -> no ha tocado el borde derecho
-    LDA AL,[eff_bx_hi]
-    STA [cen_x],AL
-    LDA AL,[vel_x]
+    MOV AL,[eff_bx_hi]
+    MOV [cen_x],AL
+    MOV AL,[vel_x]
     NOT AL
     ADD AL,#1
-    STA [vel_x],AL
+    MOV [vel_x],AL
 mc_y:
-    LDA AL,[cen_y]
-    LDA BL,[vel_y]
+    MOV AL,[cen_y]
+    MOV BL,[vel_y]
     ADD AL,BL
-    STA [cen_y],AL
-    LDA BL,[eff_by_margin]
+    MOV [cen_y],AL
+    MOV BL,[eff_by_margin]
     CMP AL,BL
     JMPNC mc_yhi
-    LDA AL,[eff_by_margin]
-    STA [cen_y],AL
-    LDA AL,[vel_y]
+    MOV AL,[eff_by_margin]
+    MOV [cen_y],AL
+    MOV AL,[vel_y]
     NOT AL
     ADD AL,#1
-    STA [vel_y],AL
+    MOV [vel_y],AL
     RET
 mc_yhi:
     ; la fila valida mas alta es 63, no 64 -- mismo motivo que en X: con
@@ -399,15 +399,15 @@ mc_yhi:
     ; framebuffer grafico, dentro de la capa de texto 0x0400+). Se vio con
     ; el simulador: faltaban pixeles enteros de dos aristas justo al llegar
     ; a ese borde.
-    LDA BL,[eff_by_hi]
+    MOV BL,[eff_by_hi]
     CMP AL,BL
     JMPC mc_done
-    LDA AL,[eff_by_hi]
-    STA [cen_y],AL
-    LDA AL,[vel_y]
+    MOV AL,[eff_by_hi]
+    MOV [cen_y],AL
+    MOV AL,[vel_y]
     NOT AL
     ADD AL,#1
-    STA [vel_y],AL
+    MOV [vel_y],AL
 mc_done:
     RET
 
@@ -421,18 +421,18 @@ mc_done:
 ; ============================================================================
 compute_toro_margins:
     MOV AL,#TORO_MARGIN
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64
-    STA [eff_toro_margin],AL
+    MOV [eff_toro_margin],AL
     MOV BL,#127
     SUB BL,AL
-    STA [eff_toro_hi_x],BL
-    LDA AL,[eff_toro_margin]
+    MOV [eff_toro_hi_x],BL
+    MOV AL,[eff_toro_margin]
     MOV BL,#63
     SUB BL,AL
-    STA [eff_toro_hi_y],BL
+    MOV [eff_toro_hi_y],BL
     RET
 
 ; ============================================================================
@@ -440,55 +440,55 @@ compute_toro_margins:
 ;  (toro_vel_x,toro_vel_y), con los margenes de compute_toro_margins.
 ; ============================================================================
 move_toro_center:
-    LDA AL,[toro_cx]
-    LDA BL,[toro_vel_x]
+    MOV AL,[toro_cx]
+    MOV BL,[toro_vel_x]
     ADD AL,BL
-    STA [toro_cx],AL
-    LDA BL,[eff_toro_margin]
+    MOV [toro_cx],AL
+    MOV BL,[eff_toro_margin]
     CMP AL,BL
     JMPNC mtc_xhi
-    LDA AL,[eff_toro_margin]
-    STA [toro_cx],AL
-    LDA AL,[toro_vel_x]
+    MOV AL,[eff_toro_margin]
+    MOV [toro_cx],AL
+    MOV AL,[toro_vel_x]
     NOT AL
     ADD AL,#1
-    STA [toro_vel_x],AL
+    MOV [toro_vel_x],AL
     JMP mtc_y
 mtc_xhi:
-    LDA BL,[eff_toro_hi_x]
+    MOV BL,[eff_toro_hi_x]
     CMP AL,BL
     JMPC mtc_y
-    LDA AL,[eff_toro_hi_x]
-    STA [toro_cx],AL
-    LDA AL,[toro_vel_x]
+    MOV AL,[eff_toro_hi_x]
+    MOV [toro_cx],AL
+    MOV AL,[toro_vel_x]
     NOT AL
     ADD AL,#1
-    STA [toro_vel_x],AL
+    MOV [toro_vel_x],AL
 mtc_y:
-    LDA AL,[toro_cy]
-    LDA BL,[toro_vel_y]
+    MOV AL,[toro_cy]
+    MOV BL,[toro_vel_y]
     ADD AL,BL
-    STA [toro_cy],AL
-    LDA BL,[eff_toro_margin]
+    MOV [toro_cy],AL
+    MOV BL,[eff_toro_margin]
     CMP AL,BL
     JMPNC mtc_yhi
-    LDA AL,[eff_toro_margin]
-    STA [toro_cy],AL
-    LDA AL,[toro_vel_y]
+    MOV AL,[eff_toro_margin]
+    MOV [toro_cy],AL
+    MOV AL,[toro_vel_y]
     NOT AL
     ADD AL,#1
-    STA [toro_vel_y],AL
+    MOV [toro_vel_y],AL
     RET
 mtc_yhi:
-    LDA BL,[eff_toro_hi_y]
+    MOV BL,[eff_toro_hi_y]
     CMP AL,BL
     JMPC mtc_done
-    LDA AL,[eff_toro_hi_y]
-    STA [toro_cy],AL
-    LDA AL,[toro_vel_y]
+    MOV AL,[eff_toro_hi_y]
+    MOV [toro_cy],AL
+    MOV AL,[toro_vel_y]
     NOT AL
     ADD AL,#1
-    STA [toro_vel_y],AL
+    MOV [toro_vel_y],AL
 mtc_done:
     RET
 
@@ -498,12 +498,12 @@ mtc_done:
 ; ============================================================================
 compute_vertices:
     MOV AL,#0
-    STA [vi],AL
+    MOV [vi],AL
 cv_l:
     CALL rot_x
-    LDA AL,[vi]
+    MOV AL,[vi]
     ADD AL,#1
-    STA [vi],AL
+    MOV [vi],AL
     CMP AL,#NVERT
     JMPNZ cv_l
     RET
@@ -514,49 +514,49 @@ cv_l:
 ; ============================================================================
 draw_all_edges:
     MOV AL,#0
-    STA [ei],AL
+    MOV [ei],AL
 dae_l:
-    LDA CL,[ei]
+    MOV CL,[ei]
     MOV BX,#edge_a
     ADD BX,CL
-    LDA AL,[BX]
-    STA [v0],AL
+    MOV AL,[BX]
+    MOV [v0],AL
 
-    LDA CL,[ei]
+    MOV CL,[ei]
     MOV BX,#edge_b
     ADD BX,CL
-    LDA AL,[BX]
-    STA [v1],AL
+    MOV AL,[BX]
+    MOV [v1],AL
 
-    LDA CL,[v0]
+    MOV CL,[v0]
     MOV BX,#sx_cur
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ln_x0],AL
+    MOV AL,[BX]
+    MOV [ln_x0],AL
 
-    LDA CL,[v0]
+    MOV CL,[v0]
     MOV BX,#sy_cur
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ln_y0],AL
+    MOV AL,[BX]
+    MOV [ln_y0],AL
 
-    LDA CL,[v1]
+    MOV CL,[v1]
     MOV BX,#sx_cur
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ln_x1],AL
+    MOV AL,[BX]
+    MOV [ln_x1],AL
 
-    LDA CL,[v1]
+    MOV CL,[v1]
     MOV BX,#sy_cur
     ADD BX,CL
-    LDA AL,[BX]
-    STA [ln_y1],AL
+    MOV AL,[BX]
+    MOV [ln_y1],AL
 
     CALL line_draw
 
-    LDA AL,[ei]
+    MOV AL,[ei]
     ADD AL,#1
-    STA [ei],AL
+    MOV [ei],AL
     CMP AL,#NEDGE
     JMPNZ dae_l
     RET
@@ -574,65 +574,65 @@ rot_x:
                                   ; [xangle] -- sustituyen a la sy_rel/Tz
                                   ; estaticas de antes (ver nota de cabecera)
 
-    LDA CL,[vi]
+    MOV CL,[vi]
     MOV BX,#Lx
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA AL,[angle]
+    MOV AL,[angle]
     ADD AL,#16
     AND AL,#0x3F
-    STA [tmp_idx],AL
-    LDA CL,[tmp_idx]
+    MOV [tmp_idx],AL
+    MOV CL,[tmp_idx]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
 
     CALL smul64
-    STA [rx_t1],AL
+    MOV [rx_t1],AL
 
-    LDA AL,[tzx]
-    STA [sm_a],AL
+    MOV AL,[tzx]
+    MOV [sm_a],AL
 
-    LDA CL,[angle]
+    MOV CL,[angle]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
 
     CALL smul64
-    STA [rx_t2],AL
+    MOV [rx_t2],AL
 
-    LDA AL,[rx_t1]
-    LDA BL,[rx_t2]
+    MOV AL,[rx_t1]
+    MOV BL,[rx_t2]
     SUB AL,BL                    ; AL = dx sin escalar (ya rotado)
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64                  ; AL = dx*escala/64
-    LDA BL,[cen_x]
+    MOV BL,[cen_x]
     ADD AL,BL
 
-    LDA CL,[vi]
+    MOV CL,[vi]
     MOV BX,#sx_cur
     ADD BX,CL
-    STA [BX],AL
+    MOV [BX],AL
 
     ; sy_cur[vi] = tyx*escala + cen_y (tyx = Y0[vi] ya inclinado, ver arriba)
-    LDA AL,[tyx]
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV AL,[tyx]
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64
-    LDA BL,[cen_y]
+    MOV BL,[cen_y]
     ADD AL,BL
 
-    LDA CL,[vi]
+    MOV CL,[vi]
     MOV BX,#sy_cur
     ADD BX,CL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; ============================================================================
@@ -645,79 +645,79 @@ rot_x:
 ;  la Tz estatica, sigue alimentando la rotacion animada sobre Y de rot_x).
 ; ============================================================================
 compute_x_tilt:
-    LDA CL,[vi]
+    MOV CL,[vi]
     MOV BX,#Y0
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA AL,[xangle]
+    MOV AL,[xangle]
     ADD AL,#16
     AND AL,#0x3F
-    STA [tmp_idx],AL
-    LDA CL,[tmp_idx]
+    MOV [tmp_idx],AL
+    MOV CL,[tmp_idx]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t1],AL                ; Y0*cos(xangle)
+    MOV [xt_t1],AL                ; Y0*cos(xangle)
 
-    LDA CL,[vi]
+    MOV CL,[vi]
     MOV BX,#Z0
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA CL,[xangle]
+    MOV CL,[xangle]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t2],AL                ; Z0*sin(xangle)
+    MOV [xt_t2],AL                ; Z0*sin(xangle)
 
-    LDA AL,[xt_t1]
-    LDA BL,[xt_t2]
+    MOV AL,[xt_t1]
+    MOV BL,[xt_t2]
     SUB AL,BL
-    STA [tyx],AL                  ; tyx = Y0*cos - Z0*sin
+    MOV [tyx],AL                  ; tyx = Y0*cos - Z0*sin
 
-    LDA CL,[vi]
+    MOV CL,[vi]
     MOV BX,#Y0
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA CL,[xangle]
+    MOV CL,[xangle]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t1],AL                ; Y0*sin(xangle)
+    MOV [xt_t1],AL                ; Y0*sin(xangle)
 
-    LDA CL,[vi]
+    MOV CL,[vi]
     MOV BX,#Z0
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA AL,[xangle]
+    MOV AL,[xangle]
     ADD AL,#16
     AND AL,#0x3F
-    STA [tmp_idx],AL
-    LDA CL,[tmp_idx]
+    MOV [tmp_idx],AL
+    MOV CL,[tmp_idx]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t2],AL                ; Z0*cos(xangle)
+    MOV [xt_t2],AL                ; Z0*cos(xangle)
 
-    LDA AL,[xt_t1]
-    LDA BL,[xt_t2]
+    MOV AL,[xt_t1]
+    MOV BL,[xt_t2]
     ADD AL,BL
-    STA [tzx],AL                  ; tzx = Y0*sin + Z0*cos
+    MOV [tzx],AL                  ; tzx = Y0*sin + Z0*cos
     RET
 
 ; ============================================================================
@@ -726,37 +726,37 @@ compute_x_tilt:
 ; ============================================================================
 smul64:
     MOV AL,#0
-    STA [sm_neg],AL
+    MOV [sm_neg],AL
 
-    LDA AL,[sm_a]
+    MOV AL,[sm_a]
     AND AL,#0x80
     JMPZ sm_apos
-    LDA AL,[sm_a]
+    MOV AL,[sm_a]
     NOT AL
     ADD AL,#1
-    STA [sm_a],AL
-    LDA AL,[sm_neg]
+    MOV [sm_a],AL
+    MOV AL,[sm_neg]
     XOR AL,#1
-    STA [sm_neg],AL
+    MOV [sm_neg],AL
 sm_apos:
-    LDA AL,[sm_b]
+    MOV AL,[sm_b]
     AND AL,#0x80
     JMPZ sm_bpos
-    LDA AL,[sm_b]
+    MOV AL,[sm_b]
     NOT AL
     ADD AL,#1
-    STA [sm_b],AL
-    LDA AL,[sm_neg]
+    MOV [sm_b],AL
+    MOV AL,[sm_neg]
     XOR AL,#1
-    STA [sm_neg],AL
+    MOV [sm_neg],AL
 sm_bpos:
     ; Multiplicacion sin signo de verdad: antes esto era un bucle de 8
     ; pasos de "desplaza y suma condicional" (~30 instrucciones, ejecutado
     ; entero en cada llamada); ahora es una sola instruccion hardware --
     ; ver MUL en docs/isa.md SS4d. AX = [sm_a] * [sm_b] (sin signo, los dos
     ; ya son magnitudes no negativas gracias al bloque de arriba).
-    LDA AL,[sm_a]
-    LDA BL,[sm_b]
+    MOV AL,[sm_a]
+    MOV BL,[sm_b]
     MUL BL
     ; /64 de AX sin bucle: (AX >> 6) & 0xFF = (AL >> 6) | (AH << 2). Antes
     ; eran 6 vueltas desplazando sm_hi/sm_lo bit a bit con acarreo a mano
@@ -764,17 +764,17 @@ sm_bpos:
     SHR AL,#6
     SHL AH,#2
     OR  AL,AH
-    STA [sm_lo],AL
+    MOV [sm_lo],AL
 
-    LDA AL,[sm_neg]
+    MOV AL,[sm_neg]
     CMP AL,#0
     JMPZ sm_done
-    LDA AL,[sm_lo]
+    MOV AL,[sm_lo]
     NOT AL
     ADD AL,#1
-    STA [sm_lo],AL
+    MOV [sm_lo],AL
 sm_done:
-    LDA AL,[sm_lo]
+    MOV AL,[sm_lo]
     RET
 
 ; ============================================================================
@@ -782,118 +782,118 @@ sm_done:
 ;  entra: ln_x0,ln_y0,ln_x1,ln_y1 (coordenadas de pantalla, sin signo 0..127/63)
 ; ============================================================================
 line_draw:
-    LDA AL,[ln_x1]
-    LDA BL,[ln_x0]
+    MOV AL,[ln_x1]
+    MOV BL,[ln_x0]
     CMP AL,BL
     JMPC ldx_neg
     SUB AL,BL
-    STA [ln_dx],AL
+    MOV [ln_dx],AL
     MOV AL,#1
-    STA [ln_sx],AL
+    MOV [ln_sx],AL
     JMP ldx_done
 ldx_neg:
     MOV AL,BL
-    LDA BL,[ln_x1]
+    MOV BL,[ln_x1]
     SUB AL,BL
-    STA [ln_dx],AL
+    MOV [ln_dx],AL
     MOV AL,#0xFF
-    STA [ln_sx],AL
+    MOV [ln_sx],AL
 ldx_done:
-    LDA AL,[ln_y1]
-    LDA BL,[ln_y0]
+    MOV AL,[ln_y1]
+    MOV BL,[ln_y0]
     CMP AL,BL
     JMPC ldy_neg
     SUB AL,BL
-    STA [ln_dy],AL
+    MOV [ln_dy],AL
     MOV AL,#1
-    STA [ln_sy],AL
+    MOV [ln_sy],AL
     JMP ldy_done
 ldy_neg:
     MOV AL,BL
-    LDA BL,[ln_y1]
+    MOV BL,[ln_y1]
     SUB AL,BL
-    STA [ln_dy],AL
+    MOV [ln_dy],AL
     MOV AL,#0xFF
-    STA [ln_sy],AL
+    MOV [ln_sy],AL
 ldy_done:
-    LDA AL,[ln_dx]
-    LDA BL,[ln_dy]
+    MOV AL,[ln_dx]
+    MOV BL,[ln_dy]
     CMP AL,BL
     JMPC ln_ymajor_init
-    LDA AL,[ln_dx]
-    STA [ln_n],AL
+    MOV AL,[ln_dx]
+    MOV [ln_n],AL
     SHR AL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     MOV AL,#1
-    STA [ln_xmaj],AL
+    MOV [ln_xmaj],AL
     JMP ln_loop
 ln_ymajor_init:
-    LDA AL,[ln_dy]
-    STA [ln_n],AL
+    MOV AL,[ln_dy]
+    MOV [ln_n],AL
     SHR AL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     MOV AL,#0
-    STA [ln_xmaj],AL
+    MOV [ln_xmaj],AL
 ln_loop:
-    LDA AL,[ln_x0]
-    STA [px_x],AL
-    LDA AL,[ln_y0]
-    STA [px_y],AL
+    MOV AL,[ln_x0]
+    MOV [px_x],AL
+    MOV AL,[ln_y0]
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[ln_n]
+    MOV AL,[ln_n]
     CMP AL,#0
     JMPZ ln_done
     SUB AL,#1
-    STA [ln_n],AL
+    MOV [ln_n],AL
 
-    LDA AL,[ln_xmaj]
+    MOV AL,[ln_xmaj]
     CMP AL,#0
     JMPZ ln_do_ymajor
 
-    LDA AL,[ln_err]
-    LDA BL,[ln_dy]
+    MOV AL,[ln_err]
+    MOV BL,[ln_dy]
     SUB AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     JMPN ln_xmaj_neg
     JMP ln_xmaj_stepx
 ln_xmaj_neg:
-    LDA AL,[ln_y0]
-    LDA BL,[ln_sy]
+    MOV AL,[ln_y0]
+    MOV BL,[ln_sy]
     ADD AL,BL
-    STA [ln_y0],AL
-    LDA AL,[ln_err]
-    LDA BL,[ln_dx]
+    MOV [ln_y0],AL
+    MOV AL,[ln_err]
+    MOV BL,[ln_dx]
     ADD AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
 ln_xmaj_stepx:
-    LDA AL,[ln_x0]
-    LDA BL,[ln_sx]
+    MOV AL,[ln_x0]
+    MOV BL,[ln_sx]
     ADD AL,BL
-    STA [ln_x0],AL
+    MOV [ln_x0],AL
     JMP ln_loop
 
 ln_do_ymajor:
-    LDA AL,[ln_err]
-    LDA BL,[ln_dx]
+    MOV AL,[ln_err]
+    MOV BL,[ln_dx]
     SUB AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     JMPN ln_ymaj_neg
     JMP ln_ymaj_stepy
 ln_ymaj_neg:
-    LDA AL,[ln_x0]
-    LDA BL,[ln_sx]
+    MOV AL,[ln_x0]
+    MOV BL,[ln_sx]
     ADD AL,BL
-    STA [ln_x0],AL
-    LDA AL,[ln_err]
-    LDA BL,[ln_dy]
+    MOV [ln_x0],AL
+    MOV AL,[ln_err]
+    MOV BL,[ln_dy]
     ADD AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
 ln_ymaj_stepy:
-    LDA AL,[ln_y0]
-    LDA BL,[ln_sy]
+    MOV AL,[ln_y0]
+    MOV BL,[ln_sy]
     ADD AL,BL
-    STA [ln_y0],AL
+    MOV [ln_y0],AL
     JMP ln_loop
 ln_done:
     RET
@@ -914,14 +914,14 @@ idx_ptr:
 shadow_set_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL   ; BX = shadow + pix_lo, con acarreo a BH
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL                ; BX += pix_hi * 256 (la pagina dentro de shadow)
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- shadow_put_px:  pinta el pixel (px_x,px_y) al valor de [pix_val] (0 o
@@ -933,23 +933,23 @@ shadow_set_px:
 shadow_put_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_val]
+    MOV AL,[BX]
+    MOV DL,[pix_val]
     CMP DL,#0
     JMPZ spp_clear
-    LDA DL,[pix_mask]
+    MOV DL,[pix_mask]
     OR  AL,DL
     JMP spp_store
 spp_clear:
-    LDA DL,[pix_mask]
+    MOV DL,[pix_mask]
     NOT DL
     AND AL,DL
 spp_store:
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- clr_shadow:  pone a 0 los 1024 bytes de `shadow` -----------------------
@@ -969,7 +969,7 @@ spp_store:
 ; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
     MOV AL,#0
-    STA [shadow],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
@@ -982,7 +982,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL
@@ -998,18 +998,18 @@ bl_same:
 
 ; --- calc_pix:  de (px_x,px_y) saca puerto (pix_lo/pix_hi) + mascara -------
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -1020,7 +1020,7 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------
@@ -1051,7 +1051,7 @@ poll_exit:
     CMP AL,#0
     JMPZ pe_d
     MOV AL,#1
-    STA [g_exit],AL
+    MOV [g_exit],AL
 pe_d:
     RET
 
@@ -1072,15 +1072,15 @@ wdr_d:
 ; vuelta anterior, no solo el nivel actual).
 poll_toggle:
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ pt_d
     CMP BL,#0
     JMPNZ pt_d                  ; ya estaba pulsado -> no es flanco, ignora
-    LDA AL,[mode]
+    MOV AL,[mode]
     XOR AL,#1
-    STA [mode],AL
+    MOV [mode],AL
 pt_d:
     RET
 
@@ -1094,30 +1094,30 @@ pt_d:
 ; el encoder por la posicion (P_DAT_POS), asi que no interfieren entre si.
 poll_scale:
     IN  AL,(P_DAT_POS)
-    STA [tmpv],AL
-    LDA BL,[dat_pos_prev]
+    MOV [tmpv],AL
+    MOV BL,[dat_pos_prev]
     SUB AL,BL                    ; AL = delta con signo desde la ultima vez
-    LDA CL,[tmpv]
-    STA [dat_pos_prev],CL
+    MOV CL,[tmpv]
+    MOV [dat_pos_prev],CL
     CMP AL,#0
     JMPZ ps_d                    ; nada que hacer si no giro nada
     SHL AL                       ; delta*2 (con signo; los deltas de un giro
                                   ; real caben de sobra sin desbordar)
-    LDA BL,[scale]
+    MOV BL,[scale]
     ADD BL,AL
-    STA [scale],BL
+    MOV [scale],BL
 
-    LDA AL,[scale]
+    MOV AL,[scale]
     CMP AL,#SCALE_MIN
     JMPNC ps_hi                  ; scale >= SCALE_MIN -> dentro de rango
     MOV AL,#SCALE_MIN
-    STA [scale],AL
+    MOV [scale],AL
     JMP ps_d
 ps_hi:
     CMP AL,#(SCALE_MAX+1)
     JMPC ps_d                    ; scale <= SCALE_MAX -> dentro de rango
     MOV AL,#SCALE_MAX
-    STA [scale],AL
+    MOV [scale],AL
 ps_d:
     RET
 
@@ -1151,9 +1151,9 @@ draw_torus:
     ; para las 20. Recortado a [1,TORO_MAX_DISK_R] por seguridad (el rango
     ; real con SCALE_MIN..SCALE_MAX es 2..7, de sobra dentro del recorte).
     MOV AL,#DISK_R
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64
     CMP AL,#1
     JMPNC edr_min_ok
@@ -1163,7 +1163,7 @@ edr_min_ok:
     JMPC edr_max_ok
     MOV AL,#TORO_MAX_DISK_R
 edr_max_ok:
-    STA [eff_disk_r],AL
+    MOV [eff_disk_r],AL
 
     ; hw_base = HW_ROW_OFF[eff_disk_r-1] -- fila de HW2D que le toca a este
     ; radio (ver draw_disk/draw_disk_row, que ya no usan la HW de un radio
@@ -1172,46 +1172,46 @@ edr_max_ok:
     MOV CL,AL
     MOV BX,#HW_ROW_OFF
     ADD BX,CL
-    LDA AL,[BX]
-    STA [hw_base],AL
+    MOV AL,[BX]
+    MOV [hw_base],AL
 
     CALL torus_compute
     CALL sort_spokes
 
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 dt_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#order
     ADD BX,CL
-    LDA AL,[BX]
-    STA [key],AL                 ; key = indice de costilla en este puesto
+    MOV AL,[BX]
+    MOV [key],AL                 ; key = indice de costilla en este puesto
 
-    LDA CL,[key]
+    MOV CL,[key]
     MOV BX,#rzu_arr
     ADD BX,CL
-    LDA AL,[BX]
-    STA [rzu],AL
+    MOV AL,[BX]
+    MOV [rzu],AL
     CALL level_from_rz
-    STA [level],AL
+    MOV [level],AL
 
-    LDA CL,[key]
+    MOV CL,[key]
     MOV BX,#scr_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [disk_cx],AL
+    MOV AL,[BX]
+    MOV [disk_cx],AL
 
-    LDA CL,[key]
+    MOV CL,[key]
     MOV BX,#scr_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [disk_cy],AL
+    MOV AL,[BX]
+    MOV [disk_cy],AL
 
     CALL draw_disk
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NSPOKE
     JMPNZ dt_l
     RET
@@ -1227,112 +1227,112 @@ dt_l:
 ; rx_t2 de rot_x: son variables de trabajo sin estado entre llamadas.
 torus_compute:
     MOV AL,#0
-    STA [su],AL
+    MOV [su],AL
 tc_l:
     CALL compute_x_tilt_torus     ; [tyux]/[tzux] = Y0U[su]/Z0U[su] inclinados
                                    ; por [xangle] -- sustituyen a la SyU/TzU
                                    ; estaticas de antes (ver compute_x_tilt)
 
     ; --- scr_x[su] = LxU[su]*cos(a) - tzux*sin(a) + TORO_CX -----------------
-    LDA CL,[su]
+    MOV CL,[su]
     MOV BX,#LxU
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA AL,[angle]
+    MOV AL,[angle]
     ADD AL,#16
     AND AL,#0x3F
-    STA [tmp_idx],AL             ; (angle+16)&0x3F -- se reutiliza mas abajo
-    LDA CL,[tmp_idx]
+    MOV [tmp_idx],AL             ; (angle+16)&0x3F -- se reutiliza mas abajo
+    MOV CL,[tmp_idx]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [rx_t1],AL
+    MOV [rx_t1],AL
 
-    LDA AL,[tzux]
-    STA [sm_a],AL
+    MOV AL,[tzux]
+    MOV [sm_a],AL
 
-    LDA CL,[angle]
+    MOV CL,[angle]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [rx_t2],AL
+    MOV [rx_t2],AL
 
-    LDA AL,[rx_t1]
-    LDA BL,[rx_t2]
+    MOV AL,[rx_t1]
+    MOV BL,[rx_t2]
     SUB AL,BL                    ; AL = dx sin escalar (ya rotado)
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64                  ; AL = dx*escala/64
-    LDA BL,[toro_cx]
+    MOV BL,[toro_cx]
     ADD AL,BL
-    STA [tmpv],AL                ; guardado antes de pisar BX con scr_x
-    LDA CL,[su]
+    MOV [tmpv],AL                ; guardado antes de pisar BX con scr_x
+    MOV CL,[su]
     MOV BX,#scr_x
     ADD BX,CL
-    LDA AL,[tmpv]
-    STA [BX],AL
+    MOV AL,[tmpv]
+    MOV [BX],AL
 
     ; --- rzu_arr[su] = LxU[su]*sin(a) + tzux*cos(a) -------------------------
-    LDA CL,[su]
+    MOV CL,[su]
     MOV BX,#LxU
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA CL,[angle]
+    MOV CL,[angle]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [rx_t1],AL
+    MOV [rx_t1],AL
 
-    LDA AL,[tzux]
-    STA [sm_a],AL
+    MOV AL,[tzux]
+    MOV [sm_a],AL
 
-    LDA CL,[tmp_idx]             ; (angle+16)&0x3F, ya calculado arriba
+    MOV CL,[tmp_idx]             ; (angle+16)&0x3F, ya calculado arriba
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [rx_t2],AL
+    MOV [rx_t2],AL
 
-    LDA AL,[rx_t1]
-    LDA BL,[rx_t2]
+    MOV AL,[rx_t1]
+    MOV BL,[rx_t2]
     ADD AL,BL
-    STA [tmpv],AL
-    LDA CL,[su]
+    MOV [tmpv],AL
+    MOV CL,[su]
     MOV BX,#rzu_arr
     ADD BX,CL
-    LDA AL,[tmpv]
-    STA [BX],AL
+    MOV AL,[tmpv]
+    MOV [BX],AL
 
     ; --- scr_y[su] = tyux*escala + toro_cy (tyux ya lleva la inclinacion) ---
-    LDA AL,[tyux]
-    STA [sm_a],AL
-    LDA AL,[scale]
-    STA [sm_b],AL
+    MOV AL,[tyux]
+    MOV [sm_a],AL
+    MOV AL,[scale]
+    MOV [sm_b],AL
     CALL smul64
-    LDA BL,[toro_cy]
+    MOV BL,[toro_cy]
     ADD AL,BL
-    STA [tmpv],AL
-    LDA CL,[su]
+    MOV [tmpv],AL
+    MOV CL,[su]
     MOV BX,#scr_y
     ADD BX,CL
-    LDA AL,[tmpv]
-    STA [BX],AL
+    MOV AL,[tmpv]
+    MOV [BX],AL
 
-    LDA AL,[su]
+    MOV AL,[su]
     ADD AL,#1
-    STA [su],AL
+    MOV [su],AL
     CMP AL,#NSPOKE
     JMPNZ tc_l
     RET
@@ -1343,79 +1343,79 @@ tc_l:
 ;  a la SyU estatica de antes), [tzux] (sustituye a la TzU estatica).
 ; ============================================================================
 compute_x_tilt_torus:
-    LDA CL,[su]
+    MOV CL,[su]
     MOV BX,#Y0U
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA AL,[xangle]
+    MOV AL,[xangle]
     ADD AL,#16
     AND AL,#0x3F
-    STA [tmp_idx],AL
-    LDA CL,[tmp_idx]
+    MOV [tmp_idx],AL
+    MOV CL,[tmp_idx]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t1],AL                ; Y0U*cos(xangle)
+    MOV [xt_t1],AL                ; Y0U*cos(xangle)
 
-    LDA CL,[su]
+    MOV CL,[su]
     MOV BX,#Z0U
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA CL,[xangle]
+    MOV CL,[xangle]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t2],AL                ; Z0U*sin(xangle)
+    MOV [xt_t2],AL                ; Z0U*sin(xangle)
 
-    LDA AL,[xt_t1]
-    LDA BL,[xt_t2]
+    MOV AL,[xt_t1]
+    MOV BL,[xt_t2]
     SUB AL,BL
-    STA [tyux],AL                 ; tyux = Y0U*cos - Z0U*sin
+    MOV [tyux],AL                 ; tyux = Y0U*cos - Z0U*sin
 
-    LDA CL,[su]
+    MOV CL,[su]
     MOV BX,#Y0U
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA CL,[xangle]
+    MOV CL,[xangle]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t1],AL                ; Y0U*sin(xangle)
+    MOV [xt_t1],AL                ; Y0U*sin(xangle)
 
-    LDA CL,[su]
+    MOV CL,[su]
     MOV BX,#Z0U
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_a],AL
+    MOV AL,[BX]
+    MOV [sm_a],AL
 
-    LDA AL,[xangle]
+    MOV AL,[xangle]
     ADD AL,#16
     AND AL,#0x3F
-    STA [tmp_idx],AL
-    LDA CL,[tmp_idx]
+    MOV [tmp_idx],AL
+    MOV CL,[tmp_idx]
     MOV BX,#sine
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [xt_t2],AL                ; Z0U*cos(xangle)
+    MOV [xt_t2],AL                ; Z0U*cos(xangle)
 
-    LDA AL,[xt_t1]
-    LDA BL,[xt_t2]
+    MOV AL,[xt_t1]
+    MOV BL,[xt_t2]
     ADD AL,BL
-    STA [tzux],AL                 ; tzux = Y0U*sin + Z0U*cos
+    MOV [tzux],AL                 ; tzux = Y0U*sin + Z0U*cos
     RET
 
 ; --- sort_spokes: ordena order[0..19] (indices de costilla) por rzu_arr
@@ -1426,85 +1426,85 @@ compute_x_tilt_torus:
 ; comparando contra 0xFF (j es un byte sin signo: 0-1 envuelve ahi).
 sort_spokes:
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 ss_init_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#order
     ADD BX,CL
-    LDA AL,[i]
-    STA [BX],AL
-    LDA AL,[i]
+    MOV AL,[i]
+    MOV [BX],AL
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NSPOKE
     JMPNZ ss_init_l
 
     MOV AL,#1
-    STA [i],AL
+    MOV [i],AL
 ss_outer_l:
-    LDA CL,[i]
+    MOV CL,[i]
     MOV BX,#order
     ADD BX,CL
-    LDA AL,[BX]
-    STA [key],AL
+    MOV AL,[BX]
+    MOV [key],AL
 
-    LDA CL,[key]
+    MOV CL,[key]
     MOV BX,#rzu_arr
     ADD BX,CL
-    LDA AL,[BX]
-    STA [keyval],AL
+    MOV AL,[BX]
+    MOV [keyval],AL
 
-    LDA AL,[i]
+    MOV AL,[i]
     SUB AL,#1
-    STA [j],AL
+    MOV [j],AL
 
 ss_inner_l:
-    LDA AL,[j]
+    MOV AL,[j]
     CMP AL,#0xFF
     JMPZ ss_place
 
-    LDA CL,[j]
+    MOV CL,[j]
     MOV BX,#order
     ADD BX,CL
-    LDA AL,[BX]
-    STA [oj],AL
+    MOV AL,[BX]
+    MOV [oj],AL
 
-    LDA CL,[oj]
+    MOV CL,[oj]
     MOV BX,#rzu_arr
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[keyval]
+    MOV AL,[BX]
+    MOV BL,[keyval]
     SUB AL,BL                    ; rzu_arr[order[j]] - keyval
     JMPN ss_place                ; < 0 -> ya no hay que desplazar mas
     JMPZ ss_place                ; = 0 -> tampoco (estable de sobra con 20)
 
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [jp1],AL
-    LDA CL,[jp1]
+    MOV [jp1],AL
+    MOV CL,[jp1]
     MOV BX,#order
     ADD BX,CL
-    LDA AL,[oj]
-    STA [BX],AL
+    MOV AL,[oj]
+    MOV [BX],AL
 
-    LDA AL,[j]
+    MOV AL,[j]
     SUB AL,#1
-    STA [j],AL
+    MOV [j],AL
     JMP ss_inner_l
 
 ss_place:
-    LDA AL,[j]
+    MOV AL,[j]
     ADD AL,#1
-    STA [jp1],AL
-    LDA CL,[jp1]
+    MOV [jp1],AL
+    MOV CL,[jp1]
     MOV BX,#order
     ADD BX,CL
-    LDA AL,[key]
-    STA [BX],AL
+    MOV AL,[key]
+    MOV [BX],AL
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NSPOKE
     JMPNZ ss_outer_l
     RET
@@ -1523,13 +1523,13 @@ ss_place:
 ; siendo la trama mas floja (1 de cada 4 pixeles, ver dither_on/BAYER2), pero
 ; nunca cero: la costilla mas de espaldas se ve floja, no invisible.
 level_from_rz:
-    LDA AL,[rzu]
+    MOV AL,[rzu]
     ADD AL,#1                    ; rzu < -1 ?
     JMPN lv_1
-    LDA AL,[rzu]
+    MOV AL,[rzu]
     SUB AL,#7                    ; rzu < 7 ?
     JMPN lv_2
-    LDA AL,[rzu]
+    MOV AL,[rzu]
     SUB AL,#15                   ; rzu < 15 ?
     JMPN lv_3
     MOV AL,#4
@@ -1553,37 +1553,37 @@ lv_3:
 ; -dyv).
 draw_disk:
     MOV AL,#0
-    STA [dyv],AL
+    MOV [dyv],AL
 dd_row_l:
-    LDA AL,[hw_base]
-    LDA CL,[dyv]
+    MOV AL,[hw_base]
+    MOV CL,[dyv]
     ADD AL,CL
     MOV CL,AL
     MOV BX,#HW2D
     ADD BX,CL
-    LDA AL,[BX]
-    STA [hwv],AL
+    MOV AL,[BX]
+    MOV [hwv],AL
 
-    LDA AL,[disk_cy]
-    LDA BL,[dyv]
+    MOV AL,[disk_cy]
+    MOV BL,[dyv]
     ADD AL,BL
-    STA [scan_y],AL
+    MOV [scan_y],AL
     CALL draw_disk_row
 
-    LDA AL,[dyv]
+    MOV AL,[dyv]
     CMP AL,#0
     JMPZ dd_no_mirror
-    LDA AL,[disk_cy]
-    LDA BL,[dyv]
+    MOV AL,[disk_cy]
+    MOV BL,[dyv]
     SUB AL,BL
-    STA [scan_y],AL
+    MOV [scan_y],AL
     CALL draw_disk_row
 dd_no_mirror:
 
-    LDA AL,[dyv]
+    MOV AL,[dyv]
     ADD AL,#1
-    STA [dyv],AL
-    LDA BL,[eff_disk_r]
+    MOV [dyv],AL
+    MOV BL,[eff_disk_r]
     ADD BL,#1
     CMP AL,BL
     JMPNZ dd_row_l
@@ -1592,31 +1592,31 @@ dd_no_mirror:
 ; --- draw_disk_row: pinta la fila [scan_y], columnas
 ; disk_cx-hwv .. disk_cx+hwv, cada pixel a su valor de dither_on.
 draw_disk_row:
-    LDA AL,[disk_cx]
-    LDA BL,[hwv]
+    MOV AL,[disk_cx]
+    MOV BL,[hwv]
     SUB AL,BL
-    STA [scan_x],AL
+    MOV [scan_x],AL
 
-    LDA AL,[hwv]
+    MOV AL,[hwv]
     SHL AL                       ; ancho = hwv*2 + 1
     ADD AL,#1
-    STA [span_cnt],AL
+    MOV [span_cnt],AL
 
 ddr_l:
     CALL dither_on
-    STA [pix_val],AL
-    LDA AL,[scan_x]
-    STA [px_x],AL
-    LDA AL,[scan_y]
-    STA [px_y],AL
+    MOV [pix_val],AL
+    MOV AL,[scan_x]
+    MOV [px_x],AL
+    MOV AL,[scan_y]
+    MOV [px_y],AL
     CALL shadow_put_px
 
-    LDA AL,[scan_x]
+    MOV AL,[scan_x]
     ADD AL,#1
-    STA [scan_x],AL
-    LDA AL,[span_cnt]
+    MOV [scan_x],AL
+    MOV AL,[span_cnt]
     SUB AL,#1
-    STA [span_cnt],AL
+    MOV [span_cnt],AL
     JMPNZ ddr_l
     RET
 
@@ -1629,24 +1629,24 @@ ddr_l:
 ; varios discos solapados se vea como una trama continua y no como cada
 ; disco con su propio patron descuadrado con el vecino.
 dither_on:
-    LDA AL,[scan_y]
+    MOV AL,[scan_y]
     AND AL,#1
     SHL AL
-    STA [tmp_idx],AL
-    LDA AL,[scan_x]
+    MOV [tmp_idx],AL
+    MOV AL,[scan_x]
     AND AL,#1
-    LDA BL,[tmp_idx]
+    MOV BL,[tmp_idx]
     ADD AL,BL
-    STA [tmp_idx],AL
+    MOV [tmp_idx],AL
 
-    LDA CL,[tmp_idx]
+    MOV CL,[tmp_idx]
     MOV BX,#BAYER2
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmpv],AL
+    MOV AL,[BX]
+    MOV [tmpv],AL
 
-    LDA AL,[level]
-    LDA BL,[tmpv]
+    MOV AL,[level]
+    MOV BL,[tmpv]
     SUB AL,BL                    ; level - bayer
     JMPN don_off                 ; level < bayer  -> apagado
     JMPZ don_off                 ; level == bayer -> tambien apagado

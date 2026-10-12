@@ -45,11 +45,11 @@ P_PROG_LOAD      = 0x0640
 ; ============================================================================
 start:
     IN  AL,(P_CFG_BRIGHTNESS)    ; brillo que habia ANTES de calibrar: se restaura al salir
-    STA [orig],AL
+    MOV [orig],AL
     IN  AL,(P_DAT_POS)
-    STA [gp_prev],AL
+    MOV [gp_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_prev],AL
+    MOV [dir_prev],AL
 
     CALL fill_white              ; pantalla entera encendida = el medidor
     CALL clst
@@ -64,7 +64,7 @@ start:
     CALL puts
 
     MOV AL,#255
-    STA [val],AL
+    MOV [val],AL
     OUT (P_CFG_BRIGHTNESS),AL
     CALL show_val
 
@@ -73,45 +73,45 @@ start:
 ; ============================================================================
 main_l:
     IN  AL,(P_DAT_POS)
-    STA [tmp],AL
-    LDA BL,[gp_prev]
+    MOV [tmp],AL
+    MOV BL,[gp_prev]
     SUB AL,BL                    ; AL = giro de este fotograma (con signo)
-    STA [dl],AL
-    LDA CL,[tmp]
-    STA [gp_prev],CL
+    MOV [dl],AL
+    MOV CL,[tmp]
+    MOV [gp_prev],CL
 
-    LDA AL,[dl]
+    MOV AL,[dl]
     CMP AL,#0
     JMPZ btn_check
     AND AL,#0x80
     JMPNZ vdown
 
     ; giro a la derecha: un paso de CAL_STEP por cada detente
-    LDA AL,[dl]
-    STA [cnt],AL
+    MOV AL,[dl]
+    MOV [cnt],AL
 vup_l:
     CALL step_up
-    LDA AL,[cnt]
+    MOV AL,[cnt]
     SUB AL,#1
-    STA [cnt],AL
+    MOV [cnt],AL
     JMPNZ vup_l
     JMP vapply
 
 vdown:
     ; giro a la izquierda: un paso de CAL_STEP hacia abajo por detente
-    LDA AL,[dl]
+    MOV AL,[dl]
     NOT AL
     ADD AL,#1                    ; AL = numero de detentes (positivo)
-    STA [cnt],AL
+    MOV [cnt],AL
 vdn_l:
     CALL step_down
-    LDA AL,[cnt]
+    MOV AL,[cnt]
     SUB AL,#1
-    STA [cnt],AL
+    MOV [cnt],AL
     JMPNZ vdn_l
 
 vapply:
-    LDA AL,[val]
+    MOV AL,[val]
     OUT (P_CFG_BRIGHTNESS),AL
     CALL show_val
 
@@ -124,7 +124,7 @@ btn_check:
     JMP main_l
 
 do_exit:
-    LDA AL,[orig]
+    MOV AL,[orig]
     OUT (P_CFG_BRIGHTNESS),AL   ; el brillo es global y persiste entre programas -- dejarlo como estaba
     MOV AL,#0
     OUT (P_PROG_LOAD),AL         ; vuelve al sistema (sisop, slot 0)
@@ -136,26 +136,26 @@ do_exit:
 
 ; --- step_up / step_down: un paso de CAL_STEP sobre [val], saturando en 255/0
 step_up:
-    LDA AL,[val]
+    MOV AL,[val]
     ADD AL,#CAL_STEP
     JMPC su_sat
-    STA [val],AL
+    MOV [val],AL
     RET
 su_sat:
     MOV AL,#255
-    STA [val],AL
+    MOV [val],AL
     RET
 
 step_down:
-    LDA AL,[val]
+    MOV AL,[val]
     CMP AL,#CAL_STEP
     JMPC sd_sat                  ; val < CAL_STEP -> no cabe la resta entera
     SUB AL,#CAL_STEP
-    STA [val],AL
+    MOV [val],AL
     RET
 sd_sat:
     MOV AL,#0
-    STA [val],AL
+    MOV [val],AL
     RET
 
 ; --- show_val: escribe "VALUE nnn" en la fila 3 con el valor de [val] ------
@@ -164,14 +164,14 @@ show_val:
     MOV CX,#0x0303
     CALL puts
 
-    LDA AL,[val]
-    STA [pv],AL
-    LDA AL,[pv]
+    MOV AL,[val]
+    MOV [pv],AL
+    MOV AL,[pv]
     PUSH AH
     MOV AH,#0
     MOV DL,#100
     DIV DL                  ; DL = cociente, resto -> [pv]
-    STA [pv],AH
+    MOV [pv],AH
     MOV DL,AL
     POP AH
 sv_hd:
@@ -181,12 +181,12 @@ sv_hd:
     MOV CX,#0x0309
     CALL putc
 
-    LDA AL,[pv]
+    MOV AL,[pv]
     PUSH AH
     MOV AH,#0
     MOV DL,#10
     DIV DL                  ; DL = cociente, resto -> [pv]
-    STA [pv],AH
+    MOV [pv],AH
     MOV DL,AL
     POP AH
 sv_td:
@@ -196,7 +196,7 @@ sv_td:
     MOV CX,#0x030A
     CALL putc
 
-    LDA AL,[pv]
+    MOV AL,[pv]
     ADD AL,#'0'
     MOV BL,AL
     MOV CX,#0x030B
@@ -244,7 +244,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL

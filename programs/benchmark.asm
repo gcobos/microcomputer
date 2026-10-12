@@ -91,8 +91,8 @@ bench_chk:
     JMPNZ bench_l
 
     ; --- fin de la medida: guarda CX antes de que puts/etc. la toquen ------
-    STA [res_hi],CH
-    STA [res_lo],CL
+    MOV [res_hi],CH
+    MOV [res_lo],CL
 
     MOV BL,#lo(s_done)
     MOV BH,#hi(s_done)
@@ -101,7 +101,7 @@ bench_chk:
     CALL puts
 
     ; N=0x + 4 digitos hex, justo despues de "N=0x" (que ocupa col 1..4)
-    LDA AL,[res_hi]
+    MOV AL,[res_hi]
     SHR AL,#4
     CALL hex_digit
     MOV BL,AL
@@ -109,7 +109,7 @@ bench_chk:
     MOV CH,#4
     CALL putc
 
-    LDA AL,[res_hi]
+    MOV AL,[res_hi]
     AND AL,#0x0F
     CALL hex_digit
     MOV BL,AL
@@ -117,7 +117,7 @@ bench_chk:
     MOV CH,#4
     CALL putc
 
-    LDA AL,[res_lo]
+    MOV AL,[res_lo]
     SHR AL,#4
     CALL hex_digit
     MOV BL,AL
@@ -125,7 +125,7 @@ bench_chk:
     MOV CH,#4
     CALL putc
 
-    LDA AL,[res_lo]
+    MOV AL,[res_lo]
     AND AL,#0x0F
     CALL hex_digit
     MOV BL,AL
@@ -187,7 +187,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL

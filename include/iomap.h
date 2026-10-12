@@ -323,7 +323,13 @@ constexpr uint16_t PORT_SLOT_INFO_BASE = 0x0660;
 //                   byte bajo primero): para contar cuanto ha pasado sin
 //                   hacer divisiones (sirve hasta el año 2051).
 //   Todos a 0 si no hay hora. Los registros solo cambian con OUT 0x0670.
+//   0x067F PORT_TIME_SYNC  OUT (cualquier valor): que intente ponerse en
+//                          hora ya por Wi-Fi (como al arrancar), si no lo
+//                          esta haciendo; como mucho una vez por minuto.
+//                          Se ve en el bit 2 de 0x0670 mientras conecta
+//                          (p. ej. tama.asm al abrir CLOCK). IN: 0.
 constexpr uint16_t PORT_TIME_CTRL  = 0x0670;
+constexpr uint16_t PORT_TIME_SYNC  = 0x067F;
 constexpr uint16_t PORT_TIME_BASE  = 0x0671;   // 14 registros: ver clockLatch()
 constexpr uint8_t  TIME_REG_COUNT  = 14;
 
@@ -334,11 +340,11 @@ constexpr uint8_t  TIME_REG_COUNT  = 14;
 //   0x0650 PORT_CFG_BRIGHTNESS  OUT: brillo de la pantalla, 0 (más tenue) a
 //                                255 (máximo) -- se aplica al instante,
 //                                directo al contraste real de la OLED (ver
-//                                oled.contrastFromSettings() en display.cpp,
-//                                solo SET_CONTRAST: se probaron PRE-CHARGE/
-//                                VCOMH y un tramado por software para bajar
-//                                más el brillo, y se descartaron en el panel
-//                                real). Además
+//                                oled.contrastFromSettings() en display.cpp:
+//                                SET_CONTRAST; el 0 es el MODO NOCHE, que
+//                                además baja la precarga y VCOMH, bastante
+//                                más oscuro, con un parpadeo al entrar o
+//                                salir). Además
 //                                queda como el nuevo brillo "a pleno uso":
 //                                el atenuado automático por inactividad
 //                                (specs.txt, ahorro de energía) sigue
@@ -377,10 +383,12 @@ constexpr uint8_t  TIME_REG_COUNT  = 14;
 //                                zumbador ahora mismo, 0 si por Bluetooth,
 //                                2 si en silencio (el Bluetooth no conectó
 //                                en 30 s y se apagó solo). Igual que el
-//                                brillo: SOLO el slot 0 puede cambiarlo
-//                                (además del botón BOOT), y se guarda en
-//                                la flash para sobrevivir a un reset (con
-//                                PORT_CFG_SAVE; el botón BOOT graba solo).
+//                                brillo, se guarda en la flash para
+//                                sobrevivir a un reset (con PORT_CFG_SAVE;
+//                                el botón BOOT graba solo); pero a
+//                                diferencia del brillo, CUALQUIER programa
+//                                puede cambiarlo (p. ej. tama.asm pone el
+//                                zumbador para poder avisar).
 //   0x0652 PORT_CFG_SAVE        OUT (cualquier valor, solo desde el slot
 //                                0): graba brillo y salida del sonido si han
 //                                cambiado desde la última vez. sisop lo hace

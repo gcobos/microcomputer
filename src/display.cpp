@@ -95,6 +95,8 @@ OledPanel::OledPanel(uint8_t i2cAddress)
 
 bool OledPanel::begin() {
     if (!display_.begin(i2cAddress_, true)) return false;
+    display_.setColumnOffset(OLED_COL_OFFSET);
+    clearControllerRam();
     display_.setTextColor(SH110X_WHITE);
     display_.setTextSize(1);
     display_.cp437(true);
@@ -103,6 +105,28 @@ bool OledPanel::begin() {
     // manda el siguiente; mientras espera al periférico, corre loop().
     xTaskCreate(txTaskFn, "oled_tx", 3072, this, 2, &txTask_);
     return true;
+}
+
+// La RAM del SH1106 tiene 132 columnas y solo se escriben 128 (desde
+// OLED_COL_OFFSET). Si el panel enseña alguna de las demás (p. ej. con el
+// desplazamiento equivocado para ese panel), ahí se veria para siempre el
+// ruido que deja el encendido. Se borran las 132 una vez, al arrancar.
+void OledPanel::clearControllerRam() {
+    constexpr uint8_t RAM_COLS = 132, CHUNK = 32;   // CHUNK < búfer de Wire
+    for (uint8_t page = 0; page < SCREEN_HEIGHT / 8; ++page) {
+        Wire.beginTransmission(i2cAddress_);
+        Wire.write(0x00);                      // comandos:
+        Wire.write(0xB0 | page);               //   página
+        Wire.write(0x00);                      //   columna 0 (nibble bajo)
+        Wire.write(0x10);                      //   columna 0 (nibble alto)
+        Wire.endTransmission();
+        for (uint8_t col = 0; col < RAM_COLS; col += CHUNK) {
+            Wire.beginTransmission(i2cAddress_);
+            Wire.write(0x40);                  // datos (la columna avanza sola)
+            for (uint8_t i = 0; i < CHUNK && col + i < RAM_COLS; ++i) Wire.write(0x00);
+            Wire.endTransmission();
+        }
+    }
 }
 
 void OledPanel::txTaskFn(void* arg) {
@@ -360,29 +384,49 @@ void OledPanel::message(const char* text) {
 void OledPanel::power(bool on) {
     lock();
     display_.oled_command(on ? SH110X_DISPLAYON : SH110X_DISPLAYOFF);
+    on_ = on;
     unlock();
 }
 
+void OledPanel::rawCommands(const uint8_t* cmds, uint8_t n) {
+    lock();
+    for (uint8_t i = 0; i < n; ++i) display_.oled_command(cmds[i]);
+    unlock();
+}
+
+// Contraste 0 = MODO NOCHE: ademas de SET_CONTRAST a 0, precarga corta
+// (0xD9 0x11) y VCOMH bajo (0xDB 0x20), bastante mas oscuro (y gasta menos).
+// Probado el 2026-10-12 con la pantalla de 35,8 x 18 mm: la precarga se
+// puede cambiar en marcha, pero VCOMH solo con la pantalla apagada (cambiado
+// en marcha, la apagaba hasta volver a mandar DISPLAY OFF/ON; con VCOMH 0x00,
+// tambien). Por eso, al entrar o salir del modo noche, un DISPLAY OFF/ON
+// (un parpadeo). Los demas niveles: los valores de la libreria (0x1F, 0x40).
 void OledPanel::contrast(uint8_t level) {
     lock();
+    const bool night = (level == 0);
+    if (night != night_) {
+        if (on_) display_.oled_command(SH110X_DISPLAYOFF);
+        display_.oled_command(0xD9);                 // precarga
+        display_.oled_command(night ? 0x11 : 0x1F);
+        display_.oled_command(0xDB);                 // VCOMH
+        display_.oled_command(night ? 0x20 : 0x40);
+        if (on_) display_.oled_command(SH110X_DISPLAYON);
+        night_ = night;
+    }
     display_.setContrast(level);
     unlock();
 }
 
-// contrastFromSettings() == contrast(): DOS intentos de bajar más el brillo,
-// los dos DESCARTADOS tras probarlos en el panel real -- leer antes de
-// intentar un tercero.
-//   1) Escalar además PRE-CHARGE (0xD9) y VCOMH (0xDB) junto con SET_CONTRAST.
-//      Este panel no tolera tocar esos registros en marcha: se apagaba del
-//      todo, tanto en el atenuado automático como al mover el mando de brillo.
-//   2) Tramado (dither) por software (Bayer 4x4) por debajo de cierto brillo.
-//      Oscurecía, pero cambiaba el aspecto de lo que se ve (un patrón
-//      granulado), no solo el brillo. Se descartó por eso.
-// Con las dos vías descartadas, PORT_CFG_BRIGHTNESS es solo SET_CONTRAST.
+// contrastFromSettings() == contrast(). Historia de los intentos de bajar
+// mas el brillo -- leer antes de intentar otro:
+//   1) PRE-CHARGE (0xD9) y VCOMH (0xDB). Con la pantalla original se apagaba
+//      del todo al tocarlos. Con la actual (2026-10-12) si funcionan, con el
+//      cuidado de VCOMH (ver contrast()): es el modo noche del nivel 0.
+//   2) Tramado (dither) por software (Bayer 4x4). Oscurecia, pero cambiaba
+//      el aspecto (un patron granulado). Descartado.
+//   3) Bajar la bomba de carga (0x30 = 6,4 V): no se nota nada.
 void OledPanel::contrastFromSettings(uint8_t level) {
-    lock();
-    display_.setContrast(level);
-    unlock();
+    contrast(level);                       // con el modo noche del nivel 0
 }
 
 } // namespace compi

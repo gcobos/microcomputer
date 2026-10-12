@@ -28,6 +28,12 @@ static bool g_onConfigured = false;   // probando la red configurada
 static volatile bool g_ntpGot = false;
 static char g_curSsid[33] = "";       // la red que se esta probando
 static char g_lastSsid[33] = "";      // la que dio la hora la ultima vez
+// diagnostico del ultimo intento (COMPI NETDIAG)
+static volatile uint8_t g_dReason = 0;    // motivo de la ultima desconexion (wifi_err_reason_t)
+static volatile bool g_dGotIp = false;    // llego a tener IP
+static volatile int8_t g_dRssi = 0;       // señal al conectar
+static uint8_t g_dLastStatus = 0;         // WiFi.status() al rendirse
+static bool g_evInit = false;
 
 constexpr uint8_t  NET_MAX_OPEN = 6;
 static char g_open[NET_MAX_OPEN][33]; // redes abiertas encontradas, por señal
@@ -73,6 +79,19 @@ static void radioOff(bool ok) {
 }
 
 static void startConnect(const char* ssid, const char* pass) {
+    if (!g_evInit) {
+        g_evInit = true;
+        WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t info) {
+            g_dReason = info.wifi_sta_disconnected.reason;
+        }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+        WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) {
+            g_dGotIp = true;
+            g_dRssi = (int8_t)WiFi.RSSI();
+        }, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+    }
+    g_dReason = 0;
+    g_dGotIp = false;
+    g_dRssi = 0;
     sntp_stop();
     WiFi.disconnect();
     strncpy(g_curSsid, ssid, 32); g_curSsid[32] = '\0';
@@ -105,6 +124,11 @@ void clockSyncNow() {
         g_onConfigured = false;
         startScan();
     }
+}
+
+void clockSyncRequest() {
+    if (g_triedOnce && millis() - g_lastSyncTry < 60000UL) return;
+    clockSyncNow();
 }
 
 void clockBegin(const uint8_t* cfg) {
@@ -162,6 +186,7 @@ void clockTick() {
             return;
         }
         if (t < (g_onConfigured ? NET_SYNC_TIMEOUT_MS : NET_OPEN_TIMEOUT_MS)) return;
+        g_dLastStatus = (uint8_t)WiFi.status();
         if (g_onConfigured) {                 // la suya no va: a las abiertas
             g_onConfigured = false;
             startScan();
@@ -178,6 +203,25 @@ void clockTick() {
 }
 
 bool clockBusy() { return g_state != NetState::Off; }
+
+void clockScanPrint() {
+    if (g_state != NetState::Off) { Serial.println("COMPI ERR ocupado"); return; }
+    WiFi.mode(WIFI_STA);
+    int n = WiFi.scanNetworks(false, true);   // bloqueante, tambien ocultas
+    for (int i = 0; i < n; ++i) {
+        Serial.printf("COMPI SCAN canal=%d rssi=%d %s \"%s\"\n", WiFi.channel(i), WiFi.RSSI(i),
+                      WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "abierta" : "clave",
+                      WiFi.SSID(i).c_str());
+    }
+    WiFi.scanDelete();
+    WiFi.mode(WIFI_OFF);
+    Serial.println("COMPI OK 0");
+}
+
+void clockDiag(char* out, size_t n) {
+    snprintf(out, n, "ip=%d rssi=%d motivo=%u wl_status=%u red=%s",
+             g_dGotIp ? 1 : 0, g_dRssi, g_dReason, g_dLastStatus, g_curSsid);
+}
 
 uint8_t clockStatus() {
     uint8_t s = 0;

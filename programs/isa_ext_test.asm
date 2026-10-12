@@ -1,9 +1,10 @@
 ; ============================================================================
 ;  isa_ext_test.asm  -  prueba de MUL, DIV, INC/DEC, ADD/SUB de 16 bits,
-;  MOVB/MOVW, JMPV/JMPNV/CALLV/CALLNV y MOV reg16,#imm16, y de lo nuevo de
-;  la ISA 2: ADC/SBC, CMP con memoria, ALU con [reg16], INC/DEC de 8 bits,
-;  MOV/ADD/SUB/CMP de 16 bits, PUSH/POP reg16, MOVBR y JMP/CALL por
-;  registro (compi)
+;  MOVB/MOVW, JMPV/JMPNV y MOV reg16,#imm16; de la ISA 2: ADC/SBC, INC/DEC
+;  de 8 bits, MOV/ADD/SUB/CMP de 16 bits, PUSH/POP reg16, MOVBR y JMP/CALL
+;  por registro; y de la ISA 3 (casos 22, 27, 28 y 39-64): MOV [mem],#imm,
+;  SAR/ROL/ROR/RCL/RCR, NEG, IMUL, saltos con signo y SHL/SHR/SAR/NEG/MUL/
+;  DIV de 16 bits (compi)
 ;
 ;  Ejercita cada instruccion nueva del ISA con los mismos casos limite ya
 ;  verificados aparte contra el nucleo de cpu.cpp (g++ standalone) y contra
@@ -35,9 +36,9 @@ P_TEXT = 0x0400
 start:
     CALL clst
     MOV AL,#0
-    STA [test_cnt],AL
-    STA [fail_cnt],AL
-    STA [first_fail],AL
+    MOV [test_cnt],AL
+    MOV [fail_cnt],AL
+    MOV [first_fail],AL
 
     ; --- MUL 255*255 -> AX=0xFE01, C=V=1 (no cupo en 8 bits) --------------
     ; OJO de orden: check8/check16 usan CMP por dentro, que PISA los flags
@@ -46,21 +47,21 @@ start:
     MOV AL,#0xFF
     MOV BL,#0xFF
     MUL BL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,AH
-    STA [got_hi],AL
+    MOV [got_hi],AL
     CALL cflag_to_al
-    STA [c_result],AL
+    MOV [c_result],AL
     CALL vflag_to_al
-    STA [v_result],AL
+    MOV [v_result],AL
 
     MOV AL,#0x01
     MOV BL,#0xFE
     CALL check16                 ; caso 1: AX == 0xFE01
-    LDA AL,[c_result]
+    MOV AL,[c_result]
     MOV BL,#1
     CALL check8                  ; caso 2: C=1 (no cupo en 8 bits)
-    LDA AL,[v_result]
+    MOV AL,[v_result]
     MOV BL,#1
     CALL check8                  ; caso 3: V=1 (igual que C aqui)
 
@@ -68,14 +69,14 @@ start:
     MOV AL,#5
     MOV BL,#3
     MUL BL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     CALL cflag_to_al
-    STA [c_result],AL
+    MOV [c_result],AL
 
-    LDA AL,[got_lo]
+    MOV AL,[got_lo]
     MOV BL,#15
     CALL check8                  ; caso 4: AL == 15 (AH ya es 0, cabe en un byte)
-    LDA AL,[c_result]
+    MOV AL,[c_result]
     MOV BL,#0
     CALL check8                  ; caso 5: C=0 (cupo en 8 bits)
 
@@ -84,16 +85,16 @@ start:
     MOV AH,#0
     MOV BL,#0
     DIV BL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,AH
-    STA [got_hi],AL
+    MOV [got_hi],AL
     CALL vflag_to_al
-    STA [v_result],AL
+    MOV [v_result],AL
 
     MOV AL,#0xFF
     MOV BL,#0xFF
     CALL check16                 ; caso 6: AX == 0xFFFF
-    LDA AL,[v_result]
+    MOV AL,[v_result]
     MOV BL,#1
     CALL check8                  ; caso 7: V=1
 
@@ -102,9 +103,9 @@ start:
     MOV AH,#0x03                 ; AX = 1000
     MOV BL,#2
     DIV BL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,AH
-    STA [got_hi],AL
+    MOV [got_hi],AL
     MOV AL,#0xFF
     MOV BL,#0xFF
     CALL check16                 ; caso 8: AX == 0xFFFF (satura)
@@ -143,11 +144,11 @@ start:
     MOV CL,#5
     ADD BX,CL                    ; BX = 0x00FE + 5 = 0x0103
     MOV AL,BL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,BH
     MOV BL,#1
     CALL check8                  ; caso 13: BH == 1 (hubo acarreo de verdad)
-    LDA AL,[got_lo]
+    MOV AL,[got_lo]
     MOV BL,#3
     CALL check8                  ; caso 14: BL == 3
 
@@ -156,19 +157,19 @@ start:
     MOV CL,#5
     SUB BX,CL                    ; BX = 0x0102 - 5 = 0x00FD
     MOV AL,BL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,BH
     MOV BL,#0
     CALL check8                  ; caso 15: BH == 0 (hubo prestamo de verdad)
-    LDA AL,[got_lo]
+    MOV AL,[got_lo]
     MOV BL,#0xFD
     CALL check8                  ; caso 16: BL == 0xFD
 
     ; --- MOVB: copia un bloque conocido y deja BX/DX avanzados, CX a 0 -----
     MOV AL,#0xA5
-    STA [0x1000],AL
+    MOV [0x1000],AL
     MOV AL,#0x5A
-    STA [0x1001],AL
+    MOV [0x1001],AL
     MOV BL,#0x00
     MOV BH,#0x10                 ; BX = 0x1000 (origen)
     MOV DL,#0x00
@@ -179,18 +180,18 @@ start:
     ; check8 usa CL por dentro (contador de casos) -- hay que guardar el CL
     ; real (deberia ser 0 tras MOVB) antes de que lo pise.
     MOV AL,CL
-    STA [got_lo],AL
-    LDA AL,[0x2000]
+    MOV [got_lo],AL
+    MOV AL,[0x2000]
     MOV BL,#0xA5
     CALL check8                  ; caso 17: primer byte copiado
-    LDA AL,[0x2001]
+    MOV AL,[0x2001]
     MOV BL,#0x5A
     CALL check8                  ; caso 18: segundo byte copiado
-    LDA AL,[got_lo]
+    MOV AL,[got_lo]
     MOV BL,#0
     CALL check8                  ; caso 19: CX == 0 tras MOVB
 
-    ; --- JMPV/JMPNV, CALLV/CALLNV: mismo mecanismo que arriba, pero
+    ; --- JMPV/JMPNV: mismo mecanismo que arriba, pero
     ; comprobados con las instrucciones de salto de verdad (no solo el
     ; flag) -- MUL 255*255 deja V=1 -----------------------------------------
     MOV AL,#0xFF
@@ -213,25 +214,18 @@ jv_skip:
     MOV BL,#1
     CALL check8                  ; caso 21: JMPV con V=0 no salto (AL quedo en 1)
 
-    MOV AL,#0xFF
-    MOV BL,#0xFF
-    MUL BL                       ; V=1 otra vez
-    MOV AL,#0
-    CALLV cv_called
-    MOV BL,#2
-    CALL check8                  ; caso 22: CALLV con V=1 SI llamo (AL quedo en 2)
-    JMP after_cv
-cv_called:
-    MOV AL,#2
-    RET
-after_cv:
+    ; (ISA 3: CALL ya no lleva condicion; el caso 22 pasa a ser MOV [dir],#imm)
+    MOV [tmp_v],#0x5A
+    MOV AL,[tmp_v]
+    MOV BL,#0x5A
+    CALL check8                  ; caso 22: MOV [dir],#imm escribe 0x5A
 
     ; --- MOV reg16,#imm16: una instruccion en vez de dos MOV de 8 bits -----
     MOV BX,#0x1234
     MOV AL,BL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,BH
-    STA [got_hi],AL
+    MOV [got_hi],AL
     MOV AL,#0x34
     MOV BL,#0x12
     CALL check16                 ; caso 23: MOV BX,#0x1234 -> BX == 0x1234
@@ -246,7 +240,7 @@ after_cv:
     CALL check8                  ; caso 24: MOV reg16,#imm16 no toca flags
 
     ; ======================================================================
-    ;  ISA 2: ADC/SBC, CMP con memoria, ALU con [reg16], INC/DEC de 8 bits,
+    ;  ISA 2: ADC/SBC, INC/DEC de 8 bits (y los casos 27-28, ya de la ISA 3),
     ;  16 bits reg16,reg16 y reg16,#imm, PUSH/POP reg16, MOVBR, saltos por
     ;  registro
     ; ======================================================================
@@ -255,9 +249,9 @@ after_cv:
     ADD AL,#0x20             ; AL=0x10, C=1
     MOV BL,#0x01
     ADC BL,#0x00             ; BL = 1 + 0 + C = 2
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,BL
-    STA [got_hi],AL
+    MOV [got_hi],AL
     MOV AL,#0x10
     MOV BL,#0x02
     CALL check16                 ; caso 25: ADC recoge el acarreo
@@ -267,31 +261,26 @@ after_cv:
     SUB AL,#0x01             ; AL=0xFF, C=1 (prestamo)
     MOV BL,#0x02
     SBC BL,#0x00             ; BL = 2 - 0 - C = 1
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,BL
-    STA [got_hi],AL
+    MOV [got_hi],AL
     MOV AL,#0xFF
     MOV BL,#0x01
     CALL check16                 ; caso 26: SBC paga el prestamo
 
-    ; --- CMP reg,[dir] (antes no existia) -----------------------------------
-    MOV AL,#7
-    STA [tmp_v],AL
-    MOV AL,#7
-    CMP AL,[tmp_v]
-    MOV AL,#0
-    JMPNZ t27
-    MOV AL,#1
-t27:
-    MOV BL,#1
-    CALL check8                  ; caso 27: CMP AL,[dir] da Z=1
+    ; --- (ISA 3: sin ALU con memoria) MOV [r16],#imm y MOV reg,[r16] --------
+    MOV BX,#tmp_v
+    MOV [BX],#7
+    MOV AL,[tmp_v]
+    MOV BL,#7
+    CALL check8                  ; caso 27: MOV [BX],#7 escribe 7
 
-    ; --- ALU con [reg16]: ADD AL,[BX] ---------------------------------------
     MOV BX,#tmp_v                ; tmp_v = 7
+    MOV CL,[BX]
     MOV AL,#5
-    ADD AL,[BX]
+    ADD AL,CL
     MOV BL,#12
-    CALL check8                  ; caso 28: ADD AL,[BX] = 12
+    CALL check8                  ; caso 28: MOV CL,[BX] + ADD = 12
 
     ; --- INC/DEC de 8 bits: no tocan C ---------------------------------------
     MOV AL,#0xFF
@@ -318,9 +307,9 @@ t30:
     ADD BX,#0x10                 ; 0x2210
     MOV CX,BX
     MOV AL,CL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,CH
-    STA [got_hi],AL
+    MOV [got_hi],AL
     MOV AL,#0x10
     MOV BL,#0x22
     CALL check16                 ; caso 31: ADD/SUB/MOV de 16 bits
@@ -342,9 +331,9 @@ t30:
     MOV BX,#0
     POP DX
     MOV AL,DL
-    STA [got_lo],AL
+    MOV [got_lo],AL
     MOV AL,DH
-    STA [got_hi],AL
+    MOV [got_hi],AL
     MOV AL,#0xEF
     MOV BL,#0xBE
     CALL check16                 ; caso 34: PUSH BX / POP DX
@@ -354,10 +343,10 @@ t30:
     MOV DX,#mvb_buf+3            ; ultimo byte de destino
     MOV CX,#3
     MOVBR                        ; "AABC"
-    LDA AL,[mvb_buf+3]
+    MOV AL,[mvb_buf+3]
     MOV BL,#'C'
     CALL check8                  ; caso 35: MOVBR movio el ultimo
-    LDA AL,[mvb_buf+1]
+    MOV AL,[mvb_buf+1]
     MOV BL,#'A'
     CALL check8                  ; caso 36: MOVBR sin pisarse (memmove)
 
@@ -375,6 +364,215 @@ t37_dst:
     MOV BL,#1
     CALL check8                  ; caso 38: CALL DX llamo y volvio
 
+
+    ; ===================== ISA 3 =============================================
+    ; --- SAR: desplazamiento con signo ---------------------------------------
+    MOV AL,#0x84                 ; -124
+    SAR AL,#2
+    MOV BL,#0xE1                 ; -31
+    CALL check8                  ; caso 39: SAR 0x84,#2 = 0xE1
+    MOV AL,#0x81
+    SAR AL                       ; -> 0xC0, sale un 1
+    CALL cflag_to_al
+    MOV BL,#1
+    CALL check8                  ; caso 40: SAR deja en C el bit que sale
+
+    ; --- ROL / ROR -------------------------------------------------------------
+    MOV BL,#0xB1
+    ROL BL,#3
+    MOV AL,BL
+    MOV BL,#0x8D
+    CALL check8                  ; caso 41: ROL 0xB1,#3 = 0x8D
+    MOV CL,#0x01
+    ROR CL
+    MOV AL,CL
+    MOV BL,#0x80
+    CALL check8                  ; caso 42: ROR 0x01 = 0x80
+
+    ; --- RCL / RCR: a traves de C --------------------------------------------
+    MOV AL,#0xFF
+    ADD AL,#1                    ; C=1
+    MOV DL,#0x40
+    RCL DL,#2                    ; 0x40 -> 0x81 (C=0) -> 0x02 (C=1)
+    CALL cflag_to_al
+    MOV [c_result],AL
+    MOV AL,DL
+    MOV BL,#0x02
+    CALL check8                  ; caso 43: RCL 0x40,#2 con C=1 = 0x02
+    MOV AL,[c_result]
+    MOV BL,#1
+    CALL check8                  ; caso 44: y deja C=1
+    MOV AL,#1
+    ADD AL,#1                    ; C=0
+    MOV AH,#0x03
+    RCR AH                       ; -> 0x01, C=1
+    MOV AL,AH
+    MOV BL,#0x01
+    CALL check8                  ; caso 45: RCR 0x03 con C=0 = 0x01
+
+    ; --- NEG -------------------------------------------------------------------
+    MOV AL,#5
+    NEG AL
+    PUSH AL
+    CALL cflag_to_al
+    MOV [c_result],AL
+    POP AL
+    MOV BL,#0xFB
+    CALL check8                  ; caso 46: NEG 5 = 0xFB
+    MOV AL,[c_result]
+    MOV BL,#1
+    CALL check8                  ; caso 47: NEG de un no-cero deja C=1
+    MOV AL,#0x80
+    NEG AL                       ; -128 no tiene opuesto: V=1
+    CALL vflag_to_al
+    MOV BL,#1
+    CALL check8                  ; caso 48: NEG 0x80 da V=1
+
+    ; --- IMUL ------------------------------------------------------------------
+    MOV AL,#0xFD                 ; -3
+    MOV BL,#7
+    IMUL BL                      ; -21 = 0xFFEB
+    PUSH AL
+    CALL cflag_to_al
+    MOV [c_result],AL
+    POP AL
+    MOV [got_lo],AL
+    MOV AL,AH
+    MOV [got_hi],AL
+    MOV AL,#0xEB
+    MOV BL,#0xFF
+    CALL check16                 ; caso 49: IMUL -3*7 = 0xFFEB
+    MOV AL,[c_result]
+    MOV BL,#0
+    CALL check8                  ; caso 50: -21 cabe en 8 bits: C=0
+    MOV AL,#0x80
+    MOV BL,#0x80
+    IMUL BL                      ; -128*-128 = 16384 = 0x4000
+    MOV [got_lo],AL
+    MOV AL,AH
+    MOV [got_hi],AL
+    MOV AL,#0x00
+    MOV BL,#0x40
+    CALL check16                 ; caso 51: IMUL -128*-128 = 0x4000
+
+    ; --- saltos con signo ------------------------------------------------------
+    MOV AL,#0xFE                 ; -2 (sin signo seria 254, mayor que 3)
+    CMP AL,#3
+    MOV AL,#0
+    JMPLT t52
+    MOV AL,#1
+t52:
+    MOV BL,#0
+    CALL check8                  ; caso 52: -2 < 3 con signo: JMPLT salta
+    MOV AL,#3
+    CMP AL,#0xFE
+    MOV AL,#0
+    JMPGE t53
+    MOV AL,#1
+t53:
+    MOV BL,#0
+    CALL check8                  ; caso 53: 3 >= -2: JMPGE salta
+    MOV AL,#5
+    CMP AL,#5
+    MOV AL,#0
+    JMPLE t54
+    MOV AL,#1
+t54:
+    MOV BL,#0
+    CALL check8                  ; caso 54: 5 <= 5: JMPLE salta
+    MOV AL,#0x80                 ; -128
+    CMP AL,#0x7F
+    MOV AL,#0
+    JMPGT t55
+    MOV AL,#1
+t55:
+    MOV BL,#1
+    CALL check8                  ; caso 55: -128 > 127 es falso: JMPGT no salta
+
+    ; --- 16 bits: SHL / SHR / SAR / NEG --------------------------------------
+    MOV AX,#0x1234
+    SHL AX,#4
+    MOV [got_lo],AL
+    MOV AL,AH
+    MOV [got_hi],AL
+    MOV AL,#0x40
+    MOV BL,#0x23
+    CALL check16                 ; caso 56: SHL 0x1234,#4 = 0x2340
+    MOV BX,#0xF234
+    SHR BX,#12
+    MOV AL,BL
+    MOV [got_lo],AL
+    MOV AL,BH
+    MOV [got_hi],AL
+    MOV AL,#0x0F
+    MOV BL,#0x00
+    CALL check16                 ; caso 57: SHR 0xF234,#12 = 0x000F
+    MOV CX,#0x8001
+    SAR CX,#4
+    MOV AL,CL
+    MOV [got_lo],AL
+    MOV AL,CH
+    MOV [got_hi],AL
+    MOV AL,#0x00
+    MOV BL,#0xF8
+    CALL check16                 ; caso 58: SAR 0x8001,#4 = 0xF800
+    MOV DX,#0x0001
+    NEG DX
+    MOV AL,DL
+    MOV [got_lo],AL
+    MOV AL,DH
+    MOV [got_hi],AL
+    MOV AL,#0xFF
+    MOV BL,#0xFF
+    CALL check16                 ; caso 59: NEG 1 = 0xFFFF
+
+    ; --- MUL / DIV de 16 bits ------------------------------------------------
+    MOV AX,#0x1234
+    MOV BX,#0x0100
+    MUL BX                       ; DX:AX = 0x00123400
+    MOV [got_lo],AL
+    MOV AL,AH
+    MOV [got_hi],AL
+    MOV AL,DL
+    MOV [tmp_v],AL
+    MOV AL,DH
+    MOV [exp_lo_tmp],AL          ; (variable de paso)
+    MOV AL,#0x00
+    MOV BL,#0x34
+    CALL check16                 ; caso 60: MUL AX = 0x3400 (parte baja)
+    MOV AL,[tmp_v]
+    MOV [got_lo],AL
+    MOV AL,[exp_lo_tmp]
+    MOV [got_hi],AL
+    MOV AL,#0x12
+    MOV BL,#0x00
+    CALL check16                 ; caso 61: MUL DX = 0x0012 (parte alta)
+    MOV DX,#0x0001
+    MOV AX,#0x0000               ; DX:AX = 65536
+    MOV CX,#3
+    DIV CX                       ; AX = 21845 = 0x5555, DX = 1
+    MOV [got_lo],AL
+    MOV AL,AH
+    MOV [got_hi],AL
+    MOV AL,DL
+    MOV [tmp_v],AL
+    MOV AL,#0x55
+    MOV BL,#0x55
+    CALL check16                 ; caso 62: DIV 65536/3 = 0x5555
+    MOV AL,[tmp_v]
+    MOV BL,#1
+    CALL check8                  ; caso 63: resto 1
+    MOV DX,#0x0003
+    MOV AX,#0x0000               ; 196608 / 2 = 98304: no cabe en 16 bits
+    MOV CX,#2
+    DIV CX
+    MOV [got_lo],AL
+    MOV AL,AH
+    MOV [got_hi],AL
+    MOV AL,#0xFF
+    MOV BL,#0xFF
+    CALL check16                 ; caso 64: DIV que no cabe satura en 0xFFFF
+
     ; --- resumen: PASS n/N, y FAIL #k si hubo algun fallo ------------------
     CALL show_summary
     HALT
@@ -387,19 +585,19 @@ t38_sub:
 ; si no coinciden, suma 1 a [fail_cnt] y, si es el primer fallo, guarda el
 ; numero de caso (test_cnt, ya incrementado) en [first_fail] ----------------
 check8:
-    LDA CL,[test_cnt]
+    MOV CL,[test_cnt]
     ADD CL,#1
-    STA [test_cnt],CL
+    MOV [test_cnt],CL
     CMP AL,BL
     JMPZ ck8_ok
-    LDA CL,[fail_cnt]
+    MOV CL,[fail_cnt]
     ADD CL,#1
-    STA [fail_cnt],CL
-    LDA CL,[first_fail]
+    MOV [fail_cnt],CL
+    MOV CL,[first_fail]
     CMP CL,#0
     JMPNZ ck8_ok
-    LDA CL,[test_cnt]
-    STA [first_fail],CL
+    MOV CL,[test_cnt]
+    MOV [first_fail],CL
 ck8_ok:
     RET
 
@@ -408,31 +606,31 @@ ck8_ok:
 ; no inflar el contador (compara los dos bytes, cuenta como 1 fallo si
 ; cualquiera de los dos no coincide) -----------------------------------------
 check16:
-    STA [exp_lo_tmp],AL     ; AL trae el byte bajo esperado
+    MOV [exp_lo_tmp],AL     ; AL trae el byte bajo esperado
     MOV AL,BL
-    STA [exp_hi_tmp],AL     ; BL trae el byte alto esperado
+    MOV [exp_hi_tmp],AL     ; BL trae el byte alto esperado
 
-    LDA CL,[test_cnt]
+    MOV CL,[test_cnt]
     ADD CL,#1
-    STA [test_cnt],CL
+    MOV [test_cnt],CL
 
-    LDA AL,[got_lo]
-    LDA BL,[exp_lo_tmp]
+    MOV AL,[got_lo]
+    MOV BL,[exp_lo_tmp]
     CMP AL,BL
     JMPNZ c16_fail
-    LDA AL,[got_hi]
-    LDA BL,[exp_hi_tmp]
+    MOV AL,[got_hi]
+    MOV BL,[exp_hi_tmp]
     CMP AL,BL
     JMPZ c16_ok
 c16_fail:
-    LDA CL,[fail_cnt]
+    MOV CL,[fail_cnt]
     ADD CL,#1
-    STA [fail_cnt],CL
-    LDA CL,[first_fail]
+    MOV [fail_cnt],CL
+    MOV CL,[first_fail]
     CMP CL,#0
     JMPNZ c16_ok
-    LDA CL,[test_cnt]
-    STA [first_fail],CL
+    MOV CL,[test_cnt]
+    MOV [first_fail],CL
 c16_ok:
     RET
 
@@ -464,8 +662,8 @@ show_summary:
     MOV CH,#0
     CALL puts
 
-    LDA AL,[test_cnt]
-    LDA BL,[fail_cnt]
+    MOV AL,[test_cnt]
+    MOV BL,[fail_cnt]
     SUB AL,BL                ; AL = aciertos = test_cnt - fail_cnt
     CALL put_dec2
     MOV CL,#5
@@ -478,13 +676,13 @@ show_summary:
     MOV CH,#0
     CALL puts
 
-    LDA AL,[test_cnt]
+    MOV AL,[test_cnt]
     CALL put_dec2
     MOV CL,#8
     MOV CH,#0
     CALL puts2
 
-    LDA AL,[fail_cnt]
+    MOV AL,[fail_cnt]
     CMP AL,#0
     JMPZ ss_done
 
@@ -494,7 +692,7 @@ show_summary:
     MOV CH,#1
     CALL puts
 
-    LDA AL,[first_fail]
+    MOV AL,[first_fail]
     CALL put_dec2
     MOV CL,#6
     MOV CH,#1
@@ -517,10 +715,10 @@ pd2_have_tens:
     MOV CL,AL                ; unidades
     MOV AL,BL
     ADD AL,#0x30
-    STA [dec_buf],AL
+    MOV [dec_buf],AL
     MOV AL,CL
     ADD AL,#0x30
-    STA [dec_buf+1],AL
+    MOV [dec_buf+1],AL
     RET
 
 ; --- puts2: como puts, pero para [dec_buf] (2 caracteres, sin NUL) ---------
@@ -530,10 +728,10 @@ puts2:
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
-    LDA AL,[dec_buf]
+    MOV AL,[dec_buf]
     OUT (DX),AL
     ADD DL,#1
-    LDA AL,[dec_buf+1]
+    MOV AL,[dec_buf+1]
     OUT (DX),AL
     RET
 
@@ -545,7 +743,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL

@@ -710,6 +710,7 @@ void portWrite(uint16_t port, uint8_t value) {
         return;
     }
     if (port == PORT_TIME_CTRL) { clockLatch(g_timeRegs); return; }
+    if (port == PORT_TIME_SYNC) { clockSyncRequest(); return; }
     if (port == PORT_PROG_LOAD) {
         // "salto" a otro programa: si el slot existe, sustituye la RAM
         // entera y reinicia la CPU (PC/SP/flags/registros) para que la
@@ -764,9 +765,8 @@ void portWrite(uint16_t port, uint8_t value) {
         // de contraste real -- se vera en cuanto vuelva a encenderse) y
         // ademas queda como el nuevo "pleno brillo" para el ahorro de
         // energia automatico -- ver g_screenContrast e iomap.h.
-        // contrastFromSettings() == contrast(): solo SET_CONTRAST. Los dos
-        // intentos de escalar más (PRE-CHARGE/VCOMH, tramado) se descartaron
-        // en el panel real; ver display.cpp.
+        // contrastFromSettings() == contrast(): SET_CONTRAST, y el nivel 0
+        // es el modo noche (precarga y VCOMH bajos); ver display.cpp.
         // Solo SETTINGS de sisop (slot 0) puede cambiarlo: es un ajuste del
         // aparato, no del programa en curso -- cualquier otro programa que
         // escriba aqui se ignora (puede seguir LEYENDOLO con IN).
@@ -782,7 +782,8 @@ void portWrite(uint16_t port, uint8_t value) {
         return;
     }
     if (port == PORT_CFG_SOUND_EN) {
-        if (g_currentSlot != 0) return;   // igual que el brillo (ver arriba)
+        // Cualquier programa puede cambiarlo (p. ej. tama.asm pone el
+        // zumbador para poder avisar), no solo sisop como el brillo.
         // Mismo interruptor general que el boton BOOT (g_soundMode): 0 =
         // Bluetooth, 2 = silencio, otro = zumbador. Sin el "jingle" del
         // boton -- eso es una cortesia pensada para que la note un humano,
@@ -893,7 +894,9 @@ void applyScreenPower(ScreenPwr want) {
             g_forceRender = true;   // repinta vistas de depuración
             lastFlush = 0;          // fuerza volcado del framebuffer (ExecCont)
         }
-        oled.contrast(want == SCR_DIM ? OLED_CONTRAST_DIM : g_screenContrast);
+        // atenuada: nunca mas brillante que el brillo elegido (en el modo
+        // noche, contraste 0, se queda en el)
+        oled.contrast(want == SCR_DIM ? min(OLED_CONTRAST_DIM, g_screenContrast) : g_screenContrast);
     }
     g_scr = want;
 }
@@ -1373,9 +1376,9 @@ void provisionDel(int slot) {
     if (slot < 0 || (size_t)slot >= MAX_PROGRAM_SLOTS) { Serial.println("COMPI ERR header"); return; }
     noteActivity();
     oled.message("DELETING...");
-    flash.deleteProgram(slot);
+    const bool ok = flash.deleteProgram(slot);
     if (ui.slot == (uint8_t)slot) prevSlot = 0xFF;
-    Serial.println("COMPI OK 0");
+    Serial.println(ok ? "COMPI OK 0" : "COMPI ERR flash");
     noteActivity();
     forceRedraw();
 }
@@ -1403,6 +1406,19 @@ static void saveNet(const char* ssid, const char* pass, const char* tz) {
 static void provisionNet(const char* line) {
     unsigned long epoch;
     char a[160], b[160];
+    // antes que "COMPI WIFI %s": sscanf tambien casaria "COMPI WIFISCAN"
+    // (un espacio del formato acepta cero espacios) y tomaria "SCAN" por la red
+    if (strcmp(line, "COMPI WIFISCAN") == 0) {
+        clockScanPrint();
+        return;
+    }
+    if (strcmp(line, "COMPI NETDIAG") == 0) {
+        char m[120];
+        clockDiag(m, sizeof(m));
+        Serial.print("COMPI NETDIAG ");
+        Serial.println(m);
+        return;
+    }
     if (sscanf(line, "COMPI TIME %lu", &epoch) == 1) {
         clockSetEpoch((uint32_t)epoch);
         Serial.print("COMPI OK ");
@@ -1491,7 +1507,11 @@ void provisionPoll() {
     if (strcmp(line, "COMPI HELLO") == 0) { provisionHello(); return; }
     if (strncmp(line, "COMPI TIME ", 11) == 0 || strncmp(line, "COMPI WIFI ", 11) == 0 ||
         strncmp(line, "COMPI TZ ", 9) == 0 || strcmp(line, "COMPI SYNC") == 0 ||
-        strcmp(line, "COMPI NET") == 0) { provisionNet(line); return; }
+        strcmp(line, "COMPI NET") == 0 || strcmp(line, "COMPI NETDIAG") == 0 ||
+        strcmp(line, "COMPI WIFISCAN") == 0) {
+        provisionNet(line);
+        return;
+    }
     if (strcmp(line, "COMPI LIST") == 0)  { provisionList();  return; }
     if (strcmp(line, "COMPI DIAG") == 0)  { provisionDiag();  return; }
     {
@@ -1513,6 +1533,46 @@ void provisionPoll() {
             Serial.println("COMPI OK 0");
             return;
         }
+    }
+    {
+        int ts; unsigned us = 0;
+        if (sscanf(line, "COMPI FLASHTEST %d %u", &ts, &us) >= 1) {
+            char m[160];
+            if (flash.writeTest(ts, us, m, sizeof(m))) {
+                Serial.print("COMPI FLASHTEST ");
+                Serial.println(m);
+            } else {
+                Serial.println("COMPI ERR slot ocupado o no valido");
+            }
+            return;
+        }
+    }
+    if (strncmp(line, "COMPI OLEDCMD ", 14) == 0) {
+        // diagnostico: bytes de comando en hexadecimal, separados por espacios
+        uint8_t cmds[16];
+        uint8_t n = 0;
+        const char* p = line + 14;
+        while (*p && n < sizeof(cmds)) {
+            char* end;
+            long v = strtol(p, &end, 16);
+            if (end == p) break;
+            cmds[n++] = (uint8_t)v;
+            p = end;
+        }
+        oled.rawCommands(cmds, n);
+        Serial.print("COMPI OK ");
+        Serial.println(n);
+        return;
+    }
+    if (strcmp(line, "COMPI FLASHSR") == 0) {
+        // diagnostico de la flash (solo lee; ver SpiFlashStorage::readStatus)
+        uint8_t mf, ty, cap, sr1, sr2, sr3, wel;
+        flash.readStatus(&mf, &ty, &cap, &sr1, &sr2, &sr3, &wel);
+        char m[96];
+        snprintf(m, sizeof(m), "COMPI FLASHSR id=%02X%02X%02X sr1=%02X sr2=%02X sr3=%02X sr1_tras_WREN=%02X",
+                 mf, ty, cap, sr1, sr2, sr3, wel);
+        Serial.println(m);
+        return;
     }
     if (strcmp(line, "COMPI SOUND BT") == 0 || strcmp(line, "COMPI SOUND BUZZER") == 0 ||
         strcmp(line, "COMPI SOUND OFF") == 0) {
@@ -1606,7 +1666,7 @@ void setup() {
         oled.renderFramebuffer(g_fb, g_text, g_attr, false);   // pantalla limpia
     } else {
         g_scr = START_SCREEN_DIMMED ? SCR_DIM : SCR_FULL;
-        oled.contrast(START_SCREEN_DIMMED ? OLED_CONTRAST_DIM : g_screenContrast);
+        oled.contrast(START_SCREEN_DIMMED ? min(OLED_CONTRAST_DIM, g_screenContrast) : g_screenContrast);
         oled.render(cpu, ui);
     }
 

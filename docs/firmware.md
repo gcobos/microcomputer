@@ -362,9 +362,11 @@ Trabaja sobre un buffer plano `(mem, memLen)`; direcciones `>= memLen` leen 0.
   girar/pulsar en `EditMem` y `ExecPaso` (`stepCursorByInstr` en `main.cpp`).
 - Para la RAM: `(cpu.ram(), 65536)`. Para la previsualización de un slot:
   `(g_preview, PREVIEW_BYTES)`.
-- La salida usa la misma sintaxis que `tools/casm.py` (ISA versión 2, ver
-  [`isa.md`](isa.md) §3–§6), así que se puede reensamblar tal cual. Las
-  familias 30–31 y las sub-operaciones reservadas salen como `DB 0xXX`.
+- La salida usa la misma sintaxis que `tools/casm.py` (ISA versión 3, ver
+  [`isa.md`](isa.md) §3–§6), así que se puede reensamblar tal cual (salvo
+  `MOV [dir],#imm`, que sale compacta, `MOV [2000],#5A`, para caber en los
+  15 caracteres del listado). Las sub-operaciones libres salen como
+  `DB 0xXX`.
 
 ---
 
@@ -377,10 +379,10 @@ Sin dependencias de hardware ni de `cpu`/`disasm` -- por eso `insertByteAt`/
 `deleteByteAt` (que sí necesitan `cpu.sp()`) viven en `main.cpp`, no aquí.
 
 - `ComposeState`: `verb, mode, reg, dst, src, cond, imm, addr16, ptr, ptr2,
-  shift, step`. Hay 30 verbos (ISA versión 2, ver [`isa.md`](isa.md) §1).
+  shift, step`. Hay 35 verbos (ISA versión 3, ver [`isa.md`](isa.md) §1).
   `mode` elige entre las formas de un verbo, sacadas de la tabla `kVerbs`
-  (p. ej. `ADD`: `reg,reg` · `reg,#imm` · `reg,[dir]` · `reg,[r16]` ·
-  `r16,reg8` · `r16,r16` · `r16,#imm8`). `ptr` es el par puntero o destino
+  (p. ej. `ADD`: `reg,reg` · `reg,#imm` · `r16,reg8` · `r16,r16` ·
+  `r16,#imm8`). `ptr` es el par puntero o destino
   de 16 bits, y `ptr2` el par fuente en las formas `r16,r16`.
 - `fieldAt(verb, mode, step)` → qué campo toca ahora (`Verb/Mode/Cond/Reg/
   Dst/Src/Imm/Lo/Hi/Ptr/Shift/Ptr2/Done`); `lastStep(verb, mode)` → último

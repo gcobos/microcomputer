@@ -221,6 +221,122 @@ void Cpu::doMovBack() {
     regs_.set16(REG_CX, 0);
 }
 
+// SAR/ROL/ROR/RCL/RCR reg,#N (OP_SHX). Operando: shx<<3 | N-1 (N = 1..8).
+// Como SHR/SHL: C = el ultimo bit que sale (en las rotaciones, el ultimo
+// que da la vuelta); Z/N del resultado; V = 0.
+void Cpu::doShx(uint8_t reg, uint8_t operand) {
+    const uint8_t op = (uint8_t)((operand >> 3) & 0x07);
+    const uint8_t n = (uint8_t)((operand & 0x07) + 1);
+    uint8_t v = regs_.get8(reg);
+    uint8_t c = flags_ & FLAG_C;
+    for (uint8_t i = 0; i < n; ++i) {
+        switch (op) {
+            case SHX_SAR: c = v & 1; v = (uint8_t)((v >> 1) | (v & 0x80)); break;
+            case SHX_ROL: c = (uint8_t)(v >> 7); v = (uint8_t)((v << 1) | c); break;
+            case SHX_ROR: c = v & 1; v = (uint8_t)((v >> 1) | (c << 7)); break;
+            case SHX_RCL: { uint8_t o = (uint8_t)(v >> 7); v = (uint8_t)((v << 1) | c); c = o; break; }
+            case SHX_RCR: { uint8_t o = v & 1; v = (uint8_t)((v >> 1) | (c << 7)); c = o; break; }
+            default: return;                       // sin uso: no hace nada
+        }
+    }
+    regs_.set8(reg, v);
+    flags_ = (uint8_t)(c | ((v == 0) << 1) | (((v & 0x80) != 0) << 2));
+}
+
+// NEG reg: reg = 0 - reg, con los flags de esa resta (C = 1 si reg != 0;
+// V = 1 si era -128, que no tiene opuesto en 8 bits).
+void Cpu::doNeg8(uint8_t reg) {
+    regs_.set8(reg, updateFlagsArith(0, regs_.get8(reg), true, 0));
+}
+
+// IMUL reg: AX = AL * reg CON signo (-128..127 cada uno). Flags como MUL:
+// Z/N del resultado de 16 bits; C=V=1 si no cabe en 8 bits con signo (AX no
+// es la extension de signo de AL).
+void Cpu::doImul(uint8_t reg) {
+    int16_t p = (int16_t)((int8_t)regs_.get8(REG_AL) * (int8_t)regs_.get8(reg));
+    uint16_t u = (uint16_t)p;
+    regs_.set16(REG_AX, u);
+    uint8_t big = (p < -128 || p > 127);
+    flags_ = (uint8_t)(big | ((u == 0) << 1) | (((u & 0x8000) != 0) << 2) | (big << 3));
+}
+
+// Familia OP_X16 (pair = AX..DX). Operando: x16<<4 | N-1.
+//   SHL/SHR/SAR r16,#N (N = 1..16): C = ultimo bit que sale, Z/N (bit 15)
+//     del resultado; V como en 8 bits (SHL: C != N; SHR: bit 15 de antes;
+//     SAR: 0).
+//   NEG r16: r16 = 0 - r16, flags de esa resta (como CMP de 16 bits).
+//   MUL r16: DX:AX = AX * r16 (32 bits, sin signo). C=V=1 si DX != 0; Z si
+//     todo es 0; N = bit 31.
+//   DIV r16: AX = DX:AX / r16, DX = resto (sin signo). Entre 0, o cociente
+//     de mas de 16 bits: AX = DX = 0xFFFF, C=V=1 (como DIV de 8 bits).
+// Los operandos se leen antes de escribir, asi que el par puede ser AX o DX.
+void Cpu::doX16(uint8_t pair, uint8_t operand) {
+    const uint8_t op = (uint8_t)(operand >> 4);
+    const uint8_t n = (uint8_t)((operand & 0x0F) + 1);
+    const uint32_t v = regs_.get16(pair);
+    switch (op) {
+        case X16_SHL: {
+            uint32_t r = (v << n) & 0xFFFF;
+            uint8_t c = (uint8_t)((v >> (16 - n)) & 1);
+            uint8_t neg = (r & 0x8000) != 0;
+            regs_.set16(pair, (uint16_t)r);
+            flags_ = (uint8_t)(c | ((r == 0) << 1) | (neg << 2) | ((c != neg) << 3));
+            break;
+        }
+        case X16_SHR:
+        case X16_SAR: {
+            uint32_t s = (op == X16_SAR && (v & 0x8000)) ? (v | 0xFFFF0000u) : v;
+            uint32_t r = (s >> n) & 0xFFFF;
+            uint8_t c = (uint8_t)((s >> (n - 1)) & 1);
+            uint8_t ov = (op == X16_SHR) && (v & 0x8000);
+            regs_.set16(pair, (uint16_t)r);
+            flags_ = (uint8_t)(c | ((r == 0) << 1) | (((r & 0x8000) != 0) << 2) | (ov << 3));
+            break;
+        }
+        case X16_NEG:
+            cmp16(0, (uint16_t)v);
+            regs_.set16(pair, (uint16_t)(0 - v));
+            break;
+        case X16_MUL: {
+            uint32_t p = (uint32_t)regs_.get16(REG_AX) * v;
+            regs_.set16(REG_AX, (uint16_t)(p & 0xFFFF));
+            regs_.set16(REG_DX, (uint16_t)(p >> 16));
+            uint8_t hi = (p > 0xFFFF);
+            flags_ = (uint8_t)(hi | ((p == 0) << 1) | (((p >> 31) & 1) << 2) | (hi << 3));
+            break;
+        }
+        case X16_DIV: {
+            uint32_t num = ((uint32_t)regs_.get16(REG_DX) << 16) | regs_.get16(REG_AX);
+            if (v != 0 && num / v <= 0xFFFF) {
+                uint16_t q = (uint16_t)(num / v);
+                regs_.set16(REG_AX, q);
+                regs_.set16(REG_DX, (uint16_t)(num % v));
+                flags_ = (uint8_t)(((q == 0) << 1) | (((q & 0x8000) != 0) << 2));
+            } else {
+                regs_.set16(REG_AX, 0xFFFF);
+                regs_.set16(REG_DX, 0xFFFF);
+                flags_ = (uint8_t)(FLAG_C | FLAG_V | FLAG_N);
+            }
+            break;
+        }
+        default: break;                            // sin uso: no hace nada
+    }
+}
+
+// Saltos con signo (tras CMP a,b: "a < b" con los dos como -128..127, o
+// -32768..32767 tras CMP de 16 bits)
+bool Cpu::testSigned(uint8_t jx) const {
+    bool z = flags_ & FLAG_Z;
+    bool lt = ((flags_ & FLAG_N) != 0) != ((flags_ & FLAG_V) != 0);
+    switch (jx) {
+        case JX_JMPLT: return lt;
+        case JX_JMPGE: return !lt;
+        case JX_JMPLE: return z || lt;
+        case JX_JMPGT: return !z && !lt;
+        default:       return false;
+    }
+}
+
 void Cpu::pushPc() {
     push8((pc_ >> 8) & 0xFF);
     push8(pc_ & 0xFF);
@@ -311,18 +427,12 @@ bool Cpu::step() {
             regs_.set8(r, aluOp(op, regs_.get8(r), imm));
             break;
         }
-        case OP_ALUM: {
-            uint8_t op = fetch8();
-            uint16_t addr = fetch16();
-            regs_.set8(r, aluOp(op, regs_.get8(r), memory_[maskAddr(addr)]));
+        case OP_SHX:
+            doShx(r, fetch8());
             break;
-        }
-        case OP_ALUP: {
-            uint8_t operand = fetch8();
-            uint16_t addr = regs_.get16(operand & 0x03);
-            regs_.set8(r, aluOp((uint8_t)(operand >> 2), regs_.get8(r), memory_[maskAddr(addr)]));
+        case OP_NEG:
+            doNeg8(r);
             break;
-        }
         case OP_NOT: {
             uint8_t result = (uint8_t)(~regs_.get8(r));
             regs_.set8(r, result);
@@ -358,11 +468,19 @@ bool Cpu::step() {
             if (testCond(r)) pc_ = addr;
             break;
         }
-        case OP_CALL: {
-            uint16_t addr = fetch16();
-            if (testCond(r)) { pushPc(); pc_ = addr; }
+        case OP_CALL:
+            if (r == CALL_ADDR) {
+                uint16_t addr = fetch16();
+                pushPc();
+                pc_ = addr;
+            } else if (r == CALL_STI) {
+                uint16_t addr = fetch16();
+                memory_[maskAddr(addr)] = fetch8();
+            } else if (r >= CALL_STIR) {
+                uint8_t imm = fetch8();
+                memory_[maskAddr(regs_.get16((uint8_t)(r & 0x03)))] = imm;
+            }                                      // 2, 3: libres (NOP)
             break;
-        }
         case OP_JX:
             switch (r) {
                 case JX_JMPNV: {
@@ -370,9 +488,12 @@ bool Cpu::step() {
                     if (!(flags_ & FLAG_V)) pc_ = addr;
                     break;
                 }
-                case JX_CALLNV: {
+                case JX_JMPLT:
+                case JX_JMPGE:
+                case JX_JMPLE:
+                case JX_JMPGT: {
                     uint16_t addr = fetch16();
-                    if (!(flags_ & FLAG_V)) { pushPc(); pc_ = addr; }
+                    if (testSigned(r)) pc_ = addr;
                     break;
                 }
                 case JX_JMPR:
@@ -434,8 +555,14 @@ bool Cpu::step() {
             }
             break;
         }
+        case OP_IMUL:
+            doImul(r);
+            break;
+        case OP_X16:
+            if (r < 4) doX16(r, fetch8());         // 4..7: libres (NOP de 1 byte)
+            break;
         default:
-            break;                                 // 30, 31: libres (NOP)
+            break;
     }
     return !halted_;
 }

@@ -26,14 +26,16 @@ namespace compi {
 // editor.cpp y la tabla de docs/isa.md).
 enum Verb : uint8_t {
     V_NOP = 0, V_HALT, V_RET, V_MOVB, V_MOVW, V_MOVBR,
-    V_MOV, V_LDA, V_STA, V_IN, V_OUT,
+    V_MOV, V_IN, V_OUT,
     V_ADD, V_ADC, V_SUB, V_SBC, V_CMP, V_AND, V_OR, V_XOR,
-    V_NOT, V_SHR, V_SHL, V_MUL, V_DIV, V_INC, V_DEC,
+    V_NOT, V_NEG, V_SHR, V_SHL, V_SAR, V_ROL, V_ROR, V_RCL, V_RCR,
+    V_MUL, V_IMUL, V_DIV, V_INC, V_DEC,
     V_PUSH, V_POP, V_JMP, V_CALL,
 };
-constexpr uint8_t VERB_COUNT = 30;
-constexpr uint8_t COND_COUNT = 9;   // JC_ALWAYS..JC_V (isa.h) y un 9o valor
-                                      // "NV" que se codifica en OP_JX
+constexpr uint8_t VERB_COUNT = 35;
+// Condiciones de JMP: 0..7 = JumpCond (isa.h); 8 = NV y 9..12 = LT, GE, LE,
+// GT (con signo), que se codifican en OP_JX
+constexpr uint8_t COND_COUNT = 13;
 
 // Campo que se está editando ahora mismo dentro de la instrucción.
 enum class EField : uint8_t { Verb, Mode, Cond, Reg, Dst, Src, Imm, Lo, Hi, Ptr, Shift, Ptr2, Done };
@@ -49,13 +51,13 @@ struct ComposeState {
                                //   registro (o el de reg,#imm / reg,[...])
     uint8_t  dst    = 0;      // forma reg,reg
     uint8_t  src    = 0;      // forma reg,reg
-    uint8_t  cond   = 0;      // JMP/CALL: 0..7 = JumpCond, 8 = NV
+    uint8_t  cond   = 0;      // JMP: 0..7 = JumpCond, 8 = NV, 9..12 = LT GE LE GT
     uint8_t  imm    = 0;      // inmediato de 8 bits
     uint16_t addr16 = 0;      // direccion/puerto de 16 bits, o inmediato de 16
     uint8_t  ptr    = 0;      // par de 16 bits (AX/BX/CX/DX): puntero, o
                                //   destino de una forma de 16 bits
     uint8_t  ptr2   = 0;      // par de 16 bits de origen (formas r16,r16)
-    uint8_t  shift  = 1;      // SHR/SHL: cuenta (1..8)
+    uint8_t  shift  = 1;      // desplazamientos: cuenta (1..8; 1..16 en 16 bits)
     uint8_t  step   = 0;      // paso actual (0 = eligiendo verbo)
 };
 

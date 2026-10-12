@@ -46,29 +46,29 @@ P_PROG_LOAD = 0x0640
 start:
     CALL clst
     MOV AL,#0
-    STA [view],AL               ; 0 = lista de temas, 1 = pagina de un tema
-    STA [cur_topic],AL
-    STA [cur_page],AL
+    MOV [view],AL               ; 0 = lista de temas, 1 = pagina de un tema
+    MOV [cur_topic],AL
+    MOV [cur_page],AL
 
     IN  AL,(P_DIR_POS)
-    STA [dir_pos_prev],AL
+    MOV [dir_pos_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_pos_prev],AL
+    MOV [dat_pos_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
 
     CALL redraw
 
 main_l:
     ; --- encoder DIRECCION: pagina anterior/siguiente --------------------
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_pos_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_pos_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dir_pos_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_pos_prev],CL
     CMP AL,#0
     JMPZ ml_datpos
 
@@ -83,11 +83,11 @@ ml_datpos:
     ; --- encoder DATOS: TAMBIEN pagina anterior/siguiente (mismo sentido
     ; que DIRECCION -- se puede hojear con cualquiera de los dos) ---------
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_pos_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_pos_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_pos_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_pos_prev],CL
     CMP AL,#0
     JMPZ ml_datbtn
 
@@ -101,8 +101,8 @@ ml_datdown:
 ml_datbtn:
     ; --- pulsador DATOS: entra en el nivel siguiente ----------------------
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ ml_dirbtn
     CMP BL,#0
@@ -112,8 +112,8 @@ ml_datbtn:
 ml_dirbtn:
     ; --- pulsador DIRECCION: vuelve al nivel padre ------------------------
     IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
+    MOV BL,[dir_btn_prev]
+    MOV [dir_btn_prev],AL
     CMP AL,#0
     JMPZ ml_wait
     CMP BL,#0
@@ -129,47 +129,47 @@ ml_wait:
 ; con tope en 0 y en el numero de elementos del nivel actual (nunca dan la
 ; vuelta -- igual que sisop.asm).
 move_prev:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ mp_page
-    LDA AL,[cur_topic]
+    MOV AL,[cur_topic]
     CMP AL,#0
     JMPZ mp_ret
     SUB AL,#1
-    STA [cur_topic],AL
+    MOV [cur_topic],AL
     JMP mp_redraw
 mp_page:
-    LDA AL,[cur_page]
+    MOV AL,[cur_page]
     CMP AL,#0
     JMPZ mp_ret
     SUB AL,#1
-    STA [cur_page],AL
+    MOV [cur_page],AL
 mp_redraw:
     CALL redraw
 mp_ret:
     RET
 
 move_next:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ mn_page
-    LDA AL,[cur_topic]
+    MOV AL,[cur_topic]
     ADD AL,#1
     CMP AL,#NUM_TOPICS
     JMPC mn_store_t
     RET                     ; ya en el ultimo tema -- sin cambios
 mn_store_t:
-    STA [cur_topic],AL
+    MOV [cur_topic],AL
     JMP mn_redraw
 mn_page:
-    LDA AL,[cur_page]
+    MOV AL,[cur_page]
     ADD AL,#1
-    LDA BL,[cur_topic_pages]
+    MOV BL,[cur_topic_pages]
     CMP AL,BL
     JMPC mn_store_p
     RET                     ; ya en la ultima pagina del tema
 mn_store_p:
-    STA [cur_page],AL
+    MOV [cur_page],AL
 mn_redraw:
     CALL redraw
     RET
@@ -177,19 +177,19 @@ mn_redraw:
 ; --- on_select: en la lista de temas, entra en el marcado (primera pagina).
 ; Dentro de un tema no hay mas niveles -- no hace nada (las paginas son hojas).
 on_select:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ os_ret
 
     MOV AL,#1
-    STA [view],AL
+    MOV [view],AL
     MOV AL,#0
-    STA [cur_page],AL
+    MOV [cur_page],AL
     MOV BX,#TOPIC_PAGE_COUNTS
-    LDA CL,[cur_topic]
+    MOV CL,[cur_topic]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_topic_pages],AL
+    MOV AL,[BX]
+    MOV [cur_topic_pages],AL
     CALL redraw
 os_ret:
     RET
@@ -197,11 +197,11 @@ os_ret:
 ; --- on_back: de una pagina, vuelve a la lista de temas; de la lista de
 ; temas, sale de este programa y vuelve al sistema (slot 0).
 on_back:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPZ ob_exit
     MOV AL,#0
-    STA [view],AL
+    MOV [view],AL
     CALL redraw
     RET
 ob_exit:
@@ -214,7 +214,7 @@ ob_exit:
 ;  DIBUJO
 ; ============================================================================
 redraw:
-    LDA AL,[view]
+    MOV AL,[view]
     CMP AL,#0
     JMPNZ rd_page
     CALL redraw_topics
@@ -230,10 +230,10 @@ redraw_topics:
     CALL puts
 
     MOV AL,#0
-    STA [i],AL
+    MOV [i],AL
 rdt_l:
-    LDA AL,[i]
-    LDA BL,[cur_topic]
+    MOV AL,[i]
+    MOV BL,[cur_topic]
     CMP AL,BL
     JMPNZ rdt_nomark
     MOV BX,#s_mark
@@ -242,25 +242,25 @@ rdt_nomark:
     MOV BX,#s_nomark
 rdt_domark:
     MOV CL,#2
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#2
     MOV CH,AL
     CALL puts
 
     MOV BX,#TOPIC_NAMES
-    LDA AL,[i]
+    MOV AL,[i]
     SHL AL,#1
     MOV CL,AL
     CALL read_ptr16
     MOV CL,#4
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#2
     MOV CH,AL
     CALL puts
 
-    LDA AL,[i]
+    MOV AL,[i]
     ADD AL,#1
-    STA [i],AL
+    MOV [i],AL
     CMP AL,#NUM_TOPICS
     JMPNZ rdt_l
     RET
@@ -271,18 +271,18 @@ rdt_domark:
 draw_page:
     CALL clst
     MOV BX,#TOPIC_NAMES
-    LDA AL,[cur_topic]
+    MOV AL,[cur_topic]
     SHL AL,#1
     MOV CL,AL
     CALL read_ptr16          ; BX = puntero al nombre del tema
     CALL draw_header
 
     MOV BX,#TOPIC_PAGE_TABLES
-    LDA AL,[cur_topic]
+    MOV AL,[cur_topic]
     SHL AL,#1
     MOV CL,AL
     CALL read_ptr16          ; BX = tabla de paginas de este tema
-    LDA AL,[cur_page]
+    MOV AL,[cur_page]
     SHL AL,#1
     MOV CL,AL
     CALL read_ptr16          ; BX = puntero al contenido de esta pagina
@@ -297,7 +297,7 @@ draw_page:
 draw_header:
     MOV DX,#0x0400
 dh_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ dh_name_done
     OUT (DX),AL
@@ -308,13 +308,13 @@ dh_name_done:
     MOV AL,#0x20            ; espacio
     OUT (DX),AL
     ADD DL,#1
-    LDA AL,[cur_page]
+    MOV AL,[cur_page]
     ADD AL,#1
     CALL put_dec2            ; pagina actual (1-indexada), 1 o 2 cifras
     MOV AL,#0x2F              ; '/'
     OUT (DX),AL
     ADD DL,#1
-    LDA AL,[cur_topic_pages]
+    MOV AL,[cur_topic_pages]
     CALL put_dec2            ; total de paginas del tema, 1 o 2 cifras
     RET
 
@@ -352,36 +352,36 @@ pd2_one:
 ; nunca se sale de la rejilla de 8 filas.
 draw_content:
     MOV AL,#1
-    STA [content_row],AL
+    MOV [content_row],AL
     MOV AL,#0
-    STA [content_col],AL
+    MOV [content_col],AL
 dc_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ dc_done
     CMP AL,#0x0A
     JMPZ dc_newline
 
-    LDA CL,[content_row]
+    MOV CL,[content_row]
     MOV AL,CL
     SHL AL,#5
-    LDA CL,[content_col]
+    MOV CL,[content_col]
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
-    LDA AL,[BX]
+    MOV AL,[BX]
     OUT (DX),AL
-    LDA AL,[content_col]
+    MOV AL,[content_col]
     ADD AL,#1
-    STA [content_col],AL
+    MOV [content_col],AL
     JMP dc_adv
 
 dc_newline:
-    LDA AL,[content_row]
+    MOV AL,[content_row]
     ADD AL,#1
-    STA [content_row],AL
+    MOV [content_row],AL
     MOV AL,#0
-    STA [content_col],AL
+    MOV [content_col],AL
 
 dc_adv:
     INC BX
@@ -398,7 +398,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -420,13 +420,13 @@ idx_ptr:
 ; de tabla[CL].
 read_ptr16:
     ADD BX,CL
-    LDA AL,[BX]
-    STA [rp_lo],AL
+    MOV AL,[BX]
+    MOV [rp_lo],AL
     INC BX
-    LDA AL,[BX]
-    STA [rp_hi],AL
-    LDA BL,[rp_lo]
-    LDA BH,[rp_hi]
+    MOV AL,[BX]
+    MOV [rp_hi],AL
+    MOV BL,[rp_lo]
+    MOV BH,[rp_hi]
     RET
 
 ; --- frame_wait: espera N*8 ms con el temporizador 3 -------------------------
@@ -484,14 +484,16 @@ t2pd: .asciiz "EEPROM 0800/0801\n0800 OUT: buffer <-\nflash (this slot)\n0801 OU
 t2pe: .asciiz "SLOT INFO 0642-066E\n0642 OUT slot: read\nits name+category\nIN=1: slot is used\n0643 IN: own slot\n0660 IN: category\n0661-066E IN: name"
 t2pf: .asciiz "CATEGORIES (0660)\n1 SYSTEM  2 GAME\n3 PROGRAM 4 UTILITY\n5 DEMO    6 DOCS\nFF: none. Set with\n.category & .name\nin the .asm source"
 t3p0: .asciiz "REGISTERS\nAX BX CX DX, each\n16 bit, split into\n8-bit halves: AL/AH\nBL/BH CL/CH DL/DH.\nPlus PC, SP (starts\n0xFFFF), FLAGS:NVZC"
-t3p1: .asciiz "OPCODE BYTE (ISA 2)\nopcode=family*8+low3\nlow3 = reg8, jump\ncondition, reg16 or\nsub-op. ALU op goes\nin a 2nd byte: MOV\nADD ADC SUB SBC CMP"
-t3p2: .asciiz "CORE INSTRUCTIONS 1\nNOP HALT RET (1B)\nMOV reg,#imm8 (2B)\nLDA reg,[addr16](3)\nSTA [addr16],reg(3)\nLDA/STA via [AX..DX]\n(2B): mem[pair]"
-t3p3: .asciiz "ALU: 4 FORMS\nop reg,reg     (2B)\nop reg,#imm8   (3B)\nop reg,[addr16](4B)\nop reg,[r16]   (2B)\nop: MOV ADD ADC SUB\nSBC CMP AND OR XOR"
+t3p1: .asciiz "OPCODE BYTE (ISA 3)\nopcode=family*8+low3\nlow3 = reg8, jump\ncondition, reg16 or\nsub-op. ALU op goes\nin a 2nd byte: MOV\nADD ADC SUB SBC CMP"
+t3p2: .asciiz "MOVE INSTRUCTIONS\nNOP HALT RET (1B)\nMOV reg,#imm8 (2B)\nMOV reg,[addr16](3)\nMOV [addr16],reg(3)\nMOV [addr],#imm (4)\nVia [AX..DX]: 2B"
+t3p3: .asciiz "ALU: 2 FORMS\nop reg,reg     (2B)\nop reg,#imm8   (3B)\nop: MOV ADD ADC SUB\nSBC CMP AND OR XOR\nFrom memory: load\nit first with MOV"
 t3p4: .asciiz "ADC / SBC\nADC: a=a+b+C\nSBC: a=a-b-C\nCarry/borrow from\nthe previous op, to\nadd/sub numbers of\nseveral bytes"
-t3p5: .asciiz "NOT/SHIFT/MUL/DIV\nNOT reg (1B)\nSHR/SHL reg,#N (2B)\nN=1..8. MUL reg:\nAX=AL*reg. DIV reg:\nAL=AX/r AH=rem\nINC/DEC reg8: C kept"
+t3p5: .asciiz "NOT/NEG/SHIFT/MUL\nNOT NEG reg (1B)\nSHR/SHL reg,#N (2B)\nN=1..8. MUL reg:\nAX=AL*reg. DIV reg:\nAL=AX/r AH=rem\nINC/DEC reg8: C kept"
 t3p6: .asciiz "16-BIT (AX..DX)\nMOV/ADD/SUB/CMP\nr16,r16 (2B); ADD/\nSUB r16,reg8 or #8\nCMP/MOV r16,#16(4B)\nINC/DEC/PUSH/POP r16\n(1B). CMP16: flags"
-t3p7: .asciiz "STACK, JUMPS, COPY\nPUSH/POP reg (1B)\nJMP/CALL<cc> addr(3)\nJMP/CALL r16 (2B)\ncc:Z NZ C NC N NN V\nNV. MOVB/MOVW/MOVBR\ncopy CX: BX -> DX"
-t3p8: .asciiz "FLAGS SUMMARY\nZ=result 0, N=bit7\nADD/ADC: C=carry\nSUB/SBC/CMP: C =\nborrow. Logic: C=V=0\nINC/DEC 8-bit keep C\n16-bit: only CMP"
+t3p7: .asciiz "STACK, JUMPS, COPY\nPUSH/POP reg (1B)\nJMP<cc> addr (3B)\nCALL addr; JMP/CALL\nr16 (2B). cc:Z NZ C\nNC N NN V NV LT GE\nLE GT. MOVB/W/BR"
+t3p8: .asciiz "FLAGS SUMMARY\nZ=result 0, N=bit7\nADD/ADC: C=carry\nSUB/SBC/CMP: C =\nborrow. Logic: C=V=0\nINC/DEC 8-bit keep C\nLT/GE..: signed CMP"
+t3pa: .asciiz "SIGNED & ROTATE\nSAR reg,#N: keeps\nthe sign. ROL/ROR:\nrotate. RCL/RCR:\nrotate through C\nIMUL reg: AX=AL*reg\nsigned (-128..127)"
+t3pb: .asciiz "16-BIT MATH\nSHL/SHR/SAR r16,#N\n(N=1..16), NEG r16\nMUL r16: DX:AX =\nAX*r16. DIV r16:\nAX=DX:AX/r16 and\nDX = remainder"
 t3p9: .asciiz "ASSEMBLER (casm)\n.org .db .dw .space\n.asciiz .equ .slot\n.name \"TEXT\" (<=14)\n.category GAME etc.\n.include \"text.asm\"\n(from programs/lib)"
 t4p0: .asciiz "TWO SLIDE SWITCHES\nMOD<-SW_MODE->RUN\nabove ADDR.\nCODE<-SW_STEP->PROG\nabove DATA.\nTogether they pick\none of 4 views."
 t4p1: .asciiz "THE FOUR VIEWS\nMOD CODE: edit the\ncode (disasm)\nMOD PROG: programs\n(load/save/delete)\nRUN CODE: debug\nRUN PROG: run"
@@ -504,13 +506,13 @@ t4p7: .asciiz "RUN/RESET RULES\nStart of RUN or\nADDR-long RUN CODE:\nfull reset
 
 ; --- tablas de paginas por tema ----------------------------------------------
 T2_PAGES: .dw t2p0, t2pa, t2pb, t2p1, t2p2, t2p3, t2p4, t2p5, t2ph, t2pj, t2pg, t2p6, t2p7, t2p8, t2pe, t2pf, t2pi, t2p9, t2pc, t2pd
-T3_PAGES: .dw t3p0, t3p1, t3p2, t3p3, t3p4, t3p5, t3p6, t3p7, t3p8, t3p9
+T3_PAGES: .dw t3p0, t3p1, t3p2, t3p3, t3p4, t3p5, t3pa, t3p6, t3pb, t3p7, t3p8, t3p9
 T4_PAGES: .dw t4p0, t4p1, t4p2, t4p3, t4p4, t4p5, t4p6, t4p7
 
 ; --- tablas de nivel superior (indexadas por numero de tema 0..NUM_TOPICS-1) -
 NUM_TOPICS = 3
 TOPIC_NAMES:       .dw tn2_name, tn3_name, tn4_name
-TOPIC_PAGE_COUNTS: .db 20, 10, 8
+TOPIC_PAGE_COUNTS: .db 20, 12, 8
 TOPIC_PAGE_TABLES: .dw T2_PAGES, T3_PAGES, T4_PAGES
 
 ; ============================================================================

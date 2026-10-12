@@ -25,23 +25,23 @@ Sintaxis = la del desensamblador (src/disasm.cpp) + etiquetas y directivas.
                        ; incluye y luego en programs/lib/); cada fichero se
                        ; incluye una sola vez aunque se pida varias
 
-Instrucciones (reg = AL AH BL BH CL CH DL DH):
+Instrucciones (ISA version 3; reg = AL AH BL BH CL CH DL DH, r16 = AX BX CX DX):
 
-    NOP  HALT  RET
-    MOV reg,#imm     MOV dst,src     MOV AX|BX|CX|DX,#imm16
-    LDA reg,[addr]   STA [addr],reg     (o [AX|BX|CX|DX]: indirecto por registro)
-    ADD/SUB/AND/OR/XOR  reg,[addr] | reg,#imm | dst,src
-    CMP reg,#imm | dst,src
-    NOT/PUSH/POP reg
-    SHR/SHL reg              (desplaza 1 bit)   o   SHR/SHL reg,#N  (N=1..8)
-    IN  reg,(port)   OUT (port),reg     (o (AX|BX|CX|DX): indirecto por registro)
+    NOP  HALT  RET   MOVB  MOVW  MOVBR   (copias de BX a DX, CX bytes/palabras)
+    MOV reg,#imm   MOV dst,src   MOV r16,#imm16   MOV r16,r16
+    MOV reg,[addr]   MOV [addr],reg   MOV [addr],#imm
+        (o [r16] en vez de [addr]: indirecto por registro)
+    ADD/ADC/SUB/SBC/CMP/AND/OR/XOR  reg,#imm | dst,src
+    ADD/SUB r16,r16 | r16,reg8 | r16,#imm8     CMP r16,r16 | r16,#imm16
+    NOT/NEG/INC/DEC/PUSH/POP reg     NEG/INC/DEC/PUSH/POP r16
+    SHR/SHL/SAR/ROL/ROR/RCL/RCR reg[,#N]  (N=1..8; sin N, 1 bit)
+    SHR/SHL/SAR r16[,#N]                  (N=1..16)
+    MUL reg  IMUL reg  DIV reg   (AX = AL*reg sin / con signo ; AL=AX/reg AH=resto)
+    MUL r16  DIV r16             (DX:AX = AX*r16 ; AX=DX:AX/r16 DX=resto)
+    IN  reg,(port)   OUT (port),reg     (o (r16): indirecto por registro)
     JMP/JMPZ/JMPNZ/JMPC/JMPNC/JMPN/JMPNN/JMPV/JMPNV   addr
-    CALL/CALLZ/CALLNZ/CALLC/CALLNC/CALLN/CALLNN/CALLV/CALLNV  addr
-    MUL reg   DIV reg          (AX = AL*reg ; AL=AX/reg AH=AX%reg -- sin signo)
-    INC AX|BX|CX|DX   DEC AX|BX|CX|DX      (par de 16 bits, +-1)
-    ADD AX|BX|CX|DX,reg8   SUB AX|BX|CX|DX,reg8   (dst16 +=/-= reg8 sin signo;
-                                                     MISMO mnemonico ADD/SUB)
-    MOVB   MOVW              (copia BX->DX, CX bytes o CX palabras de 16 bits)
+    JMPLT/JMPGE/JMPLE/JMPGT addr   (con signo, tras CMP)     JMP r16
+    CALL addr   CALL r16
 
 Expresiones: + - * / % , << >> & | ^ ~ , parentesis, 0x.. 0b.. decimal,
 'A' (codigo del caracter), $ o . (posicion actual), lo(x) hi(x), y etiquetas.
@@ -68,23 +68,29 @@ IMAGE_SIZE = 65536
 
 REG = {"AL": 0, "AH": 1, "BL": 2, "BH": 3, "CL": 4, "CH": 5, "DL": 6, "DH": 7}
 
-# familias de opcode (isa.h, ISA version 2 -- ver docs/isa.md)
+# familias de opcode (isa.h, ISA version 3 -- ver docs/isa.md)
 F_SYS, F_LDI, F_LDA, F_STA, F_LDAR, F_STAR = 0, 1, 2, 3, 4, 5
 F_IN, F_OUT, F_INR, F_OUTR = 6, 7, 8, 9
-F_ALURR, F_ALUI, F_ALUM, F_ALUP = 10, 11, 12, 13
+F_ALURR, F_ALUI, F_SHX, F_NEG = 10, 11, 12, 13
 F_NOT, F_SHR, F_SHL, F_MUL, F_DIV, F_INC, F_DEC, F_PUSH, F_POP = 14, 15, 16, 17, 18, 19, 20, 21, 22
 F_JMP, F_CALL, F_JX = 23, 24, 25
 F_R16, F_R16I, F_INCDEC16, F_PUSHPOP16 = 26, 27, 28, 29
+F_IMUL, F_X16 = 30, 31
 REG16 = {"AX": 0, "BX": 1, "CX": 2, "DX": 3}
 
 SYS = {"NOP": 0, "HALT": 1, "RET": 2, "MOVB": 3, "MOVW": 4, "MOVBR": 5}
 # AluOp (byte de operando de F_ALU*)
 ALU_OP = {"MOV": 0, "ADD": 1, "ADC": 2, "SUB": 3, "SBC": 4, "CMP": 5,
           "AND": 6, "OR": 7, "XOR": 8}
-UNARY = {"NOT": F_NOT, "MUL": F_MUL, "DIV": F_DIV}
-# condiciones de JMP/CALL (3 bits bajos); NV va aparte, en F_JX
+UNARY = {"NOT": F_NOT, "MUL": F_MUL, "DIV": F_DIV, "NEG": F_NEG, "IMUL": F_IMUL}
+# condiciones de JMP (3 bits bajos); NV y las de signo van aparte, en F_JX
 COND = {"": 0, "Z": 1, "NZ": 2, "C": 3, "NC": 4, "N": 5, "NN": 6, "V": 7}
-JX_JMPNV, JX_CALLNV, JX_JMPR, JX_CALLR = 0, 1, 2, 3
+JX_JMPNV, JX_JMPLT, JX_JMPR, JX_CALLR, JX_JMPGE, JX_JMPLE, JX_JMPGT = 0, 1, 2, 3, 4, 5, 6
+JX_COND = {"NV": JX_JMPNV, "LT": JX_JMPLT, "GE": JX_JMPGE, "LE": JX_JMPLE, "GT": JX_JMPGT}
+CALL_ADDR, CALL_STI, CALL_STIR = 0, 1, 4
+# F_SHX (operando shx<<3 | N-1) y F_X16 (operando x16<<4 | N-1)
+SHX_OP = {"SAR": 0, "ROL": 1, "ROR": 2, "RCL": 3, "RCR": 4}
+X16_OP = {"SHL": 0, "SHR": 1, "SAR": 2, "NEG": 3, "MUL": 4, "DIV": 5}
 R16_OP = {"MOV": 0, "ADD": 1, "SUB": 2, "CMP": 3}
 R16_ADD8, R16_SUB8 = 4, 5
 R16I_MOV, R16I_ADD, R16I_SUB, R16I_CMP = 0, 1, 2, 3
@@ -231,7 +237,7 @@ def classify(tok, lineno):
     if t.startswith("[") and t.endswith("]"):
         inner = t[1:-1].strip()
         if inner.upper() in REG16:
-            # [AX]/[BX]/[CX]/[DX]: direccion indirecta via registro (LDA/STA)
+            # [AX]/[BX]/[CX]/[DX]: direccion indirecta via registro (MOV)
             return Operand("memr", REG16[inner.upper()])
         return Operand("mem", inner)
     if t.startswith("(") and t.endswith(")"):
@@ -471,7 +477,9 @@ class Assembler:
             return [opcode(F_SYS, SYS[mnem])]
 
         if mnem in UNARY:
-            need(kinds == ("reg",), f"{mnem} reg")
+            if kinds == ("reg16",) and mnem in X16_OP:     # NEG/MUL/DIV de 16 bits
+                return [opcode(F_X16, ops[0].value), X16_OP[mnem] << 4]
+            need(kinds == ("reg",), f"{mnem} reg" + ("  o  " + mnem + " AX|BX|CX|DX" if mnem in X16_OP else ""))
             return [opcode(UNARY[mnem], ops[0].value)]
 
         if mnem in ("INC", "DEC"):
@@ -486,40 +494,37 @@ class Assembler:
             need(kinds == ("reg16",), f"{mnem} reg  o  {mnem} AX|BX|CX|DX")
             return [opcode(F_PUSHPOP16, (0 if mnem == "PUSH" else 4) | ops[0].value)]
 
-        if mnem in ("SHR", "SHL"):
-            fam = F_SHR if mnem == "SHR" else F_SHL
-            if kinds == ("reg",):
-                return [opcode(fam, ops[0].value), 0]        # 1 bit
-            need(kinds == ("reg", "imm"), f"{mnem} reg  o  {mnem} reg,#N")
-            n = self._imm8(ops[1], pc, lineno) if evaluate else 1
+        if mnem in ("SHR", "SHL") or mnem in SHX_OP:
+            need(len(ops) in (1, 2) and ops[0].kind in ("reg", "reg16")
+                 and (len(ops) == 1 or ops[1].kind == "imm"),
+                 f"{mnem} reg[,#N]  o  {mnem} AX|BX|CX|DX[,#N]")
+            n = (self._imm8(ops[1], pc, lineno) if evaluate else 1) if len(ops) == 2 else 1
+            if ops[0].kind == "reg16":                     # 16 bits: N = 1..16
+                need(mnem in X16_OP, f"{mnem}: no hay forma de 16 bits (SHL/SHR/SAR)")
+                need(1 <= n <= 16, f"{mnem}: N debe ser 1..16 (era {n})")
+                return [opcode(F_X16, ops[0].value), (X16_OP[mnem] << 4) | (n - 1)]
             need(1 <= n <= 8, f"{mnem}: N debe ser 1..8 (era {n})")
-            return [opcode(fam, ops[0].value), n - 1]
+            if mnem in SHX_OP:
+                return [opcode(F_SHX, ops[0].value), (SHX_OP[mnem] << 3) | (n - 1)]
+            return [opcode(F_SHR if mnem == "SHR" else F_SHL, ops[0].value), n - 1]
 
-        if mnem in ("LDA", "IN"):
+        if mnem in ("LDA", "STA"):
+            raise AsmError(f"{mnem} ya no existe (ISA 3): se escribe MOV "
+                           + ("reg,[...]" if mnem == "LDA" else "[...],reg"), lineno)
+
+        if mnem == "IN":
             need(len(ops) == 2 and ops[0].kind == "reg", f"{mnem} reg,...")
             reg, src = ops
-            if mnem == "LDA":
-                if src.kind == "memr":
-                    return [opcode(F_LDAR, reg.value), src.value]
-                need(src.kind == "mem", "LDA reg,[addr] o LDA reg,[AX|BX|CX|DX]")
-                lo, hi = self._addr16(src, pc, lineno)
-                return [opcode(F_LDA, reg.value), lo, hi]
             if src.kind == "portr":
                 return [opcode(F_INR, reg.value), src.value]
             need(src.kind == "port", "IN reg,(port) o IN reg,(AX|BX|CX|DX)")
             lo, hi = self._addr16(src, pc, lineno)
             return [opcode(F_IN, reg.value), lo, hi]
 
-        if mnem in ("STA", "OUT"):
-            # destino primero: STA [addr],reg / OUT (port),reg
+        if mnem == "OUT":
+            # destino primero: OUT (port),reg
             need(len(ops) == 2 and ops[1].kind == "reg", f"{mnem} ...,reg")
             dst, reg = ops
-            if mnem == "STA":
-                if dst.kind == "memr":
-                    return [opcode(F_STAR, reg.value), dst.value]
-                need(dst.kind == "mem", "STA [addr],reg o STA [AX|BX|CX|DX],reg")
-                lo, hi = self._addr16(dst, pc, lineno)
-                return [opcode(F_STA, reg.value), lo, hi]
             if dst.kind == "portr":
                 return [opcode(F_OUTR, reg.value), dst.value]
             need(dst.kind == "port", "OUT (port),reg o OUT (AX|BX|CX|DX),reg")
@@ -529,6 +534,20 @@ class Assembler:
         if mnem in ALU_OP:
             need(len(ops) == 2, f"{mnem} necesita 2 operandos")
             dst, src = ops
+            if dst.kind in ("mem", "memr"):
+                # escribir en memoria: MOV [addr],reg / MOV [r16],reg /
+                # MOV [addr],#imm / MOV [r16],#imm
+                need(mnem == "MOV", f"{mnem}: el destino no puede ser memoria (solo MOV)")
+                if src.kind == "reg":
+                    if dst.kind == "memr":
+                        return [opcode(F_STAR, src.value), dst.value]
+                    lo, hi = self._addr16(dst, pc, lineno)
+                    return [opcode(F_STA, src.value), lo, hi]
+                need(src.kind == "imm", "MOV [...],reg  o  MOV [...],#imm")
+                if dst.kind == "memr":
+                    return [opcode(F_CALL, CALL_STIR | dst.value), self._imm8(src, pc, lineno)]
+                lo, hi = self._addr16(dst, pc, lineno)
+                return [opcode(F_CALL, CALL_STI), lo, hi, self._imm8(src, pc, lineno)]
             if dst.kind == "reg16":
                 # formas de 16 bits: mismo mnemonico, detectadas por que el
                 # destino es AX/BX/CX/DX
@@ -555,15 +574,13 @@ class Assembler:
                 if mnem == "MOV":
                     return [opcode(F_LDI, r), self._imm8(src, pc, lineno)]
                 return [opcode(F_ALUI, r), op, self._imm8(src, pc, lineno)]
-            if src.kind == "mem":
-                lo, hi = self._addr16(src, pc, lineno)
-                if mnem == "MOV":
-                    return [opcode(F_LDA, r), lo, hi]
-                return [opcode(F_ALUM, r), op, lo, hi]
-            if src.kind == "memr":
-                if mnem == "MOV":
+            if src.kind in ("mem", "memr"):
+                need(mnem == "MOV", f"{mnem} reg,[...] ya no existe (ISA 3): carga "
+                                    "antes el valor en un registro con MOV")
+                if src.kind == "memr":
                     return [opcode(F_LDAR, r), src.value]
-                return [opcode(F_ALUP, r), (op << 2) | src.value]
+                lo, hi = self._addr16(src, pc, lineno)
+                return [opcode(F_LDA, r), lo, hi]
             raise AsmError(f"{mnem}: segundo operando invalido", lineno)
 
         if mnem.startswith("JMP") or mnem.startswith("CALL"):
@@ -575,10 +592,14 @@ class Assembler:
                 return [opcode(F_JX, JX_JMPR if is_jmp else JX_CALLR), ops[0].value]
             need(ops[0].kind in ("addr", "mem"), f"{mnem} addr")
             lo, hi = self._addr16(Operand("addr", ops[0].value), pc, lineno)
-            if suffix == "NV":
-                return [opcode(F_JX, JX_JMPNV if is_jmp else JX_CALLNV), lo, hi]
+            if not is_jmp:
+                need(suffix == "", f"{mnem}: CALL ya no lleva condicion (ISA 3); "
+                                   "salta por encima con un JMP condicional")
+                return [opcode(F_CALL, CALL_ADDR), lo, hi]
+            if suffix in JX_COND:
+                return [opcode(F_JX, JX_COND[suffix]), lo, hi]
             need(suffix in COND, f"condicion desconocida: {mnem}")
-            return [opcode(F_JMP if is_jmp else F_CALL, COND[suffix]), lo, hi]
+            return [opcode(F_JMP, COND[suffix]), lo, hi]
 
         raise AsmError(f"instruccion desconocida: {mnem}", lineno)
 

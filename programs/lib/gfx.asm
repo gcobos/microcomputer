@@ -31,7 +31,7 @@ gfx_pixel:
     AND AL,#7
     MOV DX,#gfx_mask8
     ADD DX,AL
-    LDA DL,[DX]              ; DL = mascara del bit
+    MOV DL,[DX]              ; DL = mascara del bit
     IN  AL,(BX)
     CMP CL,#0
     JMPZ gfx_px_off

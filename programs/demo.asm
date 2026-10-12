@@ -95,57 +95,57 @@ P_SND_D   = 0x0633      ; duracion automatica (x10 ms)
 ; ============================================================================
 start:
     MOV AL,#0
-    STA [sel],AL
+    MOV [sel],AL
     IN  AL,(P_DAT_POS)         ; siembra el LFSR con algo poco predecible
     ADD AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
     CMP AL,#0
     JMPNZ menu
     MOV AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
     ; cae en menu
 
 menu:
     IN  AL,(P_DAT_POS)
-    STA [dat_prev],AL
+    MOV [dat_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [btn_prev],AL
+    MOV [btn_prev],AL
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
     CALL clsg
     CALL draw_menu
 menu_l:
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_prev]
     SUB AL,BL                  ; AL = delta del encoder (con signo)
-    LDA CL,[tmp0]
-    STA [dat_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_prev],CL
     JMPZ mn_btn                ; sin movimiento -> mira el pulsador
     AND AL,#0x80
     JMPZ mn_up
     ; giro negativo -> sel--
-    LDA AL,[sel]
+    MOV AL,[sel]
     CMP AL,#0
     JMPZ mn_wrhi
     SUB AL,#1
-    STA [sel],AL
+    MOV [sel],AL
     JMP mn_rd
 mn_wrhi:
     MOV AL,#5
-    STA [sel],AL
+    MOV [sel],AL
     JMP mn_rd
 mn_up:
     ; giro positivo -> sel++
-    LDA AL,[sel]
+    MOV AL,[sel]
     CMP AL,#5
     JMPZ mn_wrlo
     ADD AL,#1
-    STA [sel],AL
+    MOV [sel],AL
     JMP mn_rd
 mn_wrlo:
     MOV AL,#0
-    STA [sel],AL
+    MOV [sel],AL
 mn_rd:
     CALL draw_menu
     MOV AL,#1
@@ -153,8 +153,8 @@ mn_rd:
     JMP menu_l
 mn_btn:
     IN  AL,(0x0603)            ; pulsador del encoder DATOS
-    LDA BL,[btn_prev]
-    STA [btn_prev],AL
+    MOV BL,[btn_prev]
+    MOV [btn_prev],AL
     CMP AL,#0
     JMPZ mn_wait               ; no pulsado
     CMP BL,#0
@@ -166,7 +166,7 @@ mn_wait:
     JMP menu_l
 
 menu_sel:
-    LDA AL,[sel]
+    MOV AL,[sel]
     CMP AL,#0
     JMPZ ms0
     CMP AL,#1
@@ -202,79 +202,79 @@ ms5:
 ; ============================================================================
 do_gfx:
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
     CALL clsg
     CALL clst
     MOV AL,#0
-    STA [tmp0],AL
+    MOV [tmp0],AL
     CALL hline_full           ; marco: borde superior (y=0)
     MOV AL,#62
-    STA [tmp0],AL
+    MOV [tmp0],AL
     CALL hline_full           ; marco: borde inferior (y=62)
     MOV BX,#h_gfx
     MOV CX,#0x0007
     CALL puts
     MOV AL,#0
-    STA [gb_x],AL
+    MOV [gb_x],AL
     MOV AL,#20
-    STA [gb_y],AL
+    MOV [gb_y],AL
     MOV AL,#8
-    STA [gx_dx],AL
+    MOV [gx_dx],AL
     MOV AL,#2
-    STA [gx_dy],AL
+    MOV [gx_dy],AL
     MOV AL,#2
-    STA [gb_wb],AL
+    MOV [gb_wb],AL
     MOV AL,#10
-    STA [gb_ht],AL
+    MOV [gb_ht],AL
     CALL fillbox_xor         ; pinta la caja
 dg_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ dg_x
     CALL fillbox_xor         ; borra la caja (XOR) en la posicion vieja
     ; mover en x  (paso 8, rango 0..112)
-    LDA AL,[gb_x]
-    LDA BL,[gx_dx]
+    MOV AL,[gb_x]
+    MOV BL,[gx_dx]
     ADD AL,BL
-    STA [gb_x],AL
+    MOV [gb_x],AL
     MOV BL,AL
     AND BL,#0x80
     JMPNZ dg_xlo             ; se paso por abajo
     CMP AL,#113
     JMPC dg_xok              ; 0..112 -> vale
     MOV AL,#112
-    STA [gb_x],AL
+    MOV [gb_x],AL
     JMP dg_xrev
 dg_xlo:
     MOV AL,#0
-    STA [gb_x],AL
+    MOV [gb_x],AL
 dg_xrev:
-    LDA AL,[gx_dx]
+    MOV AL,[gx_dx]
     NOT AL
     ADD AL,#1
-    STA [gx_dx],AL
+    MOV [gx_dx],AL
 dg_xok:
     ; mover en y  (paso 2, rango 9..50; deja libre la fila de texto y=0..7)
-    LDA AL,[gb_y]
-    LDA BL,[gx_dy]
+    MOV AL,[gb_y]
+    MOV BL,[gx_dy]
     ADD AL,BL
-    STA [gb_y],AL
+    MOV [gb_y],AL
     CMP AL,#9
     JMPC dg_ylo
     CMP AL,#51
     JMPC dg_yok             ; 9..50 -> vale
     MOV AL,#50
-    STA [gb_y],AL
+    MOV [gb_y],AL
     JMP dg_yrev
 dg_ylo:
     MOV AL,#9
-    STA [gb_y],AL
+    MOV [gb_y],AL
 dg_yrev:
-    LDA AL,[gx_dy]
+    MOV AL,[gx_dy]
     NOT AL
     ADD AL,#1
-    STA [gx_dy],AL
+    MOV [gx_dy],AL
 dg_yok:
     CALL fillbox_xor        ; redibuja en la posicion nueva
     MOV AL,#3
@@ -289,56 +289,56 @@ dg_x:
 ; ============================================================================
 do_txt:
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
     CALL clsg
     CALL clst
     MOV AL,#0
-    STA [tw_col],AL
-    STA [tw_row],AL
+    MOV [tw_col],AL
+    MOV [tw_row],AL
     MOV AL,#lo(txt_msg)
-    STA [tw_p],AL
+    MOV [tw_p],AL
     MOV AL,#hi(txt_msg)
-    STA [tw_p+1],AL
+    MOV [tw_p+1],AL
 dt_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ dt_x
-    LDA AL,[tw_p]
-    STA [dt_rd+1],AL
-    LDA AL,[tw_p+1]
-    STA [dt_rd+2],AL
+    MOV AL,[tw_p]
+    MOV [dt_rd+1],AL
+    MOV AL,[tw_p+1]
+    MOV [dt_rd+2],AL
 dt_rd:
-    LDA AL,[0x0000]           ; AL = *tw_p  (operando parcheado)
+    MOV AL,[0x0000]           ; AL = *tw_p  (operando parcheado)
     CMP AL,#0
     JMPZ dt_hold
     CMP AL,#10
     JMPZ dt_nl
-    STA [tmp0],AL             ; guarda el caracter
-    LDA AL,[tw_row]
+    MOV [tmp0],AL             ; guarda el caracter
+    MOV AL,[tw_row]
     SHL AL,#5                 ; fila * 32
-    LDA BL,[tw_col]
+    MOV BL,[tw_col]
     ADD AL,BL
-    STA [dt_o+1],AL
+    MOV [dt_o+1],AL
     MOV AL,#0x04
-    STA [dt_o+2],AL
-    LDA AL,[tmp0]
+    MOV [dt_o+2],AL
+    MOV AL,[tmp0]
 dt_o:
     OUT (P_TEXT),AL           ; escribe la celda (operando parcheado)
     MOV AL,#1
     OUT (P_SND_D),AL
     MOV AL,#84
     OUT (P_SND_N),AL          ; blip por tecla
-    LDA AL,[tw_col]
+    MOV AL,[tw_col]
     ADD AL,#1
-    STA [tw_col],AL
+    MOV [tw_col],AL
     CMP AL,#21
     JMPNZ dt_adv
     MOV AL,#0
-    STA [tw_col],AL
-    LDA AL,[tw_row]
+    MOV [tw_col],AL
+    MOV AL,[tw_row]
     ADD AL,#1
-    STA [tw_row],AL
+    MOV [tw_row],AL
 dt_adv:
     CALL dt_ptr_inc
     MOV AL,#2
@@ -346,16 +346,16 @@ dt_adv:
     JMP dt_l
 dt_nl:
     MOV AL,#0
-    STA [tw_col],AL
-    LDA AL,[tw_row]
+    MOV [tw_col],AL
+    MOV AL,[tw_row]
     ADD AL,#1
-    STA [tw_row],AL
+    MOV [tw_row],AL
     CALL dt_ptr_inc
     JMP dt_l
 dt_hold:
     MOV AL,#40
     CALL hold
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ dt_x
     CALL show_charset
@@ -367,49 +367,49 @@ dt_x:
     RET
 
 dt_ptr_inc:
-    LDA AL,[tw_p]
+    MOV AL,[tw_p]
     ADD AL,#1
-    STA [tw_p],AL
+    MOV [tw_p],AL
     JMPNZ dpi_d
-    LDA AL,[tw_p+1]
+    MOV AL,[tw_p+1]
     ADD AL,#1
-    STA [tw_p+1],AL
+    MOV [tw_p+1],AL
 dpi_d:
     RET
 
 show_charset:
     CALL clst
     MOV AL,#0x20
-    STA [cs_ch],AL
+    MOV [cs_ch],AL
     MOV AL,#0
-    STA [cs_col],AL
-    STA [cs_row],AL
+    MOV [cs_col],AL
+    MOV [cs_row],AL
 sc_l:
-    LDA AL,[cs_row]
+    MOV AL,[cs_row]
     SHL AL,#5
-    LDA BL,[cs_col]
+    MOV BL,[cs_col]
     ADD AL,BL
-    STA [sc_io+1],AL
+    MOV [sc_io+1],AL
     MOV AL,#0x04
-    STA [sc_io+2],AL
-    LDA AL,[cs_ch]
+    MOV [sc_io+2],AL
+    MOV AL,[cs_ch]
 sc_io:
     OUT (P_TEXT),AL
-    LDA AL,[cs_ch]
+    MOV AL,[cs_ch]
     ADD AL,#1
-    STA [cs_ch],AL
+    MOV [cs_ch],AL
     CMP AL,#0x80
     JMPZ sc_d
-    LDA AL,[cs_col]
+    MOV AL,[cs_col]
     ADD AL,#1
-    STA [cs_col],AL
+    MOV [cs_col],AL
     CMP AL,#21
     JMPNZ sc_l
     MOV AL,#0
-    STA [cs_col],AL
-    LDA AL,[cs_row]
+    MOV [cs_col],AL
+    MOV AL,[cs_row]
     ADD AL,#1
-    STA [cs_row],AL
+    MOV [cs_row],AL
     JMP sc_l
 sc_d:
     RET
@@ -419,7 +419,7 @@ sc_d:
 ; ============================================================================
 do_snd:
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
     CALL clsg
     CALL clst
     MOV BX,#h_snd
@@ -427,29 +427,29 @@ do_snd:
     CALL puts
 ds_rs:
     MOV AL,#0
-    STA [ds_i],AL
+    MOV [ds_i],AL
 ds_nx:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ ds_x
-    LDA AL,[ds_i]
-    STA [dsr_n+1],AL
+    MOV AL,[ds_i]
+    MOV [dsr_n+1],AL
 dsr_n:
-    LDA AL,[melody]          ; nota (byte bajo parcheado arriba con ds_i)
+    MOV AL,[melody]          ; nota (byte bajo parcheado arriba con ds_i)
     CMP AL,#0xFF
     JMPZ ds_rs
-    STA [ds_note],AL
-    LDA AL,[ds_i]
+    MOV [ds_note],AL
+    MOV AL,[ds_i]
     ADD AL,#1
-    STA [dsr_d+1],AL
+    MOV [dsr_d+1],AL
 dsr_d:
-    LDA AL,[melody]          ; duracion
-    STA [ds_dur],AL
-    LDA AL,[ds_i]
+    MOV AL,[melody]          ; duracion
+    MOV [ds_dur],AL
+    MOV AL,[ds_i]
     ADD AL,#2
-    STA [ds_i],AL
-    LDA AL,[ds_note]
+    MOV [ds_i],AL
+    MOV AL,[ds_note]
     CMP AL,#0
     JMPZ ds_rest
     OUT (P_SND_N),AL
@@ -457,28 +457,28 @@ dsr_d:
     OUT (P_LED),AL
     ; barra: borra la fila 40 y dibuja longitud (nota-40)/2
     MOV AL,#40
-    STA [tmp0],AL
+    MOV [tmp0],AL
     MOV AL,#0
-    STA [tmp1],AL
+    MOV [tmp1],AL
     MOV AL,#15
-    STA [tmp2],AL
+    MOV [tmp2],AL
     MOV AL,#0
-    STA [hs_val],AL
+    MOV [hs_val],AL
     CALL hspan
     MOV AL,#40
-    STA [tmp0],AL
+    MOV [tmp0],AL
     MOV AL,#0
-    STA [tmp1],AL
-    LDA AL,[ds_note]
+    MOV [tmp1],AL
+    MOV AL,[ds_note]
     SUB AL,#40
     SHR AL
     CMP AL,#16
     JMPC ds_bok
     MOV AL,#15
 ds_bok:
-    STA [tmp2],AL
+    MOV [tmp2],AL
     MOV AL,#0xFF
-    STA [hs_val],AL
+    MOV [hs_val],AL
     CALL hspan
     JMP ds_wt
 ds_rest:
@@ -486,7 +486,7 @@ ds_rest:
     OUT (P_SND_N),AL
     OUT (P_LED),AL
 ds_wt:
-    LDA AL,[ds_dur]
+    MOV AL,[ds_dur]
     CALL frame_wait_n
     MOV AL,#0
     OUT (P_SND_N),AL
@@ -506,49 +506,49 @@ ds_x:
 ; ============================================================================
 do_anim:
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
     CALL clsg
     CALL clst
     MOV AL,#0
-    STA [an_t],AL
-    STA [an_fc],AL
+    MOV [an_t],AL
+    MOV [an_fc],AL
     CALL da_label
 da_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ da_x
-    LDA AL,[an_t]            ; indice x = (t*3) & 63
+    MOV AL,[an_t]            ; indice x = (t*3) & 63
     MOV BL,AL
     ADD AL,AL
     ADD AL,BL
     AND AL,#0x3F
-    STA [dax_rd+1],AL
+    MOV [dax_rd+1],AL
 dax_rd:
-    LDA AL,[sine]            ; seno (byte bajo parcheado arriba)
+    MOV AL,[sine]            ; seno (byte bajo parcheado arriba)
     SHL AL                   ; x = seno * 2  (0..124)
-    STA [px_x],AL
-    LDA AL,[an_t]            ; indice y = (t*2 + 16) & 63
+    MOV [px_x],AL
+    MOV AL,[an_t]            ; indice y = (t*2 + 16) & 63
     ADD AL,AL
     ADD AL,#16
     AND AL,#0x3F
-    STA [day_rd+1],AL
+    MOV [day_rd+1],AL
 day_rd:
-    LDA AL,[sine]
-    STA [px_y],AL
+    MOV AL,[sine]
+    MOV [px_y],AL
     CALL plot
-    LDA AL,[an_t]
+    MOV AL,[an_t]
     ADD AL,#1
-    STA [an_t],AL
-    LDA AL,[an_fc]
+    MOV [an_t],AL
+    MOV AL,[an_fc]
     ADD AL,#1
-    STA [an_fc],AL
+    MOV [an_fc],AL
     CMP AL,#120
     JMPNZ da_nc
     CALL clsg               ; limpia la estela cada 120 puntos
     CALL da_label
     MOV AL,#0
-    STA [an_fc],AL
+    MOV [an_fc],AL
 da_nc:
     MOV AL,#1
     CALL frame_wait_n
@@ -568,21 +568,21 @@ da_label:
 ; ============================================================================
 do_lights:
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
     MOV AL,#0
     CALL shadow_fill
     CALL shadow_blit
     CALL clst
     MOV AL,#0
-    STA [li_ph],AL
+    MOV [li_ph],AL
 dl_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ dl_x
-    LDA AL,[li_ph]
+    MOV AL,[li_ph]
     AND AL,#1
-    STA [tmp0],AL
+    MOV [tmp0],AL
     OUT (P_LED),AL
     CMP AL,#0
     JMPZ dl_blk
@@ -595,21 +595,21 @@ dl_blk:
 dl_bars:
     CALL rnd
     AND AL,#0x3F
-    STA [tmp0],AL
+    MOV [tmp0],AL
     CALL rnd
     AND AL,#0x0C
-    STA [tmp1],AL
+    MOV [tmp1],AL
     ADD AL,#3
-    STA [tmp2],AL
+    MOV [tmp2],AL
     MOV AL,#0xFF
-    STA [hs_val],AL
+    MOV [hs_val],AL
     CALL shadow_hspan
     CALL shadow_blit
     CALL clst
     MOV BX,#h_light
     MOV CX,#0x0308
     CALL puts
-    LDA AL,[li_ph]
+    MOV AL,[li_ph]
     AND AL,#1
     CMP AL,#0
     JMPZ dl_nb
@@ -618,9 +618,9 @@ dl_bars:
     MOV AL,#45
     OUT (P_SND_N),AL
 dl_nb:
-    LDA AL,[li_ph]
+    MOV AL,[li_ph]
     ADD AL,#1
-    STA [li_ph],AL
+    MOV [li_ph],AL
     MOV AL,#4
     CALL frame_wait
     JMP dl_l
@@ -636,30 +636,30 @@ dl_x:
 ; ============================================================================
 do_game:
     MOV AL,#0
-    STA [g_exit],AL
-    STA [g_over],AL
-    STA [g_score],AL
+    MOV [g_exit],AL
+    MOV [g_over],AL
+    MOV [g_score],AL
     MOV AL,#0
     CALL shadow_fill
     CALL shadow_blit
     CALL clst
     MOV AL,#1
-    STA [g_speed],AL
+    MOV [g_speed],AL
     MOV AL,#40            ; obstaculo 0: x, y
-    STA [0xF300],AL
+    MOV [0xF300],AL
     MOV AL,#3
-    STA [0xF301],AL
+    MOV [0xF301],AL
     MOV AL,#72            ; obstaculo 1
-    STA [0xF302],AL
+    MOV [0xF302],AL
     MOV AL,#20
-    STA [0xF303],AL
+    MOV [0xF303],AL
     MOV AL,#104           ; obstaculo 2
-    STA [0xF304],AL
+    MOV [0xF304],AL
     MOV AL,#40
-    STA [0xF305],AL
+    MOV [0xF305],AL
 dg2_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ dg2_ret
     IN  AL,(P_DAT_POS)       ; jugador = posicion del encoder DATOS
@@ -668,40 +668,40 @@ dg2_l:
     JMPC dg2_pok
     MOV AL,#112
 dg2_pok:
-    STA [gpx],AL
-    LDA AL,[g_score]         ; sube la velocidad con los puntos
+    MOV [gpx],AL
+    MOV AL,[g_score]         ; sube la velocidad con los puntos
     CMP AL,#20
     JMPC dg2_s1
     MOV AL,#3
-    STA [g_speed],AL
+    MOV [g_speed],AL
     JMP dg2_obs
 dg2_s1:
-    LDA AL,[g_score]
+    MOV AL,[g_score]
     CMP AL,#8
     JMPC dg2_s0
     MOV AL,#2
-    STA [g_speed],AL
+    MOV [g_speed],AL
     JMP dg2_obs
 dg2_s0:
     MOV AL,#1
-    STA [g_speed],AL
+    MOV [g_speed],AL
 dg2_obs:
     MOV AL,#0
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CALL obstacle
-    LDA AL,[g_over]
+    MOV AL,[g_over]
     CMP AL,#0
     JMPNZ dg2_go
     MOV AL,#2
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CALL obstacle
-    LDA AL,[g_over]
+    MOV AL,[g_over]
     CMP AL,#0
     JMPNZ dg2_go
     MOV AL,#4
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CALL obstacle
-    LDA AL,[g_over]
+    MOV AL,[g_over]
     CMP AL,#0
     JMPNZ dg2_go
     CALL game_draw
@@ -716,131 +716,131 @@ dg2_ret:
 
 ; un obstaculo:  [ob_i] = 0 | 2 | 4  (offset x,y en la pagina 0xF300)
 obstacle:
-    LDA AL,[ob_i]
-    STA [ob_rx+1],AL
-    STA [ob_wx+1],AL
+    MOV AL,[ob_i]
+    MOV [ob_rx+1],AL
+    MOV [ob_wx+1],AL
     ADD AL,#1
-    STA [ob_ry+1],AL
-    STA [ob_wy+1],AL
-    STA [ob_wy2+1],AL
+    MOV [ob_ry+1],AL
+    MOV [ob_wy+1],AL
+    MOV [ob_wy2+1],AL
 ob_ry:
-    LDA AL,[0xF301]         ; y actual
-    LDA BL,[g_speed]
+    MOV AL,[0xF301]         ; y actual
+    MOV BL,[g_speed]
     ADD AL,BL
-    STA [ob_newy],AL
+    MOV [ob_newy],AL
     CMP AL,#59
     JMPC ob_store           ; sigue cayendo
     ; ha llegado abajo: ¿colision con el jugador?
 ob_rx:
-    LDA DL,[0xF300]         ; x del obstaculo
+    MOV DL,[0xF300]         ; x del obstaculo
     MOV AL,DL
     ADD AL,#8
-    LDA BL,[gpx]
+    MOV BL,[gpx]
     SUB AL,BL               ; AL = obs_x + 8 - jugador_x
     CMP AL,#25
     JMPNC ob_recy           ; > 24  -> no toca
     CMP AL,#1
     JMPC ob_recy            ; == 0  -> no toca
     MOV AL,#1               ; 1..24 -> IMPACTO
-    STA [g_over],AL
+    MOV [g_over],AL
     RET
 ob_recy:
     CALL rnd
     AND AL,#0x78            ; nueva x (multiplo de 8, 0..120)
 ob_wx:
-    STA [0xF300],AL
+    MOV [0xF300],AL
     MOV AL,#0
 ob_wy2:
-    STA [0xF301],AL         ; y = 0 (arriba otra vez)
-    LDA AL,[g_score]
+    MOV [0xF301],AL         ; y = 0 (arriba otra vez)
+    MOV AL,[g_score]
     ADD AL,#1
-    STA [g_score],AL
+    MOV [g_score],AL
     MOV AL,#1
     OUT (P_SND_D),AL
     MOV AL,#88
     OUT (P_SND_N),AL        ; blip de punto
     RET
 ob_store:
-    LDA AL,[ob_newy]
+    MOV AL,[ob_newy]
 ob_wy:
-    STA [0xF301],AL
+    MOV [0xF301],AL
     RET
 
 game_draw:
     MOV AL,#0
     CALL shadow_fill
-    LDA AL,[gpx]            ; jugador (alineado a byte)
+    MOV AL,[gpx]            ; jugador (alineado a byte)
     SHR AL,#3
     SHL AL,#3
-    STA [gb_x],AL
+    MOV [gb_x],AL
     MOV AL,#58
-    STA [gb_y],AL
+    MOV [gb_y],AL
     MOV AL,#2
-    STA [gb_wb],AL
+    MOV [gb_wb],AL
     MOV AL,#5
-    STA [gb_ht],AL
+    MOV [gb_ht],AL
     CALL shadow_fillbox
     MOV AL,#0
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CALL draw_ob
     MOV AL,#2
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CALL draw_ob
     MOV AL,#4
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CALL draw_ob
     CALL shadow_blit
     CALL clst
     MOV BX,#h_game
     MOV CX,#0x0000
     CALL puts
-    LDA AL,[g_score]
+    MOV AL,[g_score]
     MOV CX,#0x000C
     CALL put_num
     RET
 
 draw_ob:
-    LDA AL,[ob_i]
-    STA [dob_rx+1],AL
+    MOV AL,[ob_i]
+    MOV [dob_rx+1],AL
     ADD AL,#1
-    STA [dob_ry+1],AL
+    MOV [dob_ry+1],AL
 dob_rx:
-    LDA AL,[0xF300]
+    MOV AL,[0xF300]
     SHR AL,#3
     SHL AL,#3
-    STA [gb_x],AL
+    MOV [gb_x],AL
 dob_ry:
-    LDA AL,[0xF301]
+    MOV AL,[0xF301]
     CMP AL,#59
     JMPC dob_yok
     MOV AL,#58
 dob_yok:
-    STA [gb_y],AL
+    MOV [gb_y],AL
     MOV AL,#1
-    STA [gb_wb],AL
+    MOV [gb_wb],AL
     MOV AL,#4
-    STA [gb_ht],AL
+    MOV [gb_ht],AL
     CALL shadow_fillbox
     RET
 
 game_over:
     MOV AL,#0
-    STA [go_i],AL
+    MOV [go_i],AL
 go_l:
     MOV AL,#0xFF
     CALL shadow_fill
     CALL shadow_blit
     MOV AL,#1
     OUT (P_LED),AL
-    LDA AL,[go_i]           ; tono descendente 64, 60, 56...
+    MOV AL,[go_i]           ; tono descendente 64, 60, 56...
     MOV BL,AL
     SHL BL,#2
     MOV AL,#64
     SUB AL,BL
-    STA [tmp0],AL
+    MOV [tmp0],AL
     MOV AL,#3
     OUT (P_SND_D),AL
-    LDA AL,[tmp0]
+    MOV AL,[tmp0]
     OUT (P_SND_N),AL
     MOV AL,#4
     CALL frame_wait
@@ -851,9 +851,9 @@ go_l:
     OUT (P_LED),AL
     MOV AL,#3
     CALL frame_wait
-    LDA AL,[go_i]
+    MOV AL,[go_i]
     ADD AL,#1
-    STA [go_i],AL
+    MOV [go_i],AL
     CMP AL,#10
     JMPNZ go_l
     MOV AL,#0
@@ -868,7 +868,7 @@ go_l:
     MOV BX,#str_score
     MOV CX,#0x0505
     CALL puts
-    LDA AL,[g_score]
+    MOV AL,[g_score]
     MOV CX,#0x050D
     CALL put_num
     MOV AL,#120
@@ -903,12 +903,12 @@ draw_menu:
     MOV BX,#m_i6
     MOV CX,#0x0704
     CALL puts
-    LDA AL,[sel]
+    MOV AL,[sel]
     ADD AL,#2
-    STA [tmp0],AL
+    MOV [tmp0],AL
     MOV BX,#m_mark
     MOV CL,#2
-    LDA CH,[tmp0]
+    MOV CH,[tmp0]
     CALL puts
     RET
 
@@ -918,44 +918,44 @@ puts:
     MOV AL,CH
     SHL AL,#5
     ADD AL,CL
-    STA [ps_o+1],AL
+    MOV [ps_o+1],AL
     MOV AL,#0x04
-    STA [ps_o+2],AL
+    MOV [ps_o+2],AL
     MOV AL,BL
-    STA [ps_rd+1],AL
+    MOV [ps_rd+1],AL
     MOV AL,BH
-    STA [ps_rd+2],AL
+    MOV [ps_rd+2],AL
 ps_l:
 ps_rd:
-    LDA AL,[0x0000]
+    MOV AL,[0x0000]
     CMP AL,#0
     JMPZ ps_d
 ps_o:
     OUT (P_TEXT),AL
-    LDA AL,[ps_rd+1]
+    MOV AL,[ps_rd+1]
     ADD AL,#1
-    STA [ps_rd+1],AL
+    MOV [ps_rd+1],AL
     JMPNZ ps_nh
-    LDA AL,[ps_rd+2]
+    MOV AL,[ps_rd+2]
     ADD AL,#1
-    STA [ps_rd+2],AL
+    MOV [ps_rd+2],AL
 ps_nh:
-    LDA AL,[ps_o+1]
+    MOV AL,[ps_o+1]
     ADD AL,#1
-    STA [ps_o+1],AL
+    MOV [ps_o+1],AL
     JMP ps_l
 ps_d:
     RET
 
 ; --- put_num:  AL = valor (0..255),  CL = col,  CH = fila ------------------
 put_num:
-    STA [pn_v],AL
-    LDA AL,[pn_v]
+    MOV [pn_v],AL
+    MOV AL,[pn_v]
     PUSH AH
     MOV AH,#0
     MOV DL,#100
     DIV DL                  ; DL = cociente, resto -> [pn_v]
-    STA [pn_v],AH
+    MOV [pn_v],AH
     MOV DL,AL
     POP AH
 pn_hd:
@@ -963,12 +963,12 @@ pn_hd:
     ADD AL,#0x30
     CALL putc
     ADD CL,#1
-    LDA AL,[pn_v]
+    MOV AL,[pn_v]
     PUSH AH
     MOV AH,#0
     MOV DL,#10
     DIV DL                  ; DL = cociente, resto -> [pn_v]
-    STA [pn_v],AH
+    MOV [pn_v],AH
     MOV DL,AL
     POP AH
 pn_td:
@@ -976,21 +976,21 @@ pn_td:
     ADD AL,#0x30
     CALL putc
     ADD CL,#1
-    LDA AL,[pn_v]
+    MOV AL,[pn_v]
     ADD AL,#0x30
     CALL putc
     RET
 
 ; --- putc:  AL = caracter,  CL = col,  CH = fila --------------------------
 putc:
-    STA [tmp0],AL
+    MOV [tmp0],AL
     MOV AL,CH
     SHL AL,#5
     ADD AL,CL
-    STA [pc_o+1],AL
+    MOV [pc_o+1],AL
     MOV AL,#0x04
-    STA [pc_o+2],AL
-    LDA AL,[tmp0]
+    MOV [pc_o+2],AL
+    MOV AL,[tmp0]
 pc_o:
     OUT (P_TEXT),AL
     RET
@@ -1003,15 +1003,15 @@ fillg:
 clsg:
     MOV AL,#0
 cg_v:
-    STA [cg_val],AL
+    MOV [cg_val],AL
     MOV CL,#0
 cg_hp:
     MOV AL,CL
-    STA [cg_io+2],AL
+    MOV [cg_io+2],AL
     MOV BL,#0
-    LDA AL,[cg_val]
+    MOV AL,[cg_val]
 cg_lp:
-    STA [cg_io+1],BL
+    MOV [cg_io+1],BL
 cg_io:
     OUT (P_FB),AL
     ADD BL,#1
@@ -1026,7 +1026,7 @@ clst:
     MOV BL,#0
     MOV AL,#0
 ct_lp:
-    STA [ct_io+1],BL
+    MOV [ct_io+1],BL
 ct_io:
     OUT (P_TEXT),AL
     ADD BL,#1
@@ -1035,85 +1035,85 @@ ct_io:
 
 ; --- hspan:  fila tmp0, bytes-x tmp1..tmp2, valor hs_val ------------------
 hspan:
-    LDA AL,[tmp0]
+    MOV AL,[tmp0]
     AND AL,#0x0F
     SHL AL,#4
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     ADD AL,BL
-    STA [hp_io+1],AL
-    LDA AL,[tmp0]
+    MOV [hp_io+1],AL
+    MOV AL,[tmp0]
     SHR AL,#4
-    STA [hp_io+2],AL
-    LDA CL,[tmp2]
-    LDA BL,[tmp1]
+    MOV [hp_io+2],AL
+    MOV CL,[tmp2]
+    MOV BL,[tmp1]
     SUB CL,BL
     ADD CL,#1
-    LDA AL,[hs_val]
+    MOV AL,[hs_val]
 hp_l:
 hp_io:
     OUT (P_FB),AL
-    LDA BL,[hp_io+1]
+    MOV BL,[hp_io+1]
     ADD BL,#1
-    STA [hp_io+1],BL
+    MOV [hp_io+1],BL
     SUB CL,#1
     JMPNZ hp_l
     RET
 
 ; --- hline_full:  fila tmp0 entera a 0xFF --------------------------------
 hline_full:
-    LDA AL,[tmp0]
+    MOV AL,[tmp0]
     AND AL,#0x0F
     SHL AL,#4
-    STA [hf_io+1],AL
-    LDA AL,[tmp0]
+    MOV [hf_io+1],AL
+    MOV AL,[tmp0]
     SHR AL,#4
-    STA [hf_io+2],AL
+    MOV [hf_io+2],AL
     MOV CL,#16
     MOV AL,#0xFF
 hf_l:
 hf_io:
     OUT (P_FB),AL
-    LDA BL,[hf_io+1]
+    MOV BL,[hf_io+1]
     ADD BL,#1
-    STA [hf_io+1],BL
+    MOV [hf_io+1],BL
     SUB CL,#1
     JMPNZ hf_l
     RET
 
 ; --- fillbox_solid:  caja llena de 0xFF en gb_x,gb_y (gb_wb x gb_ht) ------
 fillbox_solid:
-    LDA AL,[gb_ht]
-    STA [fs_h],AL
-    LDA AL,[gb_y]
-    STA [fs_row],AL
+    MOV AL,[gb_ht]
+    MOV [fs_h],AL
+    MOV AL,[gb_y]
+    MOV [fs_row],AL
 fs_l:
-    LDA AL,[fs_row]
-    STA [tmp0],AL
+    MOV AL,[fs_row]
+    MOV [tmp0],AL
     AND AL,#0x0F
     SHL AL,#4
-    LDA BL,[gb_x]
+    MOV BL,[gb_x]
     SHR BL,#3
     ADD AL,BL
-    STA [fb_io+1],AL
-    LDA AL,[tmp0]
+    MOV [fb_io+1],AL
+    MOV AL,[tmp0]
     SHR AL,#4
-    STA [fb_io+2],AL
-    LDA CL,[gb_wb]
+    MOV [fb_io+2],AL
+    MOV CL,[gb_wb]
     MOV AL,#0xFF
 fb_cl:
 fb_io:
     OUT (P_FB),AL
-    LDA BL,[fb_io+1]
+    MOV BL,[fb_io+1]
     ADD BL,#1
-    STA [fb_io+1],BL
+    MOV [fb_io+1],BL
     SUB CL,#1
     JMPNZ fb_cl
-    LDA AL,[fs_row]
+    MOV AL,[fs_row]
     ADD AL,#1
-    STA [fs_row],AL
-    LDA AL,[fs_h]
+    MOV [fs_row],AL
+    MOV AL,[fs_h]
     SUB AL,#1
-    STA [fs_h],AL
+    MOV [fs_h],AL
     JMPNZ fs_l
     RET
 
@@ -1142,8 +1142,8 @@ shadow_fill:
     ; escribe AL en el primer byte y MOVB lo propaga por los 1023 restantes
     ; (origen/destino solapados a 1 byte, copia hacia adelante -- docs/isa.md
     ; SS4d): antes un bucle de 1024 vueltas
-    STA [sf_val],AL
-    STA [shadow],AL
+    MOV [sf_val],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF
@@ -1153,43 +1153,43 @@ shadow_fill:
 ; --- shadow_fillbox:  como fillbox_solid, pero escribe en `shadow` -- misma
 ; convención de parámetros (gb_x/gb_y/gb_wb/gb_ht).
 shadow_fillbox:
-    LDA AL,[gb_ht]
-    STA [fs_h],AL
-    LDA AL,[gb_y]
-    STA [fs_row],AL
+    MOV AL,[gb_ht]
+    MOV [fs_h],AL
+    MOV AL,[gb_y]
+    MOV [fs_row],AL
 sfb_l:
-    LDA AL,[fs_row]
-    STA [tmp0],AL
+    MOV AL,[fs_row]
+    MOV [tmp0],AL
     AND AL,#0x0F
     SHL AL,#4
-    LDA BL,[gb_x]
+    MOV BL,[gb_x]
     SHR BL,#3
     ADD AL,BL
-    STA [sfb_off],AL
-    LDA AL,[tmp0]
+    MOV [sfb_off],AL
+    MOV AL,[tmp0]
     SHR AL,#4
-    STA [sfb_pag],AL
+    MOV [sfb_pag],AL
 
     MOV BX,#shadow
-    LDA CL,[sfb_off]
+    MOV CL,[sfb_off]
     ADD BX,CL
-    LDA AL,[sfb_pag]
+    MOV AL,[sfb_pag]
     ADD BH,AL
 
-    LDA CL,[gb_wb]
+    MOV CL,[gb_wb]
     MOV AL,#0xFF
 sfb_cl:
-    STA [BX],AL
+    MOV [BX],AL
     INC BX
     SUB CL,#1
     JMPNZ sfb_cl
 
-    LDA AL,[fs_row]
+    MOV AL,[fs_row]
     ADD AL,#1
-    STA [fs_row],AL
-    LDA AL,[fs_h]
+    MOV [fs_row],AL
+    MOV AL,[fs_h]
     SUB AL,#1
-    STA [fs_h],AL
+    MOV [fs_h],AL
     JMPNZ sfb_l
     RET
 
@@ -1198,32 +1198,32 @@ sfb_cl:
 ; puntero BX: si se calculara después pisaría BL a medio construir la
 ; dirección (el mismo tipo de bug que ya se dio en pong.asm con `speed`).
 shadow_hspan:
-    LDA AL,[tmp2]
-    LDA BL,[tmp1]
+    MOV AL,[tmp2]
+    MOV BL,[tmp1]
     SUB AL,BL
     ADD AL,#1
-    STA [sfb_wid],AL
+    MOV [sfb_wid],AL
 
-    LDA AL,[tmp0]
+    MOV AL,[tmp0]
     AND AL,#0x0F
     SHL AL,#4
-    LDA BL,[tmp1]
+    MOV BL,[tmp1]
     ADD AL,BL
-    STA [sfb_off],AL
-    LDA AL,[tmp0]
+    MOV [sfb_off],AL
+    MOV AL,[tmp0]
     SHR AL,#4
-    STA [sfb_pag],AL
+    MOV [sfb_pag],AL
 
     MOV BX,#shadow
-    LDA CL,[sfb_off]
+    MOV CL,[sfb_off]
     ADD BX,CL
-    LDA AL,[sfb_pag]
+    MOV AL,[sfb_pag]
     ADD BH,AL
 
-    LDA CL,[sfb_wid]
-    LDA AL,[hs_val]
+    MOV CL,[sfb_wid]
+    MOV AL,[hs_val]
 shsp_l:
-    STA [BX],AL
+    MOV [BX],AL
     INC BX
     SUB CL,#1
     JMPNZ shsp_l
@@ -1235,7 +1235,7 @@ shadow_blit:
     MOV DX,#shadow
 sbl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ sbl_same
     MOV AL,CL
@@ -1252,62 +1252,62 @@ sbl_same:
 ; --- fillbox_xor:  invierte (XOR 0xFF) una caja gb_wb x gb_ht en gb_x,gb_y -
 ; dibujarla dos veces en el mismo sitio la borra sin tocar el fondo.
 fillbox_xor:
-    LDA AL,[gb_ht]
-    STA [fs_h],AL
-    LDA AL,[gb_y]
-    STA [fs_row],AL
+    MOV AL,[gb_ht]
+    MOV [fs_h],AL
+    MOV AL,[gb_y]
+    MOV [fs_row],AL
 fxb_l:
-    LDA AL,[fs_row]
-    STA [tmp0],AL
+    MOV AL,[fs_row]
+    MOV [tmp0],AL
     AND AL,#0x0F
     SHL AL,#4
-    LDA BL,[gb_x]
+    MOV BL,[gb_x]
     SHR BL,#3
     ADD AL,BL
-    STA [fxb_i+1],AL
-    STA [fxb_o+1],AL
-    LDA AL,[tmp0]
+    MOV [fxb_i+1],AL
+    MOV [fxb_o+1],AL
+    MOV AL,[tmp0]
     SHR AL,#4
-    STA [fxb_i+2],AL
-    STA [fxb_o+2],AL
-    LDA CL,[gb_wb]
+    MOV [fxb_i+2],AL
+    MOV [fxb_o+2],AL
+    MOV CL,[gb_wb]
 fxb_cl:
 fxb_i:
     IN  DL,(P_FB)
     XOR DL,#0xFF
 fxb_o:
     OUT (P_FB),DL
-    LDA AL,[fxb_i+1]
+    MOV AL,[fxb_i+1]
     ADD AL,#1
-    STA [fxb_i+1],AL
-    STA [fxb_o+1],AL
+    MOV [fxb_i+1],AL
+    MOV [fxb_o+1],AL
     SUB CL,#1
     JMPNZ fxb_cl
-    LDA AL,[fs_row]
+    MOV AL,[fs_row]
     ADD AL,#1
-    STA [fs_row],AL
-    LDA AL,[fs_h]
+    MOV [fs_row],AL
+    MOV AL,[fs_h]
     SUB AL,#1
-    STA [fs_h],AL
+    MOV [fs_h],AL
     JMPNZ fxb_l
     RET
 
 ; --- plot:  enciende el pixel (px_x, px_y), conservando el resto ----------
 plot:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR AL,DL
-    STA [pl_i+1],AL
-    STA [pl_o+1],AL
+    MOV [pl_i+1],AL
+    MOV [pl_o+1],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pl_i+2],AL
-    STA [pl_o+2],AL
+    MOV [pl_i+2],AL
+    MOV [pl_o+2],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -1327,12 +1327,12 @@ pl_o:
 
 ; --- rnd:  LFSR de 8 bits (taps 0xB8), deja el nuevo valor en AL ----------
 rnd:
-    LDA AL,[seed]
+    MOV AL,[seed]
     SHR AL
     JMPNC rnd_n
     XOR AL,#0xB8
 rnd_n:
-    STA [seed],AL
+    MOV [seed],AL
     RET
 
 ; --- frame_wait:  AL = pasos del temporizador 3 (8 ms/paso) --------------
@@ -1346,13 +1346,13 @@ fw_l:
 
 ; --- frame_wait_n:  AL = numero de frames de ~24 ms ---------------------
 frame_wait_n:
-    STA [fwn_n],AL
+    MOV [fwn_n],AL
 fwn_l:
-    LDA AL,[fwn_n]
+    MOV AL,[fwn_n]
     CMP AL,#0
     JMPZ fwn_d
     SUB AL,#1
-    STA [fwn_n],AL
+    MOV [fwn_n],AL
     MOV AL,#3
     CALL frame_wait
     JMP fwn_l
@@ -1361,17 +1361,17 @@ fwn_d:
 
 ; --- hold:  AL = frames, pero sale antes si se pulsa DIRECCION -----------
 hold:
-    STA [hd_n],AL
+    MOV [hd_n],AL
 hd_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ hd_d
-    LDA AL,[hd_n]
+    MOV AL,[hd_n]
     CMP AL,#0
     JMPZ hd_d
     SUB AL,#1
-    STA [hd_n],AL
+    MOV [hd_n],AL
     MOV AL,#2
     CALL frame_wait
     JMP hd_l
@@ -1384,7 +1384,7 @@ poll_exit:
     CMP AL,#0
     JMPZ pe_d
     MOV AL,#1
-    STA [g_exit],AL
+    MOV [g_exit],AL
 pe_d:
     RET
 

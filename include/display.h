@@ -10,6 +10,21 @@
 
 namespace compi {
 
+// Columna de la RAM del SH1106 (132 columnas) donde empieza la imagen de 128.
+// Depende del panel: la pantalla original (29,5 x 15,0 mm de zona visible)
+// enseña de la 2 a la 129 (lo que pone la librería); la actual (35,1 x 18,0
+// mm) de la 0 a la 127 -- con 2, la imagen salía 2 px corrida a la derecha
+// (ruido a la izquierda, la última casilla de chessboard mas estrecha).
+constexpr uint8_t OLED_COL_OFFSET = 0;
+
+// Adafruit_SH1106G con el desplazamiento de columna a mano (_page_start_offset
+// es protegido; begin() lo pone siempre a 2).
+class Sh1106Panel : public Adafruit_SH1106G {
+public:
+    using Adafruit_SH1106G::Adafruit_SH1106G;
+    void setColumnOffset(uint8_t cols) { _page_start_offset = cols; }
+};
+
 // Dibuja en una SH1106 de 128x64 por I2C (librería Adafruit_SH110X, NO
 // SSD1306). La vista depende de UiState (sección 14 de specs.txt).
 //
@@ -49,9 +64,12 @@ public:
     // DISPLAY OFF (baja a µA, conserva el contenido); `power(true)` la reenciende
     // (hay que redibujar). `contrast()` la atenúa sin apagarla (0x00..0xFF, solo SET_CONTRAST).
     void power(bool on);
-    void contrast(uint8_t level);
-    // Igual que contrast(). Ver display.cpp: se probaron PRE-CHARGE/VCOMH y un
-    // tramado por software para oscurecer más; los dos se descartaron.
+    // Diagnóstico (COMPI OLEDCMD): manda bytes de comando tal cual (pruebas
+    // de brillo: 0x81 contraste, 0xD9 precarga, 0xDB VCOMH, 0x30-0x33 bomba).
+    void rawCommands(const uint8_t* cmds, uint8_t n);
+    void contrast(uint8_t level);          // 0 = modo noche (ver display.cpp)
+    // Igual que contrast(). Ver display.cpp: lo que se ha probado para
+    // oscurecer más (el modo noche del nivel 0, y lo descartado).
     void contrastFromSettings(uint8_t level);
 
     // Aviso de batería baja: un icono de pila vacía en la esquina de arriba a
@@ -64,7 +82,10 @@ private:
     void renderEditPrg(const Cpu& cpu, const UiState& ui);
     void drawBatteryWarning(bool blink);
     bool batWarn_ = false;
+    bool on_ = true;                       // DISPLAY ON/OFF (power())
+    bool night_ = false;                   // precarga/VCOMH del modo noche
 
+    void clearControllerRam();             // las 132 columnas del SH1106
     static void txTaskFn(void* arg);
     void lock();
     void unlock();
@@ -73,7 +94,7 @@ private:
     volatile bool txBusy_ = false;         // hay un fotograma por mandar
 
     uint8_t i2cAddress_;
-    Adafruit_SH1106G display_;
+    Sh1106Panel display_;
 };
 
 } // namespace compi

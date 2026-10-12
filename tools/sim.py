@@ -22,11 +22,11 @@ import sys
 MASK = 0xFFFF
 FLAG_C, FLAG_Z, FLAG_N, FLAG_V = 1, 2, 4, 8
 
-# familias de opcode (include/isa.h, ISA version 2 -- ver docs/isa.md)
+# familias de opcode (include/isa.h, ISA version 3 -- ver docs/isa.md)
 (F_SYS, F_LDI, F_LDA, F_STA, F_LDAR, F_STAR, F_IN, F_OUT, F_INR, F_OUTR,
- F_ALURR, F_ALUI, F_ALUM, F_ALUP, F_NOT, F_SHR, F_SHL, F_MUL, F_DIV,
+ F_ALURR, F_ALUI, F_SHX, F_NEG, F_NOT, F_SHR, F_SHL, F_MUL, F_DIV,
  F_INC, F_DEC, F_PUSH, F_POP, F_JMP, F_CALL, F_JX, F_R16, F_R16I,
- F_INCDEC16, F_PUSHPOP16) = range(30)
+ F_INCDEC16, F_PUSHPOP16, F_IMUL, F_X16) = range(32)
 
 CLICK_LEN = 12000  # instrucciones que dura un "click" de pulsador
 TIMER_COUNT = 10    # ver include/iomap.h
@@ -604,12 +604,10 @@ class Cpu:
             aop = self._f8()
             imm = self._f8()
             self.r[r] = self._alu(aop, self.r[r], imm)
-        elif fam == F_ALUM:
-            aop = self._f8()
-            self.r[r] = self._alu(aop, self.r[r], self.m[self._f16()])
-        elif fam == F_ALUP:
-            b1 = self._f8()
-            self.r[r] = self._alu(b1 >> 2, self.r[r], self.m[self._get16(b1 & 3)])
+        elif fam == F_SHX:
+            self._shx(r, self._f8())
+        elif fam == F_NEG:
+            self.r[r] = self._arith(0, self.r[r], True)
         elif fam == F_NOT:
             self.r[r] = self._logic((~self.r[r]) & 0xFF)
         elif fam in (F_SHR, F_SHL):
@@ -646,17 +644,22 @@ class Cpu:
             if self._cond(r):
                 self.pc = addr
         elif fam == F_CALL:
-            addr = self._f16()
-            if self._cond(r):
-                self._call(addr)
-        elif fam == F_JX:
-            if r in (0, 1):                  # JMPNV / CALLNV
+            if r == 0:                       # CALL addr16
+                self._call(self._f16())
+            elif r == 1:                     # MOV [addr16],#imm8
                 addr = self._f16()
-                if not (self.flags & FLAG_V):
-                    if r == 0:
-                        self.pc = addr
-                    else:
-                        self._call(addr)
+                self.m[addr] = self._f8()
+            elif r >= 4:                     # MOV [r16],#imm8
+                self.m[self._get16(r & 3)] = self._f8()
+        elif fam == F_JX:
+            if r in (0, 1, 4, 5, 6):         # JMPNV / JMPLT / JMPGE / JMPLE / JMPGT
+                addr = self._f16()
+                f = self.flags
+                z = bool(f & FLAG_Z)
+                lt = bool(f & FLAG_N) != bool(f & FLAG_V)
+                ok = {0: not (f & FLAG_V), 1: lt, 4: not lt, 5: z or lt, 6: not z and not lt}[r]
+                if ok:
+                    self.pc = addr
             elif r == 2:                     # JMP reg16
                 self.pc = self._get16(self._f8() & 3)
             elif r == 3:                     # CALL reg16
@@ -702,7 +705,79 @@ class Cpu:
                 v = self._get16(r & 3)
                 self._push(v >> 8)
                 self._push(v & 0xFF)
+        elif fam == F_IMUL:
+            a, b = self.r[0], self.r[r]
+            p = (a - 256 if a & 0x80 else a) * (b - 256 if b & 0x80 else b)
+            self._set16(0, p & MASK)
+            big = p < -128 or p > 127
+            self._flags(big, p & MASK, 0x8000, big)
+        elif fam == F_X16:
+            if r < 4:
+                self._x16(r, self._f8())
         return not self.halted
+
+    # SAR/ROL/ROR/RCL/RCR reg,#N -- igual que Cpu::doShx (cpu.cpp)
+    def _shx(self, r, b1):
+        op, n = (b1 >> 3) & 7, (b1 & 7) + 1
+        if op > 4:
+            return
+        v, c = self.r[r], self.flags & FLAG_C
+        for _ in range(n):
+            if op == 0:
+                c, v = v & 1, (v >> 1) | (v & 0x80)
+            elif op == 1:
+                c = v >> 7
+                v = ((v << 1) | c) & 0xFF
+            elif op == 2:
+                c = v & 1
+                v = (v >> 1) | (c << 7)
+            elif op == 3:
+                o = v >> 7
+                v = ((v << 1) | c) & 0xFF
+                c = o
+            else:
+                o = v & 1
+                v = (v >> 1) | (c << 7)
+                c = o
+        self.r[r] = v
+        self._flags(c, v, 0x80, False)
+
+    # 16 bits: SHL/SHR/SAR/NEG/MUL/DIV -- igual que Cpu::doX16 (cpu.cpp)
+    def _x16(self, pair, b1):
+        op, n = b1 >> 4, (b1 & 15) + 1
+        v = self._get16(pair)
+        if op == 0:
+            res = (v << n) & MASK
+            c = (v >> (16 - n)) & 1
+            neg = bool(res & 0x8000)
+            self._set16(pair, res)
+            self._flags(c, res, 0x8000, bool(c) != neg)
+        elif op in (1, 2):
+            s = v | 0xFFFF0000 if (op == 2 and v & 0x8000) else v
+            res = (s >> n) & MASK
+            c = (s >> (n - 1)) & 1
+            self._set16(pair, res)
+            self._flags(c, res, 0x8000, op == 1 and bool(v & 0x8000))
+        elif op == 3:
+            self._cmp16(0, v)
+            self._set16(pair, (-v) & MASK)
+        elif op == 4:
+            p = self._get16(0) * v
+            self._set16(0, p & MASK)
+            self._set16(3, p >> 16)
+            hi = p > 0xFFFF
+            self._flags(hi, p, 0x80000000, hi)
+        elif op == 5:
+            num = (self._get16(3) << 16) | self._get16(0)
+            if v != 0 and num // v <= 0xFFFF:
+                q = num // v
+                self._set16(0, q)
+                self._set16(3, num % v)
+                self._flags(False, q, 0x8000, False)
+            else:
+                self._set16(0, 0xFFFF)
+                self._set16(3, 0xFFFF)
+                self.flags = FLAG_C | FLAG_V | FLAG_N
 
 
 def render(ports):

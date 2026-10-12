@@ -56,7 +56,7 @@ P_PROG_LOAD = 0x0640       ; cargar slot (OUT n. de slot): salto a otro programa
 start:
     CALL draw_image
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
 
 ; ============================================================================
 ;  BUCLE PRINCIPAL: reproduce la melodia en bucle hasta DIRECCION
@@ -65,23 +65,23 @@ pm_rs:
     MOV DX,#melody
 pm_nx:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ pm_x
 
-    LDA AL,[DX]                ; nota MIDI (0 = silencio)
+    MOV AL,[DX]                ; nota MIDI (0 = silencio)
     CMP AL,#0xFF
     JMPZ pm_rs                  ; fin de la tabla -> repite desde el principio
-    STA [cur_note],AL
+    MOV [cur_note],AL
     INC DX
 
-    LDA AL,[DX]                ; duracion, en pasos de 8 ms
-    STA [cur_dur],AL
+    MOV AL,[DX]                ; duracion, en pasos de 8 ms
+    MOV [cur_dur],AL
     INC DX
 
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
     OUT (P_SND_N),AL
-    LDA AL,[cur_dur]
+    MOV AL,[cur_dur]
     CALL frame_wait
     JMP pm_nx
 
@@ -105,7 +105,7 @@ draw_image:
     MOV BX,#0
     MOV DX,#img_data
 di_l:
-    LDA AL,[DX]
+    MOV AL,[DX]
     OUT (BX),AL
     INC BX
     INC DX
@@ -129,7 +129,7 @@ poll_exit:
     CMP AL,#0
     JMPZ pe_d
     MOV AL,#1
-    STA [g_exit],AL
+    MOV [g_exit],AL
 pe_d:
     RET
 

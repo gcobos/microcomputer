@@ -52,10 +52,10 @@ P_T3      = 0x0623      ; temporizador 3 (8 ms/paso)
 start:
     IN  AL,(P_DAT_POS)         ; siembra el LFSR con algo poco predecible
     ADD AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
     JMPNZ init
     MOV AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
 
 init:
     CALL clsg
@@ -64,12 +64,12 @@ init:
     MOV CX,#0x0006
     CALL puts
     MOV AL,#0
-    STA [g_exit],AL
+    MOV [g_exit],AL
 
     MOV AL,#0
-    STA [idx],AL
+    MOV [idx],AL
 init_l:
-    LDA CL,[idx]
+    MOV CL,[idx]
 
     ; x al azar en [4,123]
     CALL rnd
@@ -84,7 +84,7 @@ ix_uok:
 ix_lok:
     MOV BX,#star_x
     CALL star_ptr
-    STA [BX],AL
+    MOV [BX],AL
 
     ; y al azar en [10,58]  (deja libre la fila de texto del titulo)
     CALL rnd
@@ -99,13 +99,13 @@ iy_uok:
 iy_lok:
     MOV BX,#star_y
     CALL star_ptr
-    STA [BX],AL
+    MOV [BX],AL
 
     ; estado inicial = 0 (apagada)
     MOV BX,#star_state
     CALL star_ptr
     MOV AL,#0
-    STA [BX],AL
+    MOV [BX],AL
 
     ; espera inicial al azar (desincroniza las estrellas entre si)
     CALL rnd
@@ -113,11 +113,11 @@ iy_lok:
     ADD AL,#4
     MOV BX,#star_timer
     CALL star_ptr
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA AL,[idx]
+    MOV AL,[idx]
     ADD AL,#1
-    STA [idx],AL
+    MOV [idx],AL
     CMP AL,#NSTARS
     JMPNZ init_l
 
@@ -126,22 +126,22 @@ iy_lok:
 ; ============================================================================
 main_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ main_x
 
     MOV AL,#0
-    STA [idx],AL
-    STA [led_cnt],AL
+    MOV [idx],AL
+    MOV [led_cnt],AL
 star_l:
     CALL do_star
-    LDA AL,[idx]
+    MOV AL,[idx]
     ADD AL,#1
-    STA [idx],AL
+    MOV [idx],AL
     CMP AL,#NSTARS
     JMPNZ star_l
 
-    LDA AL,[led_cnt]
+    MOV AL,[led_cnt]
     CMP AL,#0
     JMPZ ml_ledoff
     MOV AL,#1
@@ -176,52 +176,52 @@ main_x:
 ;  sin sincronizarse).
 ; ============================================================================
 do_star:
-    LDA CL,[idx]
+    MOV CL,[idx]
     MOV BX,#star_state
     CALL star_ptr
-    LDA AL,[BX]
-    STA [st_state],AL
+    MOV AL,[BX]
+    MOV [st_state],AL
 
-    LDA CL,[idx]
+    MOV CL,[idx]
     MOV BX,#star_timer
     CALL star_ptr
-    LDA AL,[BX]
-    STA [st_timer],AL
+    MOV AL,[BX]
+    MOV [st_timer],AL
 
-    LDA AL,[st_timer]
+    MOV AL,[st_timer]
     CMP AL,#0
     JMPZ ds_transition
     SUB AL,#1
-    STA [st_timer],AL
-    LDA CL,[idx]
+    MOV [st_timer],AL
+    MOV CL,[idx]
     MOV BX,#star_timer
     CALL star_ptr
-    STA [BX],AL
-    LDA AL,[st_state]
+    MOV [BX],AL
+    MOV AL,[st_state]
     CMP AL,#2
     JMPNZ ds_ret
-    LDA AL,[led_cnt]
+    MOV AL,[led_cnt]
     ADD AL,#1
-    STA [led_cnt],AL
+    MOV [led_cnt],AL
 ds_ret:
     RET
 
 ds_transition:
     ; carga x,y de la estrella (para borrar/dibujar)
-    LDA CL,[idx]
+    MOV CL,[idx]
     MOV BX,#star_x
     CALL star_ptr
-    LDA AL,[BX]
-    STA [px_x],AL
+    MOV AL,[BX]
+    MOV [px_x],AL
 
-    LDA CL,[idx]
+    MOV CL,[idx]
     MOV BX,#star_y
     CALL star_ptr
-    LDA AL,[BX]
-    STA [px_y],AL
+    MOV AL,[BX]
+    MOV [px_y],AL
 
     ; borra la forma del estado viejo
-    LDA AL,[st_state]
+    MOV AL,[st_state]
     CMP AL,#0
     JMPZ ds_adv                ; 0 = apagada, nada que borrar
     CMP AL,#2
@@ -233,13 +233,13 @@ ds_erbig:
 
 ds_adv:
     ; avanza el estado: 0->1->2->3->0
-    LDA AL,[st_state]
+    MOV AL,[st_state]
     ADD AL,#1
     CMP AL,#4
     JMPNZ ds_newst
     MOV AL,#0
 ds_newst:
-    STA [st_state],AL
+    MOV [st_state],AL
 
     ; dibuja la forma nueva y calcula el temporizador nuevo
     CMP AL,#0
@@ -254,9 +254,9 @@ ds_newst:
     JMP ds_settimer
 ds_big:
     CALL set_plus
-    LDA AL,[led_cnt]
+    MOV AL,[led_cnt]
     ADD AL,#1
-    STA [led_cnt],AL
+    MOV [led_cnt],AL
     CALL rnd
     AND AL,#0x0F
     ADD AL,#6                  ; 6..21 ticks de brillo maximo
@@ -266,19 +266,19 @@ ds_hidden:
     AND AL,#0x3F
     ADD AL,#10                 ; 10..73 ticks apagada
 ds_settimer:
-    STA [st_timer],AL
+    MOV [st_timer],AL
 
-    LDA CL,[idx]
+    MOV CL,[idx]
     MOV BX,#star_state
     CALL star_ptr
-    LDA AL,[st_state]
-    STA [BX],AL
+    MOV AL,[st_state]
+    MOV [BX],AL
 
-    LDA CL,[idx]
+    MOV CL,[idx]
     MOV BX,#star_timer
     CALL star_ptr
-    LDA AL,[st_timer]
-    STA [BX],AL
+    MOV AL,[st_timer]
+    MOV [BX],AL
     RET
 
 ; --- star_ptr:  BX = (BX inicial) + CL, propagando el acarreo a mano -------
@@ -304,50 +304,50 @@ clr_plus:
     ; cae en mode_plus
 
 mode_plus:
-    STA [tmp2],AL              ; tmp2 = modo (1 enciende, 0 apaga)
-    LDA AL,[px_x]
-    STA [tmp0],AL               ; tmp0 = cx
-    LDA AL,[px_y]
-    STA [tmp1],AL               ; tmp1 = cy
+    MOV [tmp2],AL              ; tmp2 = modo (1 enciende, 0 apaga)
+    MOV AL,[px_x]
+    MOV [tmp0],AL               ; tmp0 = cx
+    MOV AL,[px_y]
+    MOV [tmp1],AL               ; tmp1 = cy
 
     CALL mp_dot                 ; centro
 
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     SUB AL,#1
-    STA [px_y],AL
-    LDA AL,[tmp0]
-    STA [px_x],AL
+    MOV [px_y],AL
+    MOV AL,[tmp0]
+    MOV [px_x],AL
     CALL mp_dot                 ; arriba
 
-    LDA AL,[tmp1]
+    MOV AL,[tmp1]
     ADD AL,#1
-    STA [px_y],AL
-    LDA AL,[tmp0]
-    STA [px_x],AL
+    MOV [px_y],AL
+    MOV AL,[tmp0]
+    MOV [px_x],AL
     CALL mp_dot                 ; abajo
 
-    LDA AL,[tmp1]
-    STA [px_y],AL
-    LDA AL,[tmp0]
+    MOV AL,[tmp1]
+    MOV [px_y],AL
+    MOV AL,[tmp0]
     SUB AL,#1
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL mp_dot                 ; izquierda
 
-    LDA AL,[tmp1]
-    STA [px_y],AL
-    LDA AL,[tmp0]
+    MOV AL,[tmp1]
+    MOV [px_y],AL
+    MOV AL,[tmp0]
     ADD AL,#1
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL mp_dot                 ; derecha
 
-    LDA AL,[tmp0]
-    STA [px_x],AL
-    LDA AL,[tmp1]
-    STA [px_y],AL
+    MOV AL,[tmp0]
+    MOV [px_x],AL
+    MOV AL,[tmp1]
+    MOV [px_y],AL
     RET
 
 mp_dot:
-    LDA AL,[tmp2]
+    MOV AL,[tmp2]
     CMP AL,#0
     JMPZ mp_off
     CALL pix_on
@@ -359,20 +359,20 @@ mp_off:
 ; --- pix_on / pix_off:  enciende/apaga el pixel (px_x,px_y) -----------------
 pix_on:
     CALL calc_pix
-    LDA BL,[pix_lo]
-    LDA BH,[pix_hi]
+    MOV BL,[pix_lo]
+    MOV BH,[pix_hi]
     IN  AL,(BX)
-    LDA DL,[pix_mask]
+    MOV DL,[pix_mask]
     OR  AL,DL
     OUT (BX),AL
     RET
 
 pix_off:
     CALL calc_pix
-    LDA BL,[pix_lo]
-    LDA BH,[pix_hi]
+    MOV BL,[pix_lo]
+    MOV BH,[pix_hi]
     IN  AL,(BX)
-    LDA DL,[pix_mask]
+    MOV DL,[pix_mask]
     NOT DL
     AND AL,DL
     OUT (BX),AL
@@ -380,18 +380,18 @@ pix_off:
 
 ; --- calc_pix:  de (px_x,px_y) saca puerto (pix_lo/pix_hi) + mascara --------
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4                   ; AL = (y&15)<<4
     MOV DL,CL
     SHR DL,#3                   ; DL = x>>3 (xbyte)
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4                   ; AL = y>>4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -402,7 +402,7 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; ============================================================================
@@ -417,7 +417,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04                ; puerto texto = 0x0400 + fila*32 + col
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -467,12 +467,12 @@ rnd:
 
 ; --- rnd_raw:  un paso de LFSR de 8 bits (taps 0xB8) ------------------------
 rnd_raw:
-    LDA AL,[seed]
+    MOV AL,[seed]
     SHR AL
     JMPNC rr_n
     XOR AL,#0xB8
 rr_n:
-    STA [seed],AL
+    MOV [seed],AL
     RET
 
 ; --- frame_wait:  AL = pasos del temporizador 3 (8 ms/paso) -----------------
@@ -490,7 +490,7 @@ poll_exit:
     CMP AL,#0
     JMPZ pe_d
     MOV AL,#1
-    STA [g_exit],AL
+    MOV [g_exit],AL
 pe_d:
     RET
 

@@ -36,6 +36,14 @@ constexpr uint8_t CLK_WIFI    = 0x08;   // hay una red Wi-Fi configurada
 void clockBegin(const uint8_t* cfg);
 void clockTick();                       // una vez por vuelta de loop()
 void clockSyncNow();                    // pide una sincronizacion ya
+// la pide un programa (PORT_TIME_SYNC): como clockSyncNow(), pero no mas de
+// una vez por minuto (que un programa no pueda tener la radio siempre puesta)
+void clockSyncRequest();
+// diagnostico del ultimo intento de conexion (COMPI NETDIAG): si llego a
+// tener IP, la señal, el motivo de desconexion del router y WiFi.status()
+void clockDiag(char* out, size_t n);
+// diagnostico (COMPI WIFISCAN): lista por Serial las redes que se ven
+void clockScanPrint();
 bool clockBusy();                       // el Wi-Fi esta encendido
 uint8_t clockStatus();
 void clockSetEpoch(uint32_t epoch);     // desde el USB (UTC)

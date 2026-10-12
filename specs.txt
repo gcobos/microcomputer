@@ -151,14 +151,17 @@ REGISTROS
   son estado de la máquina en igualdad de condiciones que AX..DX y se
   visualizan en la pantalla (sección 14).
 
-CODIFICACIÓN DEL OPCODE (1 byte) — ISA versión 2
+CODIFICACIÓN DEL OPCODE (1 byte) — ISA versión 3
   bits 7..3 = familia (0..31)      bits 2..0 = "bajo3"
   makeOpcode(familia, bajo3) = (familia << 3) | (bajo3 & 7)
   Según la familia, bajo3 es un registro de 8 bits, una condición de salto o
   una sub-operación. Las operaciones de la ALU van en un byte de operando
-  aparte (AluOp), así las 9 caben en las 4 formas de direccionamiento sin
-  gastar una familia por operación. 0x00 = NOP (RAM a cero = programa vacío).
-  Los .bin de la ISA anterior NO son compatibles: hay que reensamblarlos.
+  aparte (AluOp), así las 9 caben en las 2 formas (reg y #imm) sin gastar
+  una familia por operación. 0x00 = NOP (RAM a cero = programa vacío).
+  Versión 3 (octubre 2026): salieron la ALU con memoria y los CALL con
+  condición (no los usaba ningún programa) y entraron SAR/ROL/ROR/RCL/RCR,
+  NEG, IMUL, operaciones de 16 bits, saltos con signo y MOV [mem],#imm.
+  LDA/STA se escriben MOV (mismos opcodes). Lo demás conserva su opcode.
 
 FLAGS (byte)
   bit0 C (acarreo)   bit1 Z (cero)   bit2 N (negativo, bit7)   bit3 V (overflow)
@@ -176,21 +179,26 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi;
                       Al terminar CX=0 y BX/DX avanzan (o retroceden) lo
                       copiado. 6, 7: reservados (NOP). Sin flags.
   1  LDI    LEN 2   MOV r,#imm8          [op][imm]
-  2  LDA    LEN 3   LDA r,[addr16]       [op][lo][hi]     r = mem[addr]
-  3  STA    LEN 3   STA [addr16],r       [op][lo][hi]     mem[addr] = r
-  4  LDAR   LEN 2   LDA r,[r16]          [op][r16]        r = mem[r16]
-  5  STAR   LEN 2   STA [r16],r          [op][r16]
+  2  LDA    LEN 3   MOV r,[addr16]       [op][lo][hi]     r = mem[addr]
+  3  STA    LEN 3   MOV [addr16],r       [op][lo][hi]     mem[addr] = r
+  4  LDAR   LEN 2   MOV r,[r16]          [op][r16]        r = mem[r16]
+  5  STAR   LEN 2   MOV [r16],r          [op][r16]
   6  IN     LEN 3   IN  r,(port16)       [op][lo][hi]     (ver sección 8)
   7  OUT    LEN 3   OUT (port16),r       [op][lo][hi]
   8  INR    LEN 2   IN  r,(r16)          [op][r16]
   9  OUTR   LEN 2   OUT (r16),r          [op][r16]
              El espacio de puertos es de 16 bits, independiente de la RAM.
-             LDAR/STAR/INR/OUTR son nombres internos: en ensamblador y en el
-             panel se escriben LDA/STA/IN/OUT con un par entre corchetes.
+             LDA/STA/LDAR/STAR/INR/OUTR son nombres internos (isa.h): en
+             ensamblador y en el panel se escriben MOV/IN/OUT.
   10 ALURR  LEN 2   <alu> r,src          [op][alu<<3 | src]
   11 ALUI   LEN 3   <alu> r,#imm8        [op][alu][imm]
-  12 ALUM   LEN 4   <alu> r,[addr16]     [op][alu][lo][hi]
-  13 ALUP   LEN 2   <alu> r,[r16]        [op][alu<<2 | r16]
+  12 SHX    LEN 2   <shx> r,#N (N=1..8)  [op][shx<<3 | N-1]
+                    shx: 0 SAR (derecha con signo: el bit 7 se queda)
+                         1 ROL  2 ROR (rotar: el bit que sale entra por el
+                         otro lado)  3 RCL  4 RCR (rotar a traves de C: 9
+                         bits); 5..7 libres (no hacen nada, LEN 2).
+                    C = ultimo bit que sale (o da la vuelta); Z, N; V = 0
+  13 NEG    LEN 1   NEG r                r = 0 - r, flags de esa resta
   14 NOT    LEN 1   NOT r                r = ~r (flags lógicos)
   15 SHR    LEN 2   SHR r,#N (N=1..8)    [op][N-1]   r >>= N
                     C = último bit que sale; V = bit7 de ANTES; Z, N
@@ -208,13 +216,21 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi;
   21 PUSH   LEN 1   PUSH r               sp--; mem[sp] = r
   22 POP    LEN 1   POP r                r = mem[sp]; sp++
   23 JMP    LEN 3   JMP<cc> addr16       si cond: pc = addr16 (consume 3 B)
-  24 CALL   LEN 3   CALL<cc> addr16      si cond: push(pc_hi); push(pc_lo);
-                                         pc = addr16
+  24 CALL   bajo3 = sub-op:
+                      0 CALL addr16       LEN 3   push(pc_hi); push(pc_lo);
+                                                  pc = addr16
+                      1 MOV [addr16],#imm LEN 4   [op][lo][hi][imm]
+                      4..7 MOV [r16],#imm LEN 2   [op][imm], r16 = bajo3 & 3
+                      2, 3: libres (NOP de 1 byte)
   25 JX     bajo3 = sub-op:
                       0 JMPNV addr16   LEN 3   salta si V=0
-                      1 CALLNV addr16  LEN 3
+                      1 JMPLT addr16   LEN 3   con signo: N != V
+                      4 JMPGE addr16   LEN 3   N == V
+                      5 JMPLE addr16   LEN 3   Z o N != V
+                      6 JMPGT addr16   LEN 3   no Z y N == V
                       2 JMP r16        LEN 2   [op][r16]   pc = r16
                       3 CALL r16       LEN 2   (tablas de saltos)
+                      7: libre (NOP de 1 byte)
   26 R16    LEN 2   bajo3 = sub-op, operando [dst16<<3 | src]:
                       0 MOV r16,r16    1 ADD r16,r16    2 SUB r16,r16
                       3 CMP r16,r16    (flags de la resta de 16 bits)
@@ -228,18 +244,36 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi;
                     0xFFFF<->0)
   29 PUSHPOP16 LEN 1 bajo3 = pop<<2 | r16 : PUSH r16 (primero el byte alto)
                     / POP r16
-  30, 31  libres: se ejecutan como NOP de 1 byte.
+  30 IMUL   LEN 1   IMUL r               AX = AL * r CON signo (-128..127)
+                    Z,N del resultado de 16 bits; C=V=1 si no cabe en 8
+                    bits con signo.
+  31 X16    LEN 2   bajo3 = r16 (4..7 libres, NOP de 1 byte);
+                    operando [x16<<4 | N-1]:
+                      0 SHL r16,#N  1 SHR r16,#N  2 SAR r16,#N  (N=1..16;
+                        C = ultimo bit que sale; Z; N = bit 15; V como en
+                        8 bits: SHL C != N, SHR bit 15 de antes, SAR 0)
+                      3 NEG r16     r16 = 0 - r16 (flags como CMP 16 bits)
+                      4 MUL r16     DX:AX = AX * r16 (32 bits, sin signo);
+                                    C=V=1 si DX != 0; Z; N = bit 31
+                      5 DIV r16     AX = DX:AX / r16, DX = resto (sin
+                                    signo); entre 0 o cociente > 0xFFFF:
+                                    AX=DX=0xFFFF, C=V=1
+                      6..15: libres (no hacen nada)
+                    Los operandos se leen antes de escribir: r16 puede ser
+                    AX o DX.
 
   El ensamblador elige la familia por la forma de los operandos: el mismo
-  mnemónico ADD sirve para ADD AL,BL / ADD AL,#5 / ADD AL,[x] / ADD AL,[BX]
-  / ADD BX,CL / ADD BX,DX / ADD BX,#5. Las únicas instrucciones de 4 bytes
-  son ALUM, MOV r16,#imm16 y CMP r16,#imm16.
+  mnemónico ADD sirve para ADD AL,BL / ADD AL,#5 / ADD BX,CL / ADD BX,DX /
+  ADD BX,#5; MOV para MOV AL,[x] / MOV [x],AL / MOV [BX],#5 / MOV BX,#imm16;
+  SHL para SHL AL,#3 / SHL AX,#12. Las únicas instrucciones de 4 bytes son
+  MOV r16,#imm16, CMP r16,#imm16 y MOV [addr16],#imm.
 
-CONDICIONES (bajo3 de JMP / CALL)
+CONDICIONES (bajo3 de JMP)
   0 ALWAYS   1 Z    2 NZ    3 C    4 NC    5 N    6 NN   7 V
-  NV (salta si V=0) no cabe en 3 bits: va en la familia 25 (JX).
+  NV (salta si V=0) y las de signo LT/GE/LE/GT no caben en 3 bits: van en
+  la familia 25 (JX). CALL no lleva condicion.
 
-OPERACIONES DE LA ALU (AluOp, en el byte de operando de las familias 10..13)
+OPERACIONES DE LA ALU (AluOp, en el byte de operando de las familias 10 y 11)
   0 MOV   dst = src               (NO toca flags)
   1 ADD   dst = dst + src
   2 ADC   dst = dst + src + C     (sumas de varios bytes)
@@ -249,8 +283,8 @@ OPERACIONES DE LA ALU (AluOp, en el byte de operando de las familias 10..13)
   6 AND   dst = dst & src         (flags lógicos: Z,N; C=V=0)
   7 OR    dst = dst | src
   8 XOR   dst = dst ^ src
-  Cada operación acepta las 4 formas: reg,src | reg,#imm | reg,[addr] |
-  reg,[r16].
+  Cada operación acepta las 2 formas: reg,src | reg,#imm. Con un valor en
+  memoria se carga antes en un registro (MOV r,[addr] o MOV r,[r16]).
 
   ADD frente a ADC: ADD ignora el acarreo anterior; ADC le suma C. Para
   sumar dos números de 16 bits guardados en dos bytes cada uno:
@@ -258,7 +292,7 @@ OPERACIONES DE LA ALU (AluOp, en el byte de operando de las familias 10..13)
       ADC AH,CH      ; bytes altos + ese acarreo
   SUB/SBC igual con el préstamo. Con un solo byte basta ADD/SUB.
 
-CÁLCULO DE FLAGS  (iguales en cualquiera de las 4 formas)
+CÁLCULO DE FLAGS  (iguales en las 2 formas)
   Aritmética sobre a = dst, b = fuente, cin = C (solo ADC/SBC; 0 si no):
     Z = (resultado == 0)        N = (resultado & 0x80) != 0
     SUB/SBC/CMP: C = (a - b - cin < 0)
@@ -271,10 +305,12 @@ CÁLCULO DE FLAGS  (iguales en cualquiera de las 4 formas)
   reset(): FLAGS = 0.
 
   REGLA GENERAL: tocan flags las que calculan un valor de 8 bits que el
-  programa puede querer comparar (ADD ADC SUB SBC CMP AND OR XOR NOT SHR SHL
-  MUL DIV INC8 DEC8) y los CMP de 16 bits. Las de movimiento de datos y de
-  aritmética de punteros (MOV LDA STA IN OUT PUSH POP JMP CALL RET NOP MOVB
-  MOVW MOVBR, INC/DEC/ADD/SUB de 16 bits) NO tocan los flags.
+  programa puede querer comparar (ADD ADC SUB SBC CMP AND OR XOR NOT NEG
+  SHR SHL SAR ROL ROR RCL RCR MUL IMUL DIV INC8 DEC8), los CMP de 16 bits y
+  la familia X16 (desplazar, NEG, MUL, DIV de 16 bits). Las de movimiento
+  de datos y de aritmética de punteros (MOV, tambien con memoria, IN OUT
+  PUSH POP JMP CALL RET NOP MOVB MOVW MOVBR, INC/DEC/ADD/SUB de 16 bits) NO
+  tocan los flags.
 
 
 --------------------------------------------------------------------------------
@@ -500,11 +536,12 @@ MAPA DE PUERTOS
   0x0642            PORT_SLOT_QUERY    OUT slot: lee nombre/categoría a 0x0660..; IN = 1 si ese slot tiene programa
   0x0643            PORT_CUR_SLOT      slot del que se cargó el programa en curso (IN)
   0x0650            PORT_CFG_BRIGHTNESS  brillo de pantalla 0..255 (OUT solo desde el slot 0; IN eco)
-  0x0651            PORT_CFG_SOUND_EN    salida del sonido, igual que BOOT: 1 zumbador, 0 Bluetooth, 2 silencio (OUT solo desde el slot 0)
+  0x0651            PORT_CFG_SOUND_EN    salida del sonido, igual que BOOT: 1 zumbador, 0 Bluetooth, 2 silencio (OUT desde cualquier programa)
   0x0652            PORT_CFG_SAVE        OUT: graba brillo y sonido en la flash si cambiaron (solo slot 0)
   0x0660 .. 0x066E  PORT_SLOT_INFO_BASE  categoría + nombre (14 B) del slot consultado (IN)
   0x0670            PORT_TIME_CTRL     hora real: OUT congela; IN estado (bit0 hay hora, bit1 Wi-Fi, bit2 conectando, bit3 red)
   0x0671 .. 0x067E  PORT_TIME_BASE     epoch UTC (4) + seg, min, hora, día, mes, año-2000, día semana + minutos locales desde 2020 (3)
+  0x067F            PORT_TIME_SYNC     OUT: intentar ponerse en hora ya por Wi-Fi (como mucho 1 vez/min)
   0x0700 .. 0x07FF  EEPROM            búfer de 256 B por slot (E/S); 0x0800 OUT carga / 0x0801 OUT graba
   resto            IN -> 0 ; OUT -> nada
 
@@ -816,11 +853,13 @@ CONFIGURACIÓN DEL APARATO (puertos 0x0650 / 0x0651 / 0x0652)
 
     0x0650  PORT_CFG_BRIGHTNESS  OUT: brillo 0 (más tenue) .. 255 (máximo) ->
                                   oled.contrastFromSettings(valor) al
-                                  instante, solo SET_CONTRAST -- se probaron
-                                  PRE-CHARGE/VCOMH (0xD9/0xDB) y un tramado
-                                  por software para bajar mas el brillo; los
-                                  dos se descartaron en el panel real (ver
-                                  display.cpp). Ademas reemplaza a
+                                  instante: SET_CONTRAST, y el 0 es el MODO
+                                  NOCHE (ademas PRE-CHARGE 0x11 y VCOMH 0x20,
+                                  bastante mas oscuro; VCOMH solo se cambia
+                                  con la pantalla apagada, asi que al entrar
+                                  o salir parpadea; ver display.cpp). El
+                                  atenuado automatico nunca sube por encima
+                                  del brillo elegido. Ademas reemplaza a
                                   OLED_CONTRAST_FULL como el brillo "a pleno
                                   uso" (g_screenContrast, main.cpp): el
                                   atenuado/apagado automatico por inactividad
@@ -1109,12 +1148,13 @@ BUCLE
 
   EditMem — SELECTOR DE MNEMÓNICO (include/editor.h, src/editor.cpp)
      En vez de ciclar el byte crudo (0..255), se compone la instrucción CAMPO
-     A CAMPO: verbo (uno de 30, ORDEN ALFABÉTICO: ADC ADD AND CALL CMP DEC
-     DIV HALT IN INC JMP LDA MOV MOVB MOVBR MOVW MUL NOP NOT OR OUT POP PUSH
-     RET SBC SHL SHR STA SUB XOR) -> mode, si el verbo tiene varias formas
-     (tabla kVerbs de editor.cpp; p. ej. ADD: reg,reg | reg,#imm |
-     reg,[dir] | reg,[r16] | r16,reg8 | r16,r16 | r16,#imm8 ; ver
-     docs/isa.md §1) -> operandos (condición, registro(s), inmediato,
+     A CAMPO: verbo (uno de 35, ORDEN ALFABÉTICO: ADC ADD AND CALL CMP DEC
+     DIV HALT IMUL IN INC JMP MOV MOVB MOVBR MOVW MUL NEG NOP NOT OR OUT POP
+     PUSH RCL RCR RET ROL ROR SAR SBC SHL SHR SUB XOR) -> mode, si el verbo
+     tiene varias formas (tabla kVerbs de editor.cpp; p. ej. MOV: reg,reg |
+     reg,#imm | reg,[dir] | reg,[r16] | [dir],reg | [r16],reg | [dir],#imm |
+     [r16],#imm | r16,r16 | r16,#imm16 ; ver docs/isa.md §1) -> operandos
+     (condición -- JMP: 0..7, NV, LT, GE, LE, GT --, registro(s), inmediato,
      dirección/puerto bajo y alto por separado, el par puntero PTR, el
      segundo par SRC16, o la cuenta de desplazamiento).
      ComposeState (verb, mode, reg, dst, src, cond, imm, addr16, ptr, ptr2,
@@ -1621,7 +1661,7 @@ failBlink(ms): parpadea PIN_LED para siempre (no vuelve).
   16 bits (espacio de 65536 puertos) para que el framebuffer de 1024 bytes
   quepa holgado. La RAM queda 100% para el programa.
 - El framebuffer del dispositivo (g_fb) NO está en la RAM de la CPU. Un
-  programa que quiera leer lo que ha dibujado usa IN, no LDA.
+  programa que quiera leer lo que ha dibujado usa IN, no MOV.
 - En RUN PROG la OLED se refresca cada FB_FLUSH_MS. Componer el fotograma
   es rápido; el envío por I2C (~25-30 ms) lo hace una tarea aparte
   (OledPanel::txTaskFn, display.h) mientras la CPU emulada y el sonido siguen:

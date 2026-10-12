@@ -103,10 +103,10 @@ CAM_T_DIV = 4             ; fotogramas por paso de fase de la camara (ver
 start:
     IN  AL,(P_DAT_POS)      ; siembra el LFSR con algo poco predecible
     ADD AL,#0x5D
-    STA [seed],AL
+    MOV [seed],AL
     JMPNZ init
     MOV AL,#0x5D            ; salvaguarda: un seed=0 dejaria el LFSR degenerado
-    STA [seed],AL
+    MOV [seed],AL
 
 init:
     CALL clsg
@@ -115,21 +115,21 @@ init:
     MOV CX,#0x030B
     CALL puts
     MOV AL,#0
-    STA [g_exit],AL
-    STA [cam_t],AL
-    STA [cam_div],AL
-    STA [cam_x],AL
-    STA [cam_y],AL
+    MOV [g_exit],AL
+    MOV [cam_t],AL
+    MOV [cam_div],AL
+    MOV [cam_x],AL
+    MOV [cam_y],AL
 
     ; splash breve antes de arrancar la animacion de verdad
     MOV AL,#60
-    STA [splash_cnt],AL
+    MOV [splash_cnt],AL
 splash_l:
     MOV AL,#2
     CALL frame_wait
-    LDA AL,[splash_cnt]
+    MOV AL,[splash_cnt]
     SUB AL,#1
-    STA [splash_cnt],AL
+    MOV [splash_cnt],AL
     JMPNZ splash_l
     CALL clst
 
@@ -138,22 +138,22 @@ splash_l:
     ; Z_FAR y se verian llegar de golpe, "en oleada", en vez de repartidas
     ; por todo el cielo desde el primer fotograma
     MOV AL,#0
-    STA [p_i],AL
+    MOV [p_i],AL
 init_l:
     CALL randomize_xy_speed
     CALL rnd
     AND AL,#0x7F
     ADD AL,#(Z_NEAR_MARGIN+20)
-    STA [tmp_v],AL
-    LDA CL,[p_i]
+    MOV [tmp_v],AL
+    MOV CL,[p_i]
     MOV BX,#wz
     ADD BX,CL
-    LDA AL,[tmp_v]
-    STA [BX],AL
+    MOV AL,[tmp_v]
+    MOV [BX],AL
 
-    LDA AL,[p_i]
+    MOV AL,[p_i]
     ADD AL,#1
-    STA [p_i],AL
+    MOV [p_i],AL
     CMP AL,#NPART
     JMPNZ init_l
 
@@ -162,7 +162,7 @@ init_l:
 ; ============================================================================
 main_l:
     CALL poll_exit
-    LDA AL,[g_exit]
+    MOV AL,[g_exit]
     CMP AL,#0
     JMPNZ main_x
 
@@ -170,12 +170,12 @@ main_l:
     CALL update_camera
 
     MOV AL,#0
-    STA [p_i],AL
+    MOV [p_i],AL
 part_l:
     CALL update_and_draw_particle
-    LDA AL,[p_i]
+    MOV AL,[p_i]
     ADD AL,#1
-    STA [p_i],AL
+    MOV [p_i],AL
     CMP AL,#NPART
     JMPNZ part_l
 
@@ -201,39 +201,39 @@ main_x:
 ;  llegue a la camara para empezar de nuevo).
 ; ============================================================================
 update_and_draw_particle:
-    LDA CL,[p_i]
+    MOV CL,[p_i]
     MOV BX,#wz
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_wz],AL
+    MOV AL,[BX]
+    MOV [cur_wz],AL
 
-    LDA CL,[p_i]
+    MOV CL,[p_i]
     MOV BX,#zspeed
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_speed],AL
+    MOV AL,[BX]
+    MOV [cur_speed],AL
 
     ; si avanzar la dejaria por debajo de Z_NEAR_MARGIN (o ya esta ahi),
     ; reaparece lejos esta misma vuelta en vez de arriesgarse a restar de
     ; mas (wz es sin signo: por debajo de 0 daria la vuelta a ~255, que se
     ; veria como "larguisimos lejos" en vez de "demasiado cerca")
-    LDA AL,[cur_speed]
+    MOV AL,[cur_speed]
     ADD AL,#Z_NEAR_MARGIN
-    STA [tmp_lim],AL
-    LDA AL,[cur_wz]
-    LDA BL,[tmp_lim]
+    MOV [tmp_lim],AL
+    MOV AL,[cur_wz]
+    MOV BL,[tmp_lim]
     CMP AL,BL
     JMPC uadp_respawn           ; cur_wz < cur_speed+margen -> reaparece
 
-    LDA AL,[cur_wz]
-    LDA BL,[cur_speed]
+    MOV AL,[cur_wz]
+    MOV BL,[cur_speed]
     SUB AL,BL
-    STA [cur_wz],AL
-    LDA CL,[p_i]
+    MOV [cur_wz],AL
+    MOV CL,[p_i]
     MOV BX,#wz
     ADD BX,CL
-    LDA AL,[cur_wz]
-    STA [BX],AL
+    MOV AL,[cur_wz]
+    MOV [BX],AL
     JMP uadp_project
 
 uadp_respawn:
@@ -245,76 +245,76 @@ uadp_project:
     ; restar el desplazamiento de la camara ANTES de proyectar es lo que
     ; hace que sea "la camara" la que se mueve en el 8 -- ver update_camera
     ; y la nota de cabecera.
-    LDA CL,[p_i]
+    MOV CL,[p_i]
     MOV BX,#wx
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cam_x]
+    MOV AL,[BX]
+    MOV BL,[cam_x]
     SUB AL,BL
-    STA [pa_off],AL
+    MOV [pa_off],AL
     MOV AL,#CENTER_X
-    STA [pa_center],AL
+    MOV [pa_center],AL
     MOV AL,#LIMIT_X
-    STA [pa_limit],AL
+    MOV [pa_limit],AL
     CALL proj_axis
-    LDA AL,[pa_ok]
+    MOV AL,[pa_ok]
     CMP AL,#0
     JMPZ uadp_offscreen
-    LDA AL,[pa_result]
-    STA [dp_sx],AL
+    MOV AL,[pa_result]
+    MOV [dp_sx],AL
 
     ; --- eje Y: proyecta (wy[p_i]-cam_y) contra CENTER_Y/LIMIT_Y ------------
-    LDA CL,[p_i]
+    MOV CL,[p_i]
     MOV BX,#wy
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cam_y]
+    MOV AL,[BX]
+    MOV BL,[cam_y]
     SUB AL,BL
-    STA [pa_off],AL
+    MOV [pa_off],AL
     MOV AL,#CENTER_Y
-    STA [pa_center],AL
+    MOV [pa_center],AL
     MOV AL,#LIMIT_Y
-    STA [pa_limit],AL
+    MOV [pa_limit],AL
     CALL proj_axis
-    LDA AL,[pa_ok]
+    MOV AL,[pa_ok]
     CMP AL,#0
     JMPZ uadp_offscreen
-    LDA AL,[pa_result]
-    STA [dp_sy],AL
+    MOV AL,[pa_result]
+    MOV [dp_sy],AL
 
     ; --- dibuja: punto si lejos, "V" de 3 pixeles si cerca ------------------
-    LDA AL,[cur_wz]
+    MOV AL,[cur_wz]
     CMP AL,#Z_BIG_THRESH
     JMPC uadp_big                ; cur_wz < Z_BIG_THRESH -> cerca, silueta grande
 
-    LDA AL,[dp_sx]
-    STA [px_x],AL
-    LDA AL,[dp_sy]
-    STA [px_y],AL
+    MOV AL,[dp_sx]
+    MOV [px_x],AL
+    MOV AL,[dp_sy]
+    MOV [px_y],AL
     CALL shadow_set_px
     RET
 
 uadp_big:
-    LDA AL,[dp_sx]
-    STA [px_x],AL
-    LDA AL,[dp_sy]
-    STA [px_y],AL
+    MOV AL,[dp_sx]
+    MOV [px_x],AL
+    MOV AL,[dp_sy]
+    MOV [px_y],AL
     CALL shadow_set_px           ; centro
 
-    LDA AL,[dp_sx]
+    MOV AL,[dp_sx]
     SUB AL,#2
-    STA [px_x],AL
-    LDA AL,[dp_sy]
+    MOV [px_x],AL
+    MOV AL,[dp_sy]
     SUB AL,#1
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px           ; ala izquierda (arriba)
 
-    LDA AL,[dp_sx]
+    MOV AL,[dp_sx]
     ADD AL,#2
-    STA [px_x],AL
-    LDA AL,[dp_sy]
+    MOV [px_x],AL
+    MOV AL,[dp_sy]
     SUB AL,#1
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px           ; ala derecha (arriba)
     RET
 
@@ -336,50 +336,50 @@ uadp_offscreen:
 ; ============================================================================
 proj_axis:
     MOV AL,#0
-    STA [pa_sign],AL
-    LDA AL,[pa_off]
+    MOV [pa_sign],AL
+    MOV AL,[pa_off]
     AND AL,#0x80
     JMPZ pax_pos
     MOV AL,#1
-    STA [pa_sign],AL
-    LDA AL,[pa_off]
+    MOV [pa_sign],AL
+    MOV AL,[pa_off]
     NOT AL
     ADD AL,#1
-    STA [pa_off],AL
+    MOV [pa_off],AL
 pax_pos:
-    LDA AL,[pa_off]
+    MOV AL,[pa_off]
     MOV BL,#FOCAL
     MUL BL                       ; AX = |pa_off| * FOCAL (nunca desborda 16
                                   ; bits: como mucho 127*50=6350)
-    LDA BL,[cur_wz]
+    MOV BL,[cur_wz]
     DIV BL                       ; AL = AX / cur_wz -- satura si no cupo
     JMPC pax_invalid
-    STA [pa_mag],AL
-    LDA BL,[pa_limit]
+    MOV [pa_mag],AL
+    MOV BL,[pa_limit]
     CMP AL,BL
     JMPC pax_inrange             ; pa_mag < pa_limit -> dentro de pantalla
 pax_invalid:
     MOV AL,#0
-    STA [pa_ok],AL
+    MOV [pa_ok],AL
     RET
 pax_inrange:
-    LDA AL,[pa_sign]
+    MOV AL,[pa_sign]
     CMP AL,#0
     JMPNZ pax_neg
-    LDA AL,[pa_center]
-    LDA BL,[pa_mag]
+    MOV AL,[pa_center]
+    MOV BL,[pa_mag]
     ADD AL,BL
-    STA [pa_result],AL
+    MOV [pa_result],AL
     MOV AL,#1
-    STA [pa_ok],AL
+    MOV [pa_ok],AL
     RET
 pax_neg:
-    LDA AL,[pa_center]
-    LDA BL,[pa_mag]
+    MOV AL,[pa_center]
+    MOV BL,[pa_mag]
     SUB AL,BL
-    STA [pa_result],AL
+    MOV [pa_result],AL
     MOV AL,#1
-    STA [pa_ok],AL
+    MOV [pa_ok],AL
     RET
 
 ; ============================================================================
@@ -392,32 +392,32 @@ randomize_xy_speed:
     CALL rnd
     AND AL,#0x7F
     SUB AL,#64                   ; wx: -64..63
-    STA [tmp_v],AL
-    LDA CL,[p_i]
+    MOV [tmp_v],AL
+    MOV CL,[p_i]
     MOV BX,#wx
     ADD BX,CL
-    LDA AL,[tmp_v]
-    STA [BX],AL
+    MOV AL,[tmp_v]
+    MOV [BX],AL
 
     CALL rnd
     AND AL,#0x3F
     SUB AL,#32                   ; wy: -32..31
-    STA [tmp_v],AL
-    LDA CL,[p_i]
+    MOV [tmp_v],AL
+    MOV CL,[p_i]
     MOV BX,#wy
     ADD BX,CL
-    LDA AL,[tmp_v]
-    STA [BX],AL
+    MOV AL,[tmp_v]
+    MOV [BX],AL
 
     CALL rnd
     AND AL,#3
     ADD AL,#2                    ; zspeed: 2..5
-    STA [tmp_v],AL
-    LDA CL,[p_i]
+    MOV [tmp_v],AL
+    MOV CL,[p_i]
     MOV BX,#zspeed
     ADD BX,CL
-    LDA AL,[tmp_v]
-    STA [BX],AL
+    MOV AL,[tmp_v]
+    MOV [BX],AL
     RET
 
 ; ============================================================================
@@ -429,12 +429,12 @@ respawn_far:
     CALL rnd
     AND AL,#(Z_JITTER-1)
     ADD AL,#Z_FAR
-    STA [tmp_v],AL
-    LDA CL,[p_i]
+    MOV [tmp_v],AL
+    MOV CL,[p_i]
     MOV BX,#wz
     ADD BX,CL
-    LDA AL,[tmp_v]
-    STA [BX],AL
+    MOV AL,[tmp_v]
+    MOV [BX],AL
     RET
 
 ; ============================================================================
@@ -447,33 +447,33 @@ respawn_far:
 ;  ninguna multiplicacion ni trigonometria en tiempo real.
 ; ============================================================================
 update_camera:
-    LDA AL,[cam_div]
+    MOV AL,[cam_div]
     ADD AL,#1
-    STA [cam_div],AL
+    MOV [cam_div],AL
     CMP AL,#CAM_T_DIV
     JMPNZ uc_recompute
     MOV AL,#0
-    STA [cam_div],AL
-    LDA AL,[cam_t]
+    MOV [cam_div],AL
+    MOV AL,[cam_t]
     ADD AL,#1
     AND AL,#0x3F
-    STA [cam_t],AL
+    MOV [cam_t],AL
 
 uc_recompute:
-    LDA CL,[cam_t]
+    MOV CL,[cam_t]
     MOV BX,#CAM_SINE_X
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cam_x],AL
+    MOV AL,[BX]
+    MOV [cam_x],AL
 
-    LDA AL,[cam_t]
+    MOV AL,[cam_t]
     SHL AL,#1
     AND AL,#0x3F              ; fase doble (2*cam_t mod 64) -- segundo lobulo
     MOV CL,AL
     MOV BX,#CAM_SINE_Y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cam_y],AL
+    MOV AL,[BX]
+    MOV [cam_y],AL
     RET
 
 ; ============================================================================
@@ -493,7 +493,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -540,12 +540,12 @@ rnd:
 
 ; --- rnd_raw:  un paso de LFSR de 8 bits (taps 0xB8) ------------------------
 rnd_raw:
-    LDA AL,[seed]
+    MOV AL,[seed]
     SHR AL
     JMPNC rr_n
     XOR AL,#0xB8
 rr_n:
-    STA [seed],AL
+    MOV [seed],AL
     RET
 
 ; --- frame_wait:  AL = pasos del temporizador 3 (8 ms/paso) -----------------
@@ -563,7 +563,7 @@ poll_exit:
     CMP AL,#0
     JMPZ pe_d
     MOV AL,#1
-    STA [g_exit],AL
+    MOV [g_exit],AL
 pe_d:
     RET
 
@@ -580,18 +580,18 @@ wdr_d:
 
 ; --- calc_pix:  de (px_x,px_y) saca puerto (pix_lo/pix_hi) + mascara -------
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4                    ; AL = (y&15)<<4
     MOV DL,CL
     SHR DL,#3                    ; DL = x>>3 (xbyte)
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4                    ; AL = y>>4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -602,7 +602,7 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; --- shadow_set_px:  enciende el pixel (px_x,px_y) en `shadow` (RAM), no en
@@ -610,14 +610,14 @@ cpx_d:
 shadow_set_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- clr_shadow:  pone a 0 los 1024 bytes de `shadow` -----------------------
@@ -627,7 +627,7 @@ shadow_set_px:
 ; exactamente eso lo que se aprovecha a proposito).
 clr_shadow:
     MOV AL,#0
-    STA [shadow],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
@@ -640,7 +640,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL

@@ -176,7 +176,7 @@ puts_attr:
     MOV DL,AL
     MOV DH,#0x04                ; puerto texto = 0x0400 + fila*32 + col
 pa_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ pa_d
     OUT (DX),AL                 ; celda de texto

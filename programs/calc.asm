@@ -80,37 +80,37 @@ ERR_COL   = 17      ; columna donde empieza "Err" (tambien pegado a DISP_END)
 ; ============================================================================
 start:
     MOV AL,#0
-    STA [entry0],AL
-    STA [entry1],AL
-    STA [entry2],AL
-    STA [acc0],AL
-    STA [acc1],AL
-    STA [acc2],AL
-    STA [err_flag],AL
-    STA [dsel],AL
-    STA [osel],AL
-    STA [fresh],AL
-    STA [pd4_0],AL
-    STA [pd4_1],AL
-    STA [pd4_2],AL
+    MOV [entry0],AL
+    MOV [entry1],AL
+    MOV [entry2],AL
+    MOV [acc0],AL
+    MOV [acc1],AL
+    MOV [acc2],AL
+    MOV [err_flag],AL
+    MOV [dsel],AL
+    MOV [osel],AL
+    MOV [fresh],AL
+    MOV [pd4_0],AL
+    MOV [pd4_1],AL
+    MOV [pd4_2],AL
     MOV AL,#0xFF
-    STA [pending_op],AL
+    MOV [pending_op],AL
 
     IN  AL,(P_DIR_POS)
-    STA [dir_prev],AL
+    MOV [dir_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_prev],AL
+    MOV [dat_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
 
     CALL dibuja_teclado_completo
 
     MOV AL,#0
-    STA [bi],AL
+    MOV [bi],AL
     MOV AL,#1
-    STA [box_mode],AL
+    MOV [box_mode],AL
     CALL resalta_num
     CALL resalta_op
     CALL blit
@@ -133,17 +133,17 @@ main_l:
 ; ============================================================================
 leer_datos:
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_prev],CL
     CMP AL,#0
     JMPZ ld_btn
     AND AL,#0x80
     JMPNZ ld_left
 ld_right:
-    LDA AL,[dsel]
+    MOV AL,[dsel]
     CMP AL,#9
     JMPZ ld_wraplo
     ADD AL,#1
@@ -152,7 +152,7 @@ ld_wraplo:
     MOV AL,#0
     JMP ld_apply
 ld_left:
-    LDA AL,[dsel]
+    MOV AL,[dsel]
     CMP AL,#0
     JMPZ ld_wraphi
     SUB AL,#1
@@ -160,14 +160,14 @@ ld_left:
 ld_wraphi:
     MOV AL,#9
 ld_apply:
-    STA [nuevo_dsel],AL
+    MOV [nuevo_dsel],AL
     CALL selecciona_num
 ld_btn:
     IN  AL,(P_DAT_BTN)
-    STA [tmp1],AL
-    LDA BL,[dat_btn_prev]
-    LDA CL,[tmp1]
-    STA [dat_btn_prev],CL
+    MOV [tmp1],AL
+    MOV BL,[dat_btn_prev]
+    MOV CL,[tmp1]
+    MOV [dat_btn_prev],CL
     CMP CL,#0
     JMPZ ld_d
     CMP BL,#0
@@ -179,35 +179,35 @@ ld_d:
 ; --- aplica_digito: añade [dsel] al numero que se esta tecleando (24 bits,
 ; maximo 6 digitos: si ya vale >=100000 el siguiente digito se ignora) -----
 aplica_digito:
-    LDA AL,[fresh]
+    MOV AL,[fresh]
     CMP AL,#0
     JMPZ ad_normal
     MOV AL,#0
-    STA [fresh],AL
-    LDA AL,[dsel]
-    STA [entry0],AL
+    MOV [fresh],AL
+    MOV AL,[dsel]
+    MOV [entry0],AL
     MOV AL,#0
-    STA [entry1],AL
-    STA [entry2],AL
+    MOV [entry1],AL
+    MOV [entry2],AL
     JMP ad_show
 ad_normal:
     MOV BX,#entry2
     MOV DX,#CAP5+2
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPNZ ad_ignore
     CALL mul10add_entry
 ad_show:
     MOV AL,#0
-    STA [err_flag],AL
-    LDA AL,[entry0]
-    STA [pd4_0],AL
-    LDA AL,[entry1]
-    STA [pd4_1],AL
-    LDA AL,[entry2]
-    STA [pd4_2],AL
+    MOV [err_flag],AL
+    MOV AL,[entry0]
+    MOV [pd4_0],AL
+    MOV AL,[entry1]
+    MOV [pd4_1],AL
+    MOV AL,[entry2]
+    MOV [pd4_2],AL
     CALL actualiza_display
 ad_ignore:
     RET
@@ -215,15 +215,15 @@ ad_ignore:
 ; --- mul10add_entry: entry = entry*10 + [dsel]  (24 bits: entry<<3 sumado
 ; a entry_original<<1, mas el digito -- entry ya se comprobo <100000) ------
 mul10add_entry:
-    LDA AL,[entry0]
-    STA [mx0],AL
-    LDA AL,[entry1]
-    STA [mx1],AL
-    LDA AL,[entry2]
-    STA [mx2],AL
+    MOV AL,[entry0]
+    MOV [mx0],AL
+    MOV AL,[entry1]
+    MOV [mx1],AL
+    MOV AL,[entry2]
+    MOV [mx2],AL
 
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     MOV BX,#entry0
     CALL shl_n
     MOV BX,#entry0
@@ -238,10 +238,10 @@ mul10add_entry:
     CALL add_n
 
     MOV AL,#0
-    STA [dig3_1],AL
-    STA [dig3_2],AL
-    LDA AL,[dsel]
-    STA [dig3_0],AL
+    MOV [dig3_1],AL
+    MOV [dig3_2],AL
+    MOV AL,[dsel]
+    MOV [dig3_0],AL
     MOV BX,#entry0
     MOV DX,#dig3_0
     CALL add_n
@@ -252,17 +252,17 @@ mul10add_entry:
 ; ============================================================================
 leer_direccion:
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dir_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_prev],CL
     CMP AL,#0
     JMPZ lr_btn
     AND AL,#0x80
     JMPNZ lr_left
 lr_right:
-    LDA AL,[osel]
+    MOV AL,[osel]
     CMP AL,#5
     JMPZ lr_wraplo
     ADD AL,#1
@@ -271,7 +271,7 @@ lr_wraplo:
     MOV AL,#0
     JMP lr_apply
 lr_left:
-    LDA AL,[osel]
+    MOV AL,[osel]
     CMP AL,#0
     JMPZ lr_wraphi
     SUB AL,#1
@@ -279,14 +279,14 @@ lr_left:
 lr_wraphi:
     MOV AL,#5
 lr_apply:
-    STA [nuevo_osel],AL
+    MOV [nuevo_osel],AL
     CALL selecciona_op
 lr_btn:
     IN  AL,(P_DIR_BTN)
-    STA [tmp1],AL
-    LDA BL,[dir_btn_prev]
-    LDA CL,[tmp1]
-    STA [dir_btn_prev],CL
+    MOV [tmp1],AL
+    MOV BL,[dir_btn_prev]
+    MOV CL,[tmp1]
+    MOV [dir_btn_prev],CL
     CMP CL,#0
     JMPZ lr_d
     CMP BL,#0
@@ -297,39 +297,39 @@ lr_d:
 
 ; --- aplica_operacion: [osel] (0..3=+-*/  4="="  5="C") ------------------
 aplica_operacion:
-    LDA AL,[osel]
+    MOV AL,[osel]
     CMP AL,#5
     JMPZ ao_clear
-    LDA AL,[pending_op]
+    MOV AL,[pending_op]
     CMP AL,#0xFF
     JMPZ ao_first
     CALL calcular_pendiente
     JMP ao_after
 ao_first:
-    LDA AL,[entry0]
-    STA [acc0],AL
-    LDA AL,[entry1]
-    STA [acc1],AL
-    LDA AL,[entry2]
-    STA [acc2],AL
+    MOV AL,[entry0]
+    MOV [acc0],AL
+    MOV AL,[entry1]
+    MOV [acc1],AL
+    MOV AL,[entry2]
+    MOV [acc2],AL
     MOV AL,#0
-    STA [err_flag],AL
+    MOV [err_flag],AL
 ao_after:
     CALL check_overflow
-    LDA AL,[osel]
+    MOV AL,[osel]
     CMP AL,#4
     JMPZ ao_show
-    STA [pending_op],AL
+    MOV [pending_op],AL
 ao_show:
-    LDA AL,[err_flag]
+    MOV AL,[err_flag]
     CMP AL,#0
     JMPNZ ao_reset
-    LDA AL,[acc0]
-    STA [pd4_0],AL
-    LDA AL,[acc1]
-    STA [pd4_1],AL
-    LDA AL,[acc2]
-    STA [pd4_2],AL
+    MOV AL,[acc0]
+    MOV [pd4_0],AL
+    MOV AL,[acc1]
+    MOV [pd4_1],AL
+    MOV AL,[acc2]
+    MOV [pd4_2],AL
 ao_reset:
     ; OJO: [entry] NO se pone a 0 aqui a proposito -- [fresh]=1 ya basta
     ; para que aplica_digito lo SOBRESCRIBA en cuanto se teclee el primer
@@ -340,25 +340,25 @@ ao_reset:
     ; bolsillo real). Si se pusiera a 0 aqui, cada "=" de mas multiplicaria
     ; o dividiria por 0 el resultado -- exactamente el fallo que se veia.
     MOV AL,#1
-    STA [fresh],AL
+    MOV [fresh],AL
     CALL actualiza_display
     RET
 ao_clear:
     MOV AL,#0
-    STA [entry0],AL
-    STA [entry1],AL
-    STA [entry2],AL
-    STA [acc0],AL
-    STA [acc1],AL
-    STA [acc2],AL
-    STA [err_flag],AL
-    STA [pd4_0],AL
-    STA [pd4_1],AL
-    STA [pd4_2],AL
+    MOV [entry0],AL
+    MOV [entry1],AL
+    MOV [entry2],AL
+    MOV [acc0],AL
+    MOV [acc1],AL
+    MOV [acc2],AL
+    MOV [err_flag],AL
+    MOV [pd4_0],AL
+    MOV [pd4_1],AL
+    MOV [pd4_2],AL
     MOV AL,#0xFF
-    STA [pending_op],AL
+    MOV [pending_op],AL
     MOV AL,#1
-    STA [fresh],AL
+    MOV [fresh],AL
     CALL actualiza_display
     RET
 
@@ -368,12 +368,12 @@ check_overflow:
     MOV BX,#LIMIT24+2
     MOV DX,#acc2
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPNZ ov_ok
     MOV AL,#1
-    STA [err_flag],AL
+    MOV [err_flag],AL
 ov_ok:
     RET
 
@@ -386,8 +386,8 @@ ov_ok:
 ; ============================================================================
 calcular_pendiente:
     MOV AL,#0
-    STA [err_flag],AL
-    LDA AL,[pending_op]
+    MOV [err_flag],AL
+    MOV AL,[pending_op]
     CMP AL,#0
     JMPZ cp_add
     CMP AL,#1
@@ -411,7 +411,7 @@ uadd_acc:
     MOV BX,#acc0
     MOV DX,#entry0
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL add_n
     RET
 
@@ -422,21 +422,21 @@ usub_acc:
     MOV BX,#acc2
     MOV DX,#entry2
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPZ us_neg
     MOV BX,#acc0
     MOV DX,#entry0
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL sub_n
     RET
 us_neg:
     MOV AL,#0
-    STA [acc0],AL
-    STA [acc1],AL
-    STA [acc2],AL
+    MOV [acc0],AL
+    MOV [acc1],AL
+    MOV [acc2],AL
     RET
 
 ; --- umul_acc: acc(24 bits) *= entry(24 bits). Suma y desplaza sobre un
@@ -447,49 +447,49 @@ us_neg:
 ; podria "dar la vuelta" y parecer un resultado valido por error ----------
 umul_acc:
     MOV AL,#0
-    STA [p0],AL
-    STA [p1],AL
-    STA [p2],AL
-    STA [p3],AL
-    STA [p4],AL
-    STA [p5],AL
-    LDA AL,[acc0]
-    STA [mm0],AL
-    LDA AL,[acc1]
-    STA [mm1],AL
-    LDA AL,[acc2]
-    STA [mm2],AL
+    MOV [p0],AL
+    MOV [p1],AL
+    MOV [p2],AL
+    MOV [p3],AL
+    MOV [p4],AL
+    MOV [p5],AL
+    MOV AL,[acc0]
+    MOV [mm0],AL
+    MOV AL,[acc1]
+    MOV [mm1],AL
+    MOV AL,[acc2]
+    MOV [mm2],AL
     MOV AL,#0
-    STA [mm3],AL
-    STA [mm4],AL
-    STA [mm5],AL
-    LDA AL,[entry0]
-    STA [qb0],AL
-    LDA AL,[entry1]
-    STA [qb1],AL
-    LDA AL,[entry2]
-    STA [qb2],AL
+    MOV [mm3],AL
+    MOV [mm4],AL
+    MOV [mm5],AL
+    MOV AL,[entry0]
+    MOV [qb0],AL
+    MOV AL,[entry1]
+    MOV [qb1],AL
+    MOV AL,[entry2]
+    MOV [qb2],AL
 uma_l:
-    LDA AL,[qb0]
-    LDA BL,[qb1]
+    MOV AL,[qb0]
+    MOV BL,[qb1]
     OR  AL,BL
-    LDA BL,[qb2]
+    MOV BL,[qb2]
     OR  AL,BL
     CMP AL,#0
     JMPZ uma_d
-    LDA AL,[qb0]
+    MOV AL,[qb0]
     AND AL,#1
     CMP AL,#0
     JMPZ uma_noadd
     MOV BX,#p0
     MOV DX,#mm0
     MOV AL,#6
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL add_n
 uma_noadd:
     MOV BX,#mm0
     MOV AL,#6
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL shl_n
     CALL shr_qb
     JMP uma_l
@@ -497,32 +497,32 @@ uma_d:
     MOV BX,#LIMIT48+5
     MOV DX,#p5
     MOV AL,#6
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPZ umr_over
-    LDA AL,[p0]
-    STA [acc0],AL
-    LDA AL,[p1]
-    STA [acc1],AL
-    LDA AL,[p2]
-    STA [acc2],AL
+    MOV AL,[p0]
+    MOV [acc0],AL
+    MOV AL,[p1]
+    MOV [acc1],AL
+    MOV AL,[p2]
+    MOV [acc2],AL
     RET
 umr_over:
     MOV AL,#1
-    STA [err_flag],AL
+    MOV [err_flag],AL
     RET
 
 ; --- shr_qb: [qb0..qb2] >>= 1 (24 bits, para el multiplicador de umul_acc) -
 shr_qb:
-    LDA AL,[qb2]
+    MOV AL,[qb2]
     SHR AL
-    STA [qb2],AL
+    MOV [qb2],AL
     MOV CL,#0
     JMPNC srq_1
     MOV CL,#1
 srq_1:
-    LDA AL,[qb1]
+    MOV AL,[qb1]
     SHR AL
     MOV AH,#0
     JMPNC srq_1b
@@ -532,15 +532,15 @@ srq_1b:
     JMPZ srq_1c
     OR  AL,#0x80
 srq_1c:
-    STA [qb1],AL
+    MOV [qb1],AL
     MOV CL,AH
-    LDA AL,[qb0]
+    MOV AL,[qb0]
     SHR AL
     CMP CL,#0
     JMPZ srq_2
     OR  AL,#0x80
 srq_2:
-    STA [qb0],AL
+    MOV [qb0],AL
     RET
 
 ; --- udiv_acc: acc(24 bits) /= entry(24 bits); si entry=0, err_flag=1.
@@ -566,16 +566,16 @@ srq_2:
 ;     verdad (estimar y corregir cada digito, tipo Knuth D), bastante mas
 ;     riesgo para un camino que en la practica se usa poco.
 udiv_acc:
-    LDA AL,[entry0]
-    LDA BL,[entry1]
+    MOV AL,[entry0]
+    MOV BL,[entry1]
     OR  AL,BL
-    LDA BL,[entry2]
+    MOV BL,[entry2]
     OR  AL,BL
     CMP AL,#0
     JMPZ ud_err
 
-    LDA AL,[entry1]
-    LDA BL,[entry2]
+    MOV AL,[entry1]
+    MOV BL,[entry2]
     OR  AL,BL
     CMP AL,#0
     JMPNZ ud_slow           ; divisor > 255 -> camino lento de siempre
@@ -584,54 +584,54 @@ udiv_acc:
     RET
 
 ud_slow:
-    LDA AL,[acc0]
-    STA [rd0],AL
-    LDA AL,[acc1]
-    STA [rd1],AL
-    LDA AL,[acc2]
-    STA [rd2],AL
+    MOV AL,[acc0]
+    MOV [rd0],AL
+    MOV AL,[acc1]
+    MOV [rd1],AL
+    MOV AL,[acc2]
+    MOV [rd2],AL
     MOV AL,#0
-    STA [rd3],AL
-    STA [rd4],AL
-    STA [rd5],AL
+    MOV [rd3],AL
+    MOV [rd4],AL
+    MOV [rd5],AL
     MOV AL,#24
-    STA [ud_i],AL
+    MOV [ud_i],AL
 ud_l:
     MOV BX,#rd0
     MOV AL,#6
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL shl_n
 
     MOV BX,#rd5
     MOV DX,#entry2
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPZ ud_nosub
     MOV BX,#rd3
     MOV DX,#entry0
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL sub_n
-    LDA AL,[rd0]
+    MOV AL,[rd0]
     OR  AL,#1
-    STA [rd0],AL
+    MOV [rd0],AL
 ud_nosub:
-    LDA AL,[ud_i]
+    MOV AL,[ud_i]
     SUB AL,#1
-    STA [ud_i],AL
+    MOV [ud_i],AL
     JMPNZ ud_l
-    LDA AL,[rd0]
-    STA [acc0],AL
-    LDA AL,[rd1]
-    STA [acc1],AL
-    LDA AL,[rd2]
-    STA [acc2],AL
+    MOV AL,[rd0]
+    MOV [acc0],AL
+    MOV AL,[rd1]
+    MOV [acc1],AL
+    MOV AL,[rd2]
+    MOV [acc2],AL
     RET
 ud_err:
     MOV AL,#1
-    STA [err_flag],AL
+    MOV [err_flag],AL
     RET
 
 ; --- udiv_acc_fast: acc(24 bits) /= entry0 (divisor de 1 byte, nunca 0 --
@@ -644,28 +644,28 @@ ud_err:
 ; dar un resultado mayor que el dividendo, que ya se sabe que cabe). -------
 udiv_acc_fast:
     MOV AL,#0
-    STA [ud_rem],AL
+    MOV [ud_rem],AL
 
-    LDA BL,[entry0]         ; divisor (fijo para los 3 pasos)
+    MOV BL,[entry0]         ; divisor (fijo para los 3 pasos)
 
-    LDA AH,[ud_rem]
-    LDA AL,[acc2]
+    MOV AH,[ud_rem]
+    MOV AL,[acc2]
     DIV BL
-    STA [acc2],AL
+    MOV [acc2],AL
     MOV AL,AH
-    STA [ud_rem],AL
+    MOV [ud_rem],AL
 
-    LDA AH,[ud_rem]
-    LDA AL,[acc1]
+    MOV AH,[ud_rem]
+    MOV AL,[acc1]
     DIV BL
-    STA [acc1],AL
+    MOV [acc1],AL
     MOV AL,AH
-    STA [ud_rem],AL
+    MOV [ud_rem],AL
 
-    LDA AH,[ud_rem]
-    LDA AL,[acc0]
+    MOV AH,[ud_rem]
+    MOV AL,[acc0]
     DIV BL
-    STA [acc0],AL
+    MOV [acc0],AL
     RET
 
 ; --- add_n: [BX..BX+N) += [DX..DX+N), N en [cnt_n], LSB primero (BX/DX
@@ -673,8 +673,8 @@ udiv_acc_fast:
 add_n:
     MOV CX,#0x0000
 an_l:
-    LDA AL,[BX]
-    LDA AH,[DX]
+    MOV AL,[BX]
+    MOV AH,[DX]
     ADD AL,AH
     MOV AH,#0
     JMPNC an_c1
@@ -686,12 +686,12 @@ an_c1:
     JMPNC an_c2
     MOV AH,#1
 an_c2:
-    STA [BX],AL
+    MOV [BX],AL
     MOV CL,AH
     INC BX
     INC DX
     ADD CH,#1
-    LDA AH,[cnt_n]
+    MOV AH,[cnt_n]
     CMP CH,AH
     JMPNZ an_l
     RET
@@ -701,8 +701,8 @@ an_c2:
 sub_n:
     MOV CX,#0x0000
 sn_l:
-    LDA AL,[BX]
-    LDA AH,[DX]
+    MOV AL,[BX]
+    MOV AH,[DX]
     SUB AL,AH
     MOV AH,#0
     JMPNC sn_c1
@@ -714,12 +714,12 @@ sn_c1:
     JMPNC sn_c2
     MOV AH,#1
 sn_c2:
-    STA [BX],AL
+    MOV [BX],AL
     MOV CL,AH
     INC BX
     INC DX
     ADD CH,#1
-    LDA AH,[cnt_n]
+    MOV AH,[cnt_n]
     CMP CH,AH
     JMPNZ sn_l
     RET
@@ -729,7 +729,7 @@ sn_c2:
 shl_n:
     MOV CX,#0x0000
 shn_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHL AL
     MOV AH,#0
     JMPNC shn_c1
@@ -739,11 +739,11 @@ shn_c1:
     JMPZ shn_c2
     ADD AL,#1
 shn_c2:
-    STA [BX],AL
+    MOV [BX],AL
     MOV CL,AH
     INC BX
     ADD CH,#1
-    LDA AH,[cnt_n]
+    MOV AH,[cnt_n]
     CMP CH,AH
     JMPNZ shn_l
     RET
@@ -753,17 +753,17 @@ shn_c2:
 ; cada uno al entrar, y la rutina los va retrocediendo). AL=1 si BX>=DX,
 ; AL=0 si BX<DX -----------------------------------------------------------
 cmp_n:
-    LDA AL,[cnt_n]
-    STA [cn_i],AL
+    MOV AL,[cnt_n]
+    MOV [cn_i],AL
 cn_l:
-    LDA AL,[BX]
-    LDA AH,[DX]
+    MOV AL,[BX]
+    MOV AH,[DX]
     CMP AL,AH
     JMPC cn_lt
     JMPNZ cn_ge
-    LDA AL,[cn_i]
+    MOV AL,[cn_i]
     SUB AL,#1
-    STA [cn_i],AL
+    MOV [cn_i],AL
     JMPZ cn_ge
     DEC BX
     DEC DX
@@ -788,25 +788,25 @@ dibuja_teclado_completo:
     CALL clst
 
     MOV AL,#1
-    STA [box_mode],AL
+    MOV [box_mode],AL
 
     MOV AL,#0
-    STA [bi],AL
+    MOV [bi],AL
 dtc_op_l:
     CALL dibuja_boton_op
-    LDA AL,[bi]
+    MOV AL,[bi]
     ADD AL,#1
-    STA [bi],AL
+    MOV [bi],AL
     CMP AL,#6
     JMPNZ dtc_op_l
 
     MOV AL,#0
-    STA [bi],AL
+    MOV [bi],AL
 dtc_num_l:
     CALL dibuja_boton_num
-    LDA AL,[bi]
+    MOV AL,[bi]
     ADD AL,#1
-    STA [bi],AL
+    MOV [bi],AL
     CMP AL,#10
     JMPNZ dtc_num_l
 
@@ -815,92 +815,92 @@ dtc_num_l:
 
 ; --- dibuja_boton_num: contorno + digito del boton [bi] (btn_pos) --------
 dibuja_boton_num:
-    LDA CL,[bi]
+    MOV CL,[bi]
     SHL CL
     MOV BX,#btn_pos
     ADD BX,CL
-    LDA AL,[BX]
-    STA [bx_x0],AL
+    MOV AL,[BX]
+    MOV [bx_x0],AL
     INC BX
-    LDA AL,[BX]
-    STA [bx_y0],AL
-    LDA AL,[bx_x0]
+    MOV AL,[BX]
+    MOV [bx_y0],AL
+    MOV AL,[bx_x0]
     ADD AL,#KEY_W
-    STA [bx_x1],AL
-    LDA AL,[bx_y0]
+    MOV [bx_x1],AL
+    MOV AL,[bx_y0]
     ADD AL,#KEY_H
-    STA [bx_y1],AL
+    MOV [bx_y1],AL
     CALL draw_box
 
-    LDA CL,[bi]
+    MOV CL,[bi]
     SHL CL
     MOV BX,#btn_txtpos
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tcol],AL
+    MOV AL,[BX]
+    MOV [tcol],AL
     INC BX
-    LDA AL,[BX]
-    STA [trow],AL
+    MOV AL,[BX]
+    MOV [trow],AL
 
-    LDA AL,[bi]
+    MOV AL,[bi]
     ADD AL,#0x30
-    LDA CL,[tcol]
-    LDA CH,[trow]
+    MOV CL,[tcol]
+    MOV CH,[trow]
     CALL putc_at
     RET
 
 ; --- dibuja_boton_op: contorno + simbolo del boton [bi] (op_pos) ---------
 dibuja_boton_op:
-    LDA CL,[bi]
+    MOV CL,[bi]
     SHL CL
     MOV BX,#op_pos
     ADD BX,CL
-    LDA AL,[BX]
-    STA [bx_x0],AL
+    MOV AL,[BX]
+    MOV [bx_x0],AL
     INC BX
-    LDA AL,[BX]
-    STA [bx_y0],AL
-    LDA AL,[bx_x0]
+    MOV AL,[BX]
+    MOV [bx_y0],AL
+    MOV AL,[bx_x0]
     ADD AL,#KEY_W_OP
-    STA [bx_x1],AL
-    LDA AL,[bx_y0]
+    MOV [bx_x1],AL
+    MOV AL,[bx_y0]
     ADD AL,#KEY_H_OP
-    STA [bx_y1],AL
+    MOV [bx_y1],AL
     CALL draw_box
 
-    LDA CL,[bi]
+    MOV CL,[bi]
     SHL CL
     MOV BX,#op_txtpos
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tcol],AL
+    MOV AL,[BX]
+    MOV [tcol],AL
     INC BX
-    LDA AL,[BX]
-    STA [trow],AL
+    MOV AL,[BX]
+    MOV [trow],AL
 
-    LDA CL,[bi]
+    MOV CL,[bi]
     MOV BX,#op_syms
     ADD BX,CL
-    LDA AL,[BX]
-    LDA CL,[tcol]
-    LDA CH,[trow]
+    MOV AL,[BX]
+    MOV CL,[tcol]
+    MOV CH,[trow]
     CALL putc_at
     RET
 
 ; --- selecciona_num: dsel -> [nuevo_dsel]; apaga el resaltado viejo,
 ; enciende el nuevo -- NUNCA redibuja el contorno/digito ------------------
 selecciona_num:
-    LDA AL,[dsel]
-    STA [bi],AL
+    MOV AL,[dsel]
+    MOV [bi],AL
     MOV AL,#0
-    STA [box_mode],AL
+    MOV [box_mode],AL
     CALL resalta_num
 
-    LDA AL,[nuevo_dsel]
-    STA [dsel],AL
-    STA [bi],AL
+    MOV AL,[nuevo_dsel]
+    MOV [dsel],AL
+    MOV [bi],AL
     MOV AL,#1
-    STA [box_mode],AL
+    MOV [box_mode],AL
     CALL resalta_num
 
     CALL blit
@@ -908,17 +908,17 @@ selecciona_num:
 
 ; --- selecciona_op: igual que selecciona_num, para osel/op_pos -----------
 selecciona_op:
-    LDA AL,[osel]
-    STA [bi],AL
+    MOV AL,[osel]
+    MOV [bi],AL
     MOV AL,#0
-    STA [box_mode],AL
+    MOV [box_mode],AL
     CALL resalta_op
 
-    LDA AL,[nuevo_osel]
-    STA [osel],AL
-    STA [bi],AL
+    MOV AL,[nuevo_osel]
+    MOV [osel],AL
+    MOV [bi],AL
     MOV AL,#1
-    STA [box_mode],AL
+    MOV [box_mode],AL
     CALL resalta_op
 
     CALL blit
@@ -927,55 +927,55 @@ selecciona_op:
 ; --- resalta_num: dibuja (segun [box_mode]) el marco interior del boton
 ; de numero [bi] -----------------------------------------------------------
 resalta_num:
-    LDA CL,[bi]
+    MOV CL,[bi]
     SHL CL
     MOV BX,#btn_pos
     ADD BX,CL
-    LDA AL,[BX]
-    STA [bx_x0],AL
+    MOV AL,[BX]
+    MOV [bx_x0],AL
     INC BX
-    LDA AL,[BX]
-    STA [bx_y0],AL
+    MOV AL,[BX]
+    MOV [bx_y0],AL
 
-    LDA AL,[bx_x0]
+    MOV AL,[bx_x0]
     ADD AL,#3
-    STA [bx_x0],AL
-    LDA AL,[bx_y0]
+    MOV [bx_x0],AL
+    MOV AL,[bx_y0]
     ADD AL,#3
-    STA [bx_y0],AL
-    LDA AL,[bx_x0]
+    MOV [bx_y0],AL
+    MOV AL,[bx_x0]
     ADD AL,#17
-    STA [bx_x1],AL
-    LDA AL,[bx_y0]
+    MOV [bx_x1],AL
+    MOV AL,[bx_y0]
     ADD AL,#9
-    STA [bx_y1],AL
+    MOV [bx_y1],AL
     CALL draw_box
     RET
 
 ; --- resalta_op: igual que resalta_num, para op_pos ----------------------
 resalta_op:
-    LDA CL,[bi]
+    MOV CL,[bi]
     SHL CL
     MOV BX,#op_pos
     ADD BX,CL
-    LDA AL,[BX]
-    STA [bx_x0],AL
+    MOV AL,[BX]
+    MOV [bx_x0],AL
     INC BX
-    LDA AL,[BX]
-    STA [bx_y0],AL
+    MOV AL,[BX]
+    MOV [bx_y0],AL
 
-    LDA AL,[bx_x0]
+    MOV AL,[bx_x0]
     ADD AL,#3
-    STA [bx_x0],AL
-    LDA AL,[bx_y0]
+    MOV [bx_x0],AL
+    MOV AL,[bx_y0]
     ADD AL,#3
-    STA [bx_y0],AL
-    LDA AL,[bx_x0]
+    MOV [bx_y0],AL
+    MOV AL,[bx_x0]
     ADD AL,#13
-    STA [bx_x1],AL
-    LDA AL,[bx_y0]
+    MOV [bx_x1],AL
+    MOV AL,[bx_y0]
     ADD AL,#9
-    STA [bx_y1],AL
+    MOV [bx_y1],AL
     CALL draw_box
     RET
 
@@ -997,7 +997,7 @@ adp_clr:
     CMP CL,#21
     JMPNZ adp_clr
 
-    LDA AL,[err_flag]
+    MOV AL,[err_flag]
     CMP AL,#0
     JMPZ adp_num
     MOV AL,#0x45
@@ -1017,13 +1017,13 @@ adp_num:
 
 ; --- putc_at: AL=caracter, CL=columna, CH=fila --------------------------
 putc_at:
-    STA [pc_ch],AL
+    MOV [pc_ch],AL
     MOV AL,CH
     SHL AL,#5
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
-    LDA AL,[pc_ch]
+    MOV AL,[pc_ch]
     OUT (DX),AL
     RET
 
@@ -1040,91 +1040,91 @@ put_dec6:
     MOV AL,CH
     SHL AL,#5
     ADD AL,CL
-    STA [pd6_dl],AL
+    MOV [pd6_dl],AL
     MOV AL,#4
-    STA [pd6_dh],AL
+    MOV [pd6_dh],AL
 
     MOV AL,#0
-    STA [pd4_started],AL
+    MOV [pd4_started],AL
 
     MOV AL,#0
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     MOV AL,#0xA0
-    STA [k0],AL
+    MOV [k0],AL
     MOV AL,#0x86
-    STA [k1],AL
+    MOV [k1],AL
     MOV AL,#0x01
-    STA [k2],AL
+    MOV [k2],AL
 pd6_p5_l:
     CALL try_digit_place
     CMP AL,#0
     JMPZ pd6_p5_d
-    LDA AL,[pd4_dig]
+    MOV AL,[pd4_dig]
     ADD AL,#1
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     JMP pd6_p5_l
 pd6_p5_d:
     CALL pd6_emit_digit
 
     MOV AL,#0
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     MOV AL,#0x10
-    STA [k0],AL
+    MOV [k0],AL
     MOV AL,#0x27
-    STA [k1],AL
+    MOV [k1],AL
     MOV AL,#0
-    STA [k2],AL
+    MOV [k2],AL
 pd6_p4_l:
     CALL try_digit_place
     CMP AL,#0
     JMPZ pd6_p4_d
-    LDA AL,[pd4_dig]
+    MOV AL,[pd4_dig]
     ADD AL,#1
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     JMP pd6_p4_l
 pd6_p4_d:
     CALL pd6_emit_digit
 
     MOV AL,#0
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     MOV AL,#0xE8
-    STA [k0],AL
+    MOV [k0],AL
     MOV AL,#0x03
-    STA [k1],AL
+    MOV [k1],AL
     MOV AL,#0
-    STA [k2],AL
+    MOV [k2],AL
 pd6_p3_l:
     CALL try_digit_place
     CMP AL,#0
     JMPZ pd6_p3_d
-    LDA AL,[pd4_dig]
+    MOV AL,[pd4_dig]
     ADD AL,#1
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     JMP pd6_p3_l
 pd6_p3_d:
     CALL pd6_emit_digit
 
     MOV AL,#0
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     MOV AL,#100
-    STA [k0],AL
+    MOV [k0],AL
     MOV AL,#0
-    STA [k1],AL
-    STA [k2],AL
+    MOV [k1],AL
+    MOV [k2],AL
 pd6_p2_l:
     CALL try_digit_place
     CMP AL,#0
     JMPZ pd6_p2_d
-    LDA AL,[pd4_dig]
+    MOV AL,[pd4_dig]
     ADD AL,#1
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     JMP pd6_p2_l
 pd6_p2_d:
     CALL pd6_emit_digit
 
     ; lo que queda en [pd4_0] es < 100 (pd4_1=pd4_2=0 seguro) -- decenas y
     ; unidades igual que en la version de 4 digitos anterior
-    LDA AL,[pd4_0]
+    MOV AL,[pd4_0]
     PUSH AH
     MOV AH,#0
     MOV BL,#10
@@ -1133,17 +1133,17 @@ pd6_p2_d:
     MOV AL,AH
     POP AH
 pd6_t_d:
-    STA [pd4_ones],AL
+    MOV [pd4_ones],AL
     MOV AL,BL
-    STA [pd4_dig],AL
+    MOV [pd4_dig],AL
     CALL pd6_emit_digit
 
     ; unidades: SIEMPRE se imprime, sin supresion de ceros
-    LDA AL,[pd6_dl]
+    MOV AL,[pd6_dl]
     MOV DL,AL
-    LDA AL,[pd6_dh]
+    MOV AL,[pd6_dh]
     MOV DH,AL
-    LDA AL,[pd4_ones]
+    MOV AL,[pd4_ones]
     ADD AL,#0x30
     OUT (DX),AL
     RET
@@ -1152,32 +1152,32 @@ pd6_t_d:
 ; espacio en blanco si es 0 y [pd4_started] sigue a 0 (cero a la
 ; izquierda); avanza el cursor una columna ---------------------------------
 pd6_emit_digit:
-    LDA AL,[pd6_dl]
+    MOV AL,[pd6_dl]
     MOV DL,AL
-    LDA AL,[pd6_dh]
+    MOV AL,[pd6_dh]
     MOV DH,AL
-    LDA AL,[pd4_dig]
+    MOV AL,[pd4_dig]
     CMP AL,#0
     JMPNZ ped_digit
-    LDA BL,[pd4_started]
+    MOV BL,[pd4_started]
     CMP BL,#0
     JMPNZ ped_digit
     MOV AL,#0x20
     JMP ped_put
 ped_digit:
     MOV BL,#1
-    STA [pd4_started],BL
-    LDA AL,[pd4_dig]
+    MOV [pd4_started],BL
+    MOV AL,[pd4_dig]
     ADD AL,#0x30
 ped_put:
     OUT (DX),AL
-    LDA AL,[pd6_dl]
+    MOV AL,[pd6_dl]
     ADD AL,#1
-    STA [pd6_dl],AL
+    MOV [pd6_dl],AL
     JMPNC ped_dhok
-    LDA AL,[pd6_dh]
+    MOV AL,[pd6_dh]
     ADD AL,#1
-    STA [pd6_dh],AL
+    MOV [pd6_dh],AL
 ped_dhok:
     RET
 
@@ -1188,14 +1188,14 @@ try_digit_place:
     MOV BX,#pd4_2
     MOV DX,#k2
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL cmp_n
     CMP AL,#0
     JMPZ tdp_no
     MOV BX,#pd4_0
     MOV DX,#k0
     MOV AL,#3
-    STA [cnt_n],AL
+    MOV [cnt_n],AL
     CALL sub_n
     MOV AL,#1
     RET
@@ -1209,40 +1209,40 @@ tdp_no:
 ;  sirven tanto para dibujar el contorno fijo como para el resaltado.
 ; ============================================================================
 draw_box:
-    LDA AL,[bx_y0]
-    STA [ln_y],AL
-    LDA AL,[bx_x0]
-    STA [ln_x0],AL
-    LDA AL,[bx_x1]
-    STA [ln_x1],AL
+    MOV AL,[bx_y0]
+    MOV [ln_y],AL
+    MOV AL,[bx_x0]
+    MOV [ln_x0],AL
+    MOV AL,[bx_x1]
+    MOV [ln_x1],AL
     CALL hline_on
 
-    LDA AL,[bx_y1]
-    STA [ln_y],AL
+    MOV AL,[bx_y1]
+    MOV [ln_y],AL
     CALL hline_on
 
-    LDA AL,[bx_x0]
-    STA [ln_x0],AL
-    LDA AL,[bx_y0]
-    STA [ln_y0],AL
-    LDA AL,[bx_y1]
-    STA [ln_y1],AL
+    MOV AL,[bx_x0]
+    MOV [ln_x0],AL
+    MOV AL,[bx_y0]
+    MOV [ln_y0],AL
+    MOV AL,[bx_y1]
+    MOV [ln_y1],AL
     CALL vline_on
 
-    LDA AL,[bx_x1]
-    STA [ln_x0],AL
+    MOV AL,[bx_x1]
+    MOV [ln_x0],AL
     CALL vline_on
     RET
 
 hline_on:
-    LDA AL,[ln_x0]
-    STA [px_cur],AL
+    MOV AL,[ln_x0]
+    MOV [px_cur],AL
 hl_l:
-    LDA AL,[px_cur]
-    STA [px_x],AL
-    LDA AL,[ln_y]
-    STA [px_y],AL
-    LDA AL,[box_mode]
+    MOV AL,[px_cur]
+    MOV [px_x],AL
+    MOV AL,[ln_y]
+    MOV [px_y],AL
+    MOV AL,[box_mode]
     CMP AL,#0
     JMPZ hl_off
     CALL shadow_set_px
@@ -1250,26 +1250,26 @@ hl_l:
 hl_off:
     CALL shadow_clr_px
 hl_cont:
-    LDA AL,[px_cur]
-    LDA BL,[ln_x1]
+    MOV AL,[px_cur]
+    MOV BL,[ln_x1]
     CMP AL,BL
     JMPZ hl_d
-    LDA AL,[px_cur]
+    MOV AL,[px_cur]
     ADD AL,#1
-    STA [px_cur],AL
+    MOV [px_cur],AL
     JMP hl_l
 hl_d:
     RET
 
 vline_on:
-    LDA AL,[ln_y0]
-    STA [px_cur],AL
+    MOV AL,[ln_y0]
+    MOV [px_cur],AL
 vl_l:
-    LDA AL,[ln_x0]
-    STA [px_x],AL
-    LDA AL,[px_cur]
-    STA [px_y],AL
-    LDA AL,[box_mode]
+    MOV AL,[ln_x0]
+    MOV [px_x],AL
+    MOV AL,[px_cur]
+    MOV [px_y],AL
+    MOV AL,[box_mode]
     CMP AL,#0
     JMPZ vl_off
     CALL shadow_set_px
@@ -1277,13 +1277,13 @@ vl_l:
 vl_off:
     CALL shadow_clr_px
 vl_cont:
-    LDA AL,[px_cur]
-    LDA BL,[ln_y1]
+    MOV AL,[px_cur]
+    MOV BL,[ln_y1]
     CMP AL,BL
     JMPZ vl_d
-    LDA AL,[px_cur]
+    MOV AL,[px_cur]
     ADD AL,#1
-    STA [px_cur],AL
+    MOV [px_cur],AL
     JMP vl_l
 vl_d:
     RET
@@ -1298,18 +1298,18 @@ idx_ptr:
     RET
 
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -1320,34 +1320,34 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 shadow_set_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 shadow_clr_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     NOT DL
     AND AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; clr_shadow: antes un bucle de 1024 pasadas (STA+acarreo+cuenta), ahora
@@ -1359,7 +1359,7 @@ shadow_clr_px:
 ; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
     MOV AL,#0
-    STA [shadow],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
@@ -1371,7 +1371,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL

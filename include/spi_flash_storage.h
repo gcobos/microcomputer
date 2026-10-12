@@ -33,8 +33,25 @@ public:
 
     // Diagnóstico: JEDEC ID. Para el 25Q32FVSIG: 0xEF, 0x40, 0x16.
     void readJedecId(uint8_t* manufacturer, uint8_t* memType, uint8_t* capacity);
+    // Diagnóstico (COMPI FLASHTEST <slot> [us]): SOLO en un slot libre (si el
+    // primer byte es la marca de usado, o el chip no contesta, no toca nada).
+    // Borra su primer sector, graba 16 bytes y los relee; cuenta en 'out'
+    // cuánto tardó cada paso (un borrado de verdad tarda ~45-90 ms) y qué se
+    // leyó. Así se vio, el 2026-10-12, que la flash se apagaba al borrar
+    // (la esquina de la OLED grande tocaba el IN+ del cargador): el borrado
+    // "acababa" en 1-2 ms y luego el chip no contestaba.
+    bool writeTest(int slot, uint32_t wakeUs, char* out, size_t outLen);
+    // Diagnóstico (COMPI FLASHSR): JEDEC ID, registros de estado 1, 2 y 3
+    // (05/35/15) y el 1 justo después de WRITE ENABLE (bit 1 = WEL: el chip la
+    // aceptó). No escribe nada: termina con WRITE DISABLE (0x04).
+    void readStatus(uint8_t* mf, uint8_t* type, uint8_t* cap, uint8_t* sr1, uint8_t* sr2, uint8_t* sr3, uint8_t* sr1AfterWel);
 
 private:
+    // relee [addr, addr+len) y lo compara con data (o con 0xFF si data es
+    // nullptr: borrado). Toda escritura termina así: la flash no avisa si un
+    // borrado o una grabación no llegaron a hacerse (p. ej. por tensión baja).
+    bool verify(uint32_t addr, const uint8_t* data, uint32_t len);
+
     // Deep power-down (comando 0xB9): baja el consumo en reposo de ~15 µA a
     // ~1 µA. El chip solo se despierta (0xAB) para leer/escribir un slot, cosa
     // rara. wake()/sleep() llevan un contador de anidamiento para que las
@@ -78,7 +95,7 @@ private:
     void writeBytes(uint32_t addr, const uint8_t* data, uint32_t len);
     void readBytes(uint32_t addr, uint8_t* buffer, uint32_t len);
     void sendAddress24(uint32_t addr);
-    void patchSector(uint32_t addr, const uint8_t* src, uint32_t len);
+    bool patchSector(uint32_t addr, const uint8_t* src, uint32_t len);   // con verify()
 
     uint32_t slotAddr(int slot) const { return (uint32_t)slot * SLOT_STRIDE; }
     bool validSlot(int slot) const { return slot >= 0 && (size_t)slot < MAX_PROGRAM_SLOTS; }

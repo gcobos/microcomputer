@@ -86,7 +86,9 @@
 ;               Para todas las canciones (se conserva al reenviar).
 ;     NEW SONG  DATOS LARGA (no un clic, para no perder la cancion sin
 ;               querer): vacia la cancion y vuelve a EDIT.
-;     S01..S32  titulo = las 3 primeras notas + la longitud. La accion es
+;     S01..S32  titulo = las 3 primeras notas + la longitud; la que se
+;               cargo (o donde se guardo) la ultima, con "<" a la derecha
+;               (al abrir el programa, ninguna; NEW SONG y DEL la quitan). La accion es
 ;               LOAD; DIRECCION gira la cambia (LOAD -> SAVE -> DEL, se ve en
 ;               la fila de estado; solo sobre una cancion). Al cambiar de fila
 ;               o tras hacerla, vuelve a LOAD. LOAD vuelve solo a EDIT, con
@@ -235,37 +237,39 @@ DOT_BY  = 46             ; punto en tecla negra (3x3, apagado sobre la negra)
 ; ============================================================================
 start:
     MOV AL,#0
-    STA [mode],AL
-    STA [rpos_lo],AL
-    STA [rpos_hi],AL
-    STA [btn_down],AL
-    STA [files_sel],AL
-    STA [files_top],AL
-    STA [files_act],AL
-    STA [play_state],AL
-    STA [abtn_down],AL
-    STA [rec],AL
-    STA [chord],AL
+    MOV [mode],AL
+    MOV [rpos_lo],AL
+    MOV [rpos_hi],AL
+    MOV [btn_down],AL
+    MOV [files_sel],AL
+    MOV [files_top],AL
+    MOV [files_act],AL
+    MOV [play_state],AL
+    MOV [abtn_down],AL
+    MOV [rec],AL
+    MOV [chord],AL
+    MOV AL,#0xFF
+    MOV [cur_file],AL        ; ninguna cancion cargada
     MOV AL,#24               ; empieza en DO5, con el teclado en DO4..DO6
-    STA [cur_note],AL
+    MOV [cur_note],AL
     MOV AL,#12
-    STA [kb_base],AL
+    MOV [kb_base],AL
     CALL convert_all         ; canciones del formato anterior, si las hay
     ; la cancion de trabajo empieza vacia (como tras NEW SONG): SAVE/DEL
     ; graban la RAM entera, y si no se abriria con la que hubiera entonces
     MOV AL,#0
-    STA [len_lo],AL
-    STA [len_hi],AL
+    MOV [len_lo],AL
+    MOV [len_hi],AL
     MOV BX,#0
     CALL rpos_set
-    LDA AL,[work_instr]
+    MOV AL,[work_instr]
     CALL instr_set
     CALL tempo_get           ; (las de antes del TEMPO: 0 -> 120)
-    STA [work_tempo],AL
+    MOV [work_tempo],AL
     IN  AL,(P_DIR_POS)
-    STA [dir_prev],AL
+    MOV [dir_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_prev],AL
+    MOV [dat_prev],AL
     MOV AL,#0
     OUT (P_SND_DUR),AL       ; notas sostenidas (la duracion es "pegajosa")
     CALL redraw_all
@@ -282,10 +286,10 @@ main_l:
     ; de cada nota se atienden en cuanto pasan (con la espera de 8 ms, cada
     ; nota se medía o arrancaba hasta 8 ms tarde, y en la reproduccion ese
     ; retraso se acumulaba nota a nota)
-    LDA AL,[play_state]
+    MOV AL,[play_state]
     CMP AL,#0
     JMPNZ main_l
-    LDA AL,[rec]
+    MOV AL,[rec]
     CMP AL,#0
     JMPNZ main_l
     MOV AL,#1
@@ -312,33 +316,36 @@ lv_ok:
 
 ; --- len_zero: Z=1 si la cancion de trabajo esta vacia ---------------------
 len_zero:
-    LDA AL,[len_lo]
-    OR  AL,[len_hi]
+    MOV AL,[len_lo]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[len_hi]
+    OR  AL,CL
+    POP CL
     RET
 
 ; --- rpos_lt_len: C=1 si [rpos] < longitud (hay nota en esa posicion) ----
 rpos_lt_len:
-    LDA BL,[rpos_lo]
-    LDA BH,[rpos_hi]
-    LDA DL,[len_lo]
-    LDA DH,[len_hi]
+    MOV BL,[rpos_lo]
+    MOV BH,[rpos_hi]
+    MOV DL,[len_lo]
+    MOV DH,[len_hi]
     CMP BX,DX                ; CMP de 16 bits (ISA 2): C = rpos < longitud
     RET
 
 ; --- rpos_set: BX -> [rpos] ------------------------------------------------
 rpos_set:
-    STA [rpos_lo],BL
-    STA [rpos_hi],BH
+    MOV [rpos_lo],BL
+    MOV [rpos_hi],BH
     RET
 
 ; --- rpos_get / len_get: [rpos] / longitud -> BX --------------------------
 rpos_get:
-    LDA BL,[rpos_lo]
-    LDA BH,[rpos_hi]
+    MOV BL,[rpos_lo]
+    MOV BH,[rpos_hi]
     RET
 len_get:
-    LDA BL,[len_lo]
-    LDA BH,[len_hi]
+    MOV BL,[len_lo]
+    MOV BH,[len_hi]
     RET
 
 ; --- put_n16: BX (0..999) en 3 cifras en CH/CL; avanza CL ----------------
@@ -371,40 +378,46 @@ note_ptr:
 ; --- note_unpack: BX = entrada -> [un_note], [un_dur_lo/hi] (duracion en
 ; pasos de 4 ms, 10 bits) ---------------------------------------------------
 note_unpack:
-    LDA AL,[BX]
+    MOV AL,[BX]
     MOV CL,AL
     AND AL,#0x3F
-    STA [un_note],AL
+    MOV [un_note],AL
     MOV AL,CL
     SHR AL,#6
-    STA [un_dur_lo],AL       ; bits 0-1
+    MOV [un_dur_lo],AL       ; bits 0-1
     INC BX
-    LDA AL,[BX]
+    MOV AL,[BX]
     MOV CL,AL
     SHL AL,#2
-    OR  AL,[un_dur_lo]
-    STA [un_dur_lo],AL       ; + bits 2-7
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[un_dur_lo]
+    OR  AL,CL
+    POP CL
+    MOV [un_dur_lo],AL       ; + bits 2-7
     MOV AL,CL
     SHR AL,#6
-    STA [un_dur_hi],AL       ; bits 8-9
+    MOV [un_dur_hi],AL       ; bits 8-9
     RET
 
 ; --- note_pack: [un_note], [un_dur_lo/hi] -> entrada BX --------------------
 note_pack:
-    LDA AL,[un_dur_lo]
+    MOV AL,[un_dur_lo]
     AND AL,#0x03
     SHL AL,#6
-    OR  AL,[un_note]
-    STA [BX],AL
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[un_note]
+    OR  AL,CL
+    POP CL
+    MOV [BX],AL
     INC BX
-    LDA AL,[un_dur_lo]
+    MOV AL,[un_dur_lo]
     SHR AL,#2
     MOV CL,AL
-    LDA AL,[un_dur_hi]
+    MOV AL,[un_dur_hi]
     AND AL,#0x03
     SHL AL,#6
     OR  AL,CL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- ms_to_units: BX = ms -> BX = duracion guardada (10 bits, 1..1023),
@@ -482,8 +495,8 @@ utm_ret:
 
 ; --- dur_ms: la duracion de [un_dur_lo/hi] -> BX, en ms ------------------
 dur_ms:
-    LDA BL,[un_dur_lo]
-    LDA BH,[un_dur_hi]
+    MOV BL,[un_dur_lo]
+    MOV BH,[un_dur_hi]
     JMP units_to_ms
 
 ; --- meas_arm / meas_read: cronometro de la grabacion y la reproduccion.
@@ -502,8 +515,8 @@ dur_ms:
 ; por si el bucle se parase). Usan AX, BX, CX (y meas_tick, DX). -----------
 meas_arm:
     MOV AL,#0
-    STA [ms_base_lo],AL
-    STA [ms_base_hi],AL
+    MOV [ms_base_lo],AL
+    MOV [ms_base_hi],AL
 meas_rearm:
     MOV AL,#255
     OUT (P_T1),AL
@@ -513,8 +526,8 @@ meas_rearm:
     RET
 meas_read:
     CALL meas_raw
-    LDA CL,[ms_base_lo]
-    LDA CH,[ms_base_hi]
+    MOV CL,[ms_base_lo]
+    MOV CH,[ms_base_hi]
     ADD BX,CX
     RET
 meas_tick:
@@ -523,11 +536,11 @@ meas_tick:
     CMP BX,DX
     JMPC mt_ret
     SUB BX,CL                ; sin el medio paso: se pasa justo al cambiar
-    LDA CL,[ms_base_lo]       ; de paso, asi que lo medido es lo entero
-    LDA CH,[ms_base_hi]
+    MOV CL,[ms_base_lo]       ; de paso, asi que lo medido es lo entero
+    MOV CH,[ms_base_hi]
     ADD BX,CX
-    STA [ms_base_lo],BL
-    STA [ms_base_hi],BH
+    MOV [ms_base_lo],BL
+    MOV [ms_base_hi],BH
     JMP meas_rearm
 mt_ret:
     RET
@@ -582,14 +595,14 @@ poll_chord:
     JMPZ pc_one_up
     CMP BL,#0
     JMPZ pc_ret              ; solo DATOS
-    LDA AL,[chord]
+    MOV AL,[chord]
     CMP AL,#0
     JMPNZ pc_ret             ; ya se hizo en esta pulsacion
     MOV AL,#1
-    STA [chord],AL
-    STA [abtn_long],AL
-    STA [long_done],AL
-    LDA AL,[mode]
+    MOV [chord],AL
+    MOV [abtn_long],AL
+    MOV [long_done],AL
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ pc_edit
     MOV AL,#MODE_FILES
@@ -603,7 +616,7 @@ pc_one_up:
     CMP BL,#0
     JMPNZ pc_ret
     MOV AL,#0                ; los dos sueltos
-    STA [chord],AL
+    MOV [chord],AL
 pc_ret:
     RET
 
@@ -612,18 +625,18 @@ pc_ret:
 ; vuelve a EDIT. En REC, corta o larga, vuelve a EDIT ----------------------
 poll_addr_btn:
     IN  AL,(P_DIR_BTN)
-    LDA BL,[abtn_down]
+    MOV BL,[abtn_down]
     CMP AL,#0
     JMPZ pab_up
     CMP BL,#0
     JMPNZ pab_held
     MOV AL,#1                ; flanco de bajada
-    STA [abtn_down],AL
+    MOV [abtn_down],AL
     MOV AL,#HOLD_STEP
     OUT (P_T5),AL
-    LDA AL,[chord]           ; con los dos botones, esta no cuenta
-    STA [abtn_long],AL
-    LDA AL,[rh_timing]       ; REC: la nota que suena acaba AL PULSAR (no al
+    MOV AL,[chord]           ; con los dos botones, esta no cuenta
+    MOV [abtn_long],AL
+    MOV AL,[rh_timing]       ; REC: la nota que suena acaba AL PULSAR (no al
     CMP AL,#0                ; soltar, que sumaria lo que dura la pulsacion);
     JMPZ pab_ret             ; al soltar, rec_exit
     CALL rec_close
@@ -633,18 +646,18 @@ poll_addr_btn:
     CALL show_note_line
     RET
 pab_held:
-    LDA AL,[abtn_long]
+    MOV AL,[abtn_long]
     CMP AL,#0
     JMPNZ pab_ret
     IN  AL,(P_T5)
     CMP AL,#0
     JMPNZ pab_ret
     MOV AL,#1                ; se acaba de cumplir la pulsacion larga
-    STA [abtn_long],AL
-    LDA AL,[mode]
+    MOV [abtn_long],AL
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ pab_files
-    LDA AL,[rec]
+    MOV AL,[rec]
     CMP AL,#0
     JMPZ rec_enter
     JMP rec_exit
@@ -656,14 +669,14 @@ pab_up:
     CMP BL,#0
     JMPZ pab_ret
     MOV AL,#0                ; flanco de subida
-    STA [abtn_down],AL
-    LDA AL,[abtn_long]
+    MOV [abtn_down],AL
+    MOV AL,[abtn_long]
     CMP AL,#0
     JMPNZ pab_ret            ; era larga (o de los dos): ya hizo lo suyo
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_EDIT
     JMPNZ files_execute      ; SONGS: el clic hace la accion de la fila
-    LDA AL,[rec]
+    MOV AL,[rec]
     CMP AL,#0
     JMPZ play_toggle
     JMP rec_exit
@@ -679,7 +692,7 @@ rec_enter:
     RET
 re_go:
     MOV AL,#0
-    STA [play_state],AL
+    MOV [play_state],AL
     OUT (P_SND_NOTE),AL
     CALL rpos_lt_len
     JMPC re_pos
@@ -687,12 +700,12 @@ re_go:
     CALL rpos_set
 re_pos:
     MOV AL,#0
-    STA [rh_timing],AL
-    STA [rec_dirty],AL
+    MOV [rh_timing],AL
+    MOV [rec_dirty],AL
     MOV AL,#1
-    STA [rec],AL
-    STA [rh_fresh],AL
-    STA [long_done],AL       ; si DATOS estaba pulsado, al soltar no hace nada
+    MOV [rec],AL
+    MOV [rh_fresh],AL
+    MOV [long_done],AL       ; si DATOS estaba pulsado, al soltar no hace nada
     CALL show_mode
     CALL replay_show_pos
     RET
@@ -700,21 +713,21 @@ re_pos:
 ; --- rec_exit: de REC a EDIT. Si sonaba una nota, la cierra (rec_close);
 ; si DATOS sigue pulsado, al soltarlo ya no hace nada -----------------------
 rec_exit:
-    LDA AL,[rh_timing]
+    MOV AL,[rh_timing]
     CMP AL,#0
     JMPZ rx_off
     CALL rec_close           ; la nota que sonaba dura hasta aqui
 rx_off:
     MOV AL,#0
-    STA [rec],AL
-    STA [rh_timing],AL
+    MOV [rec],AL
+    MOV [rh_timing],AL
     OUT (P_SND_NOTE),AL
     MOV AL,#1
-    STA [long_done],AL
-    LDA AL,[quant_mode]
+    MOV [long_done],AL
+    MOV AL,[quant_mode]
     CMP AL,#0
     JMPZ rx_show
-    LDA AL,[rec_dirty]
+    MOV AL,[rec_dirty]
     CMP AL,#0
     JMPZ rx_show
     CALL quantize            ; QUANT ON y se ha marcado algo
@@ -745,8 +758,8 @@ rx_show:
 ; ============================================================================
 quantize:
     CALL len_get
-    STA [qz_n_lo],BL
-    STA [qz_n_hi],BH
+    MOV [qz_n_lo],BL
+    MOV [qz_n_hi],BH
     MOV DX,#2
     CMP BX,DX
     JMPNC qz_go
@@ -759,32 +772,32 @@ qz_go:
     CALL puts
     ; duraciones en ms -> TMPBUF
     MOV AL,#0
-    STA [qz_i_lo],AL
-    STA [qz_i_hi],AL
+    MOV [qz_i_lo],AL
+    MOV [qz_i_hi],AL
 qz_ld:
-    LDA BL,[qz_i_lo]
-    LDA BH,[qz_i_hi]
+    MOV BL,[qz_i_lo]
+    MOV BH,[qz_i_hi]
     CALL note_ptr
     CALL note_unpack
     CALL dur_ms
     CALL qz_put
     CALL qz_next
     JMPC qz_ld
-    LDA BL,[qz_n_lo]         ; fin de TMPBUF = TMPBUF + 2 n
-    LDA BH,[qz_n_hi]
+    MOV BL,[qz_n_lo]         ; fin de TMPBUF = TMPBUF + 2 n
+    MOV BH,[qz_n_hi]
     ADD BX,BX
     MOV CX,#TMPBUF
     ADD BX,CX
-    STA [qz_end_lo],BL
-    STA [qz_end_hi],BH
+    MOV [qz_end_lo],BL
+    MOV [qz_end_hi],BH
     ; limite = n x 19,25 ; penalizacion = n x 4 (en 1/128 de rejilla)
-    LDA BL,[qz_n_lo]
-    LDA BH,[qz_n_hi]
+    MOV BL,[qz_n_lo]
+    MOV BH,[qz_n_hi]
     MOV CX,BX
     ADD CX,CX
     ADD CX,CX                ; x 4
-    STA [qz_pen_lo],CL
-    STA [qz_pen_hi],CH
+    MOV [qz_pen_lo],CL
+    MOV [qz_pen_hi],CH
     MOV DX,CX
     ADD DX,DX
     ADD DX,DX                ; x 16
@@ -797,19 +810,19 @@ qz_ld:
     OR  BL,AL
     SHR BH,#2
     ADD DX,BX
-    STA [qz_lim_lo],DL
-    STA [qz_lim_hi],DH
+    MOV [qz_lim_lo],DL
+    MOV [qz_lim_hi],DH
     ; candidatas
     MOV AL,#0
-    STA [qz_last_lo],AL
-    STA [qz_last_hi],AL
-    STA [qz_tried],AL
-    STA [qz_bg_lo],AL
-    STA [qz_bg_hi],AL
+    MOV [qz_last_lo],AL
+    MOV [qz_last_hi],AL
+    MOV [qz_tried],AL
+    MOV [qz_bg_lo],AL
+    MOV [qz_bg_hi],AL
 qz_cand:
     ; umbral = ultima + ultima / 16 (la primera vez, QZ_MIN_G x 2)
-    LDA BL,[qz_last_lo]
-    LDA BH,[qz_last_hi]
+    MOV BL,[qz_last_lo]
+    MOV BH,[qz_last_hi]
     MOV AL,BL
     OR  AL,BH
     JMPNZ qz_thr
@@ -830,9 +843,9 @@ qz_scan:
     MOV DX,#0xFFFF
     MOV BX,#TMPBUF
 qz_sl:
-    LDA AL,[BX]
+    MOV AL,[BX]
     INC BX
-    LDA AH,[BX]
+    MOV AH,[BX]
     INC BX
     CMP AX,CX
     JMPC qz_sn               ; < umbral
@@ -840,30 +853,30 @@ qz_sl:
     JMPNC qz_sn              ; no es mas corta
     MOV DX,AX
 qz_sn:
-    LDA AL,[qz_end_lo]
-    LDA AH,[qz_end_hi]
+    MOV AL,[qz_end_lo]
+    MOV AH,[qz_end_hi]
     CMP BX,AX
     JMPC qz_sl
     MOV BX,#0xFFFF
     CMP DX,BX
     JMPZ qz_chosen           ; no quedan candidatas
-    STA [qz_last_lo],DL
-    STA [qz_last_hi],DH
-    LDA AL,[qz_tried]
+    MOV [qz_last_lo],DL
+    MOV [qz_last_hi],DH
+    MOV AL,[qz_tried]
     ADD AL,#1
-    STA [qz_tried],AL
+    MOV [qz_tried],AL
     CMP AL,#(QZ_MAX_TRY+1)
     JMPZ qz_chosen
     ; rejilla = la nota entera (k >= 1), sin penalizacion
-    STA [qz_g_lo],DL
-    STA [qz_g_hi],DH
+    MOV [qz_g_lo],DL
+    MOV [qz_g_hi],DH
     MOV AL,#1
-    STA [qz_kmin],AL
+    MOV [qz_kmin],AL
     MOV BX,#0
     CALL qz_try
     ; rejilla = su mitad (k >= 2), con penalizacion
-    LDA BL,[qz_last_lo]
-    LDA BH,[qz_last_hi]
+    MOV BL,[qz_last_lo]
+    MOV BH,[qz_last_hi]
     MOV AL,BH
     SHL AL,#7
     SHR BL,#1
@@ -872,98 +885,101 @@ qz_sn:
     MOV DX,#QZ_MIN_G
     CMP BX,DX
     JMPC qz_cand             ; demasiado fina
-    STA [qz_g_lo],BL
-    STA [qz_g_hi],BH
+    MOV [qz_g_lo],BL
+    MOV [qz_g_hi],BH
     MOV AL,#2
-    STA [qz_kmin],AL
-    LDA BL,[qz_pen_lo]
-    LDA BH,[qz_pen_hi]
+    MOV [qz_kmin],AL
+    MOV BL,[qz_pen_lo]
+    MOV BH,[qz_pen_hi]
     CALL qz_try
     JMP qz_cand
 
 qz_chosen:
-    LDA AL,[qz_bg_lo]
-    OR  AL,[qz_bg_hi]
+    MOV AL,[qz_bg_lo]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[qz_bg_hi]
+    OR  AL,CL
+    POP CL
     JMPNZ qz_apply
     RET                      ; ninguna encaja: se queda como estaba
 qz_apply:
-    LDA AL,[qz_bg_lo]
-    STA [qz_g_lo],AL
-    LDA AL,[qz_bg_hi]
-    STA [qz_g_hi],AL
-    LDA AL,[qz_bk]
-    STA [qz_kmin],AL
+    MOV AL,[qz_bg_lo]
+    MOV [qz_g_lo],AL
+    MOV AL,[qz_bg_hi]
+    MOV [qz_g_hi],AL
+    MOV AL,[qz_bk]
+    MOV [qz_kmin],AL
     ; k de cada entrada (en TMPBUF, en lugar de su duracion), y las sumas
     MOV AL,#0
-    STA [qz_t0],AL
-    STA [qz_t1],AL
-    STA [qz_t2],AL
-    STA [qz_s0],AL
-    STA [qz_s1],AL
-    STA [qz_s2],AL
-    STA [qz_i_lo],AL
-    STA [qz_i_hi],AL
+    MOV [qz_t0],AL
+    MOV [qz_t1],AL
+    MOV [qz_t2],AL
+    MOV [qz_s0],AL
+    MOV [qz_s1],AL
+    MOV [qz_s2],AL
+    MOV [qz_i_lo],AL
+    MOV [qz_i_hi],AL
 qz_kl:
     CALL qz_get
-    LDA AL,[qz_t0]           ; suma de duraciones += BX
+    MOV AL,[qz_t0]           ; suma de duraciones += BX
     ADD AL,BL
-    STA [qz_t0],AL
-    LDA AL,[qz_t1]
+    MOV [qz_t0],AL
+    MOV AL,[qz_t1]
     ADC AL,BH
-    STA [qz_t1],AL
-    LDA AL,[qz_t2]
+    MOV [qz_t1],AL
+    MOV AL,[qz_t2]
     ADC AL,#0
-    STA [qz_t2],AL
+    MOV [qz_t2],AL
     CALL qz_round            ; [qz_k]
-    LDA BL,[qz_k_lo]
-    LDA BH,[qz_k_hi]
-    LDA AL,[qz_s0]           ; suma de k += k
+    MOV BL,[qz_k_lo]
+    MOV BH,[qz_k_hi]
+    MOV AL,[qz_s0]           ; suma de k += k
     ADD AL,BL
-    STA [qz_s0],AL
-    LDA AL,[qz_s1]
+    MOV [qz_s0],AL
+    MOV AL,[qz_s1]
     ADC AL,BH
-    STA [qz_s1],AL
-    LDA AL,[qz_s2]
+    MOV [qz_s1],AL
+    MOV AL,[qz_s2]
     ADC AL,#0
-    STA [qz_s2],AL
+    MOV [qz_s2],AL
     CALL qz_put
     CALL qz_next
     JMPC qz_kl
-    LDA AL,[qz_s2]
+    MOV AL,[qz_s2]
     CMP AL,#0
     JMPZ qz_div
     RET                      ; mas de 65535 rejillas: no deberia pasar
 qz_div:
     ; G = (suma duraciones + suma k / 2) / suma k
-    LDA CL,[qz_s0]
-    LDA CH,[qz_s1]
+    MOV CL,[qz_s0]
+    MOV CH,[qz_s1]
     MOV AL,CH
     SHL AL,#7
     SHR CL,#1
     OR  CL,AL
     SHR CH,#1
-    LDA AL,[qz_t0]
+    MOV AL,[qz_t0]
     ADD AL,CL
-    STA [qz_t0],AL
-    LDA AL,[qz_t1]
+    MOV [qz_t0],AL
+    MOV AL,[qz_t1]
     ADC AL,CH
-    STA [qz_t1],AL
-    LDA AL,[qz_t2]
+    MOV [qz_t1],AL
+    MOV AL,[qz_t2]
     ADC AL,#0
-    STA [qz_t2],AL
+    MOV [qz_t2],AL
     CALL qz_div24
-    STA [qz_G_lo],BL
-    STA [qz_G_hi],BH
+    MOV [qz_G_lo],BL
+    MOV [qz_G_hi],BH
     ; cada entrada = k x G
     MOV AL,#0
-    STA [qz_i_lo],AL
-    STA [qz_i_hi],AL
+    MOV [qz_i_lo],AL
+    MOV [qz_i_hi],AL
 qz_wl:
     CALL qz_get              ; BX = k
     MOV CX,BX
     MOV BX,#0
-    LDA DL,[qz_G_lo]
-    LDA DH,[qz_G_hi]
+    MOV DL,[qz_G_lo]
+    MOV DH,[qz_G_hi]
 qz_ml:
     MOV AL,CL
     OR  AL,CH
@@ -984,8 +1000,8 @@ qz_md:
     CALL ms_to_units
     PUSH BL
     PUSH BH
-    LDA BL,[qz_i_lo]
-    LDA BH,[qz_i_hi]
+    MOV BL,[qz_i_lo]
+    MOV BH,[qz_i_hi]
     CALL note_ptr
     PUSH BL
     PUSH BH
@@ -994,8 +1010,8 @@ qz_md:
     POP BL
     POP AH
     POP AL
-    STA [un_dur_lo],AL
-    STA [un_dur_hi],AH
+    MOV [un_dur_lo],AL
+    MOV [un_dur_hi],AH
     CALL note_pack
     CALL qz_next
     JMPC qz_wl
@@ -1006,29 +1022,29 @@ qz_md:
 ; bucle que mas se repite (n entradas x hasta 32 rejillas): recorre TMPBUF
 ; con un puntero, y con rejilla de hasta 255 ms el error sale con un DIV ----
 qz_try:
-    STA [qz_e_lo],BL
-    STA [qz_e_hi],BH
+    MOV [qz_e_lo],BL
+    MOV [qz_e_hi],BH
     MOV BX,#TMPBUF
-    STA [qz_p_lo],BL
-    STA [qz_p_hi],BH
-    LDA BL,[qz_n_lo]
-    LDA BH,[qz_n_hi]
-    STA [qz_c_lo],BL
-    STA [qz_c_hi],BH
+    MOV [qz_p_lo],BL
+    MOV [qz_p_hi],BH
+    MOV BL,[qz_n_lo]
+    MOV BH,[qz_n_hi]
+    MOV [qz_c_lo],BL
+    MOV [qz_c_hi],BH
 qt_l:
-    LDA DL,[qz_p_lo]
-    LDA DH,[qz_p_hi]
-    LDA AL,[DX]
+    MOV DL,[qz_p_lo]
+    MOV DH,[qz_p_hi]
+    MOV AL,[DX]
     MOV BL,AL
     INC DX
-    LDA AL,[DX]
+    MOV AL,[DX]
     MOV BH,AL
     INC DX
-    STA [qz_p_lo],DL
-    STA [qz_p_hi],DH
+    MOV [qz_p_lo],DL
+    MOV [qz_p_hi],DH
     ; atajo (lo normal): rejilla <= 255 y cociente <= 255 -> un DIV basta
-    LDA CL,[qz_g_lo]
-    LDA CH,[qz_g_hi]
+    MOV CL,[qz_g_lo]
+    MOV CH,[qz_g_hi]
     MOV AL,CH
     CMP AL,#0
     JMPNZ qt_full
@@ -1045,7 +1061,7 @@ qt_l:
 qt_down:
     MOV DL,AH                ; error = resto
 qt_kchk:
-    LDA AH,[qz_kmin]
+    MOV AH,[qz_kmin]
     CMP AL,AH
     JMPNC qt_frac            ; k >= kmin: error ya en DX
     MOV AX,BX                ; (BX sigue siendo la duracion)
@@ -1088,52 +1104,55 @@ qt_slow:
     JMPC qt_add
     MOV AL,#127
 qt_add:
-    LDA BL,[qz_e_lo]
-    LDA BH,[qz_e_hi]
+    MOV BL,[qz_e_lo]
+    MOV BH,[qz_e_hi]
     ADD BX,AL
-    STA [qz_e_lo],BL
-    STA [qz_e_hi],BH
-    LDA DL,[qz_lim_lo]
-    LDA DH,[qz_lim_hi]
+    MOV [qz_e_lo],BL
+    MOV [qz_e_hi],BH
+    MOV DL,[qz_lim_lo]
+    MOV DH,[qz_lim_hi]
     CMP DX,BX
     JMPC qt_ret              ; ya pasa del limite: descartada
-    LDA BL,[qz_c_lo]
-    LDA BH,[qz_c_hi]
+    MOV BL,[qz_c_lo]
+    MOV BH,[qz_c_hi]
     DEC BX
-    STA [qz_c_lo],BL
-    STA [qz_c_hi],BH
+    MOV [qz_c_lo],BL
+    MOV [qz_c_hi],BH
     MOV AL,BL
     OR  AL,BH
     JMPNZ qt_l
     ; cabe: la mejor si no hay otra o si tiene menos error
-    LDA AL,[qz_bg_lo]
-    OR  AL,[qz_bg_hi]
+    MOV AL,[qz_bg_lo]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[qz_bg_hi]
+    OR  AL,CL
+    POP CL
     JMPZ qt_best
-    LDA BL,[qz_e_lo]
-    LDA BH,[qz_e_hi]
-    LDA DL,[qz_be_lo]
-    LDA DH,[qz_be_hi]
+    MOV BL,[qz_e_lo]
+    MOV BH,[qz_e_hi]
+    MOV DL,[qz_be_lo]
+    MOV DH,[qz_be_hi]
     CMP BX,DX
     JMPNC qt_ret
 qt_best:
-    LDA AL,[qz_e_lo]
-    STA [qz_be_lo],AL
-    LDA AL,[qz_e_hi]
-    STA [qz_be_hi],AL
-    LDA AL,[qz_g_lo]
-    STA [qz_bg_lo],AL
-    LDA AL,[qz_g_hi]
-    STA [qz_bg_hi],AL
-    LDA AL,[qz_kmin]
-    STA [qz_bk],AL
+    MOV AL,[qz_e_lo]
+    MOV [qz_be_lo],AL
+    MOV AL,[qz_e_hi]
+    MOV [qz_be_hi],AL
+    MOV AL,[qz_g_lo]
+    MOV [qz_bg_lo],AL
+    MOV AL,[qz_g_hi]
+    MOV [qz_bg_hi],AL
+    MOV AL,[qz_kmin]
+    MOV [qz_bk],AL
 qt_ret:
     RET
 
 ; --- qz_round: BX = duracion (ms) -> [qz_k] = BX / [qz_g] redondeado (como
 ; poco [qz_kmin]) y DX = lo que se aleja de k x rejilla (ms) ---------------
 qz_round:
-    LDA CL,[qz_g_lo]
-    LDA CH,[qz_g_hi]
+    MOV CL,[qz_g_lo]
+    MOV CH,[qz_g_hi]
     PUSH BL
     PUSH BH
     MOV AL,CH
@@ -1142,9 +1161,9 @@ qz_round:
     MOV AX,BX
     DIV CL
     JMPC qr_slow0            ; cociente de mas de 255
-    STA [qz_k_lo],AL
+    MOV [qz_k_lo],AL
     MOV AL,#0
-    STA [qz_k_hi],AL
+    MOV [qz_k_hi],AL
     MOV DL,AH                ; resto
     MOV DH,#0
     JMP qr_rnd
@@ -1156,17 +1175,17 @@ qr_slow0:
 qr_slow:
     MOV DX,BX                ; resto = duracion; k = 0
     MOV AL,#0
-    STA [qz_k_lo],AL
-    STA [qz_k_hi],AL
+    MOV [qz_k_lo],AL
+    MOV [qz_k_hi],AL
 qr_sl:
     CMP DX,CX
     JMPC qr_rnd
     SUB DX,CX
-    LDA BL,[qz_k_lo]
-    LDA BH,[qz_k_hi]
+    MOV BL,[qz_k_lo]
+    MOV BH,[qz_k_hi]
     INC BX
-    STA [qz_k_lo],BL
-    STA [qz_k_hi],BH
+    MOV [qz_k_lo],BL
+    MOV [qz_k_hi],BH
     JMP qr_sl
 qr_rnd:
     ; DX = resto (< rejilla). Si resto x 2 >= rejilla, k + 1
@@ -1174,26 +1193,26 @@ qr_rnd:
     ADD BX,BX
     CMP BX,CX
     JMPC qr_min
-    LDA BL,[qz_k_lo]
-    LDA BH,[qz_k_hi]
+    MOV BL,[qz_k_lo]
+    MOV BH,[qz_k_hi]
     INC BX
-    STA [qz_k_lo],BL
-    STA [qz_k_hi],BH
+    MOV [qz_k_lo],BL
+    MOV [qz_k_hi],BH
     MOV BX,CX
     SUB BX,DX
     MOV DX,BX                ; error = rejilla - resto
 qr_min:
     POP BH                   ; BX = duracion
     POP BL
-    LDA AL,[qz_k_hi]
+    MOV AL,[qz_k_hi]
     CMP AL,#0
     JMPNZ qr_ret
-    LDA AL,[qz_k_lo]
-    LDA AH,[qz_kmin]
+    MOV AL,[qz_k_lo]
+    MOV AH,[qz_kmin]
     CMP AL,AH
     JMPNC qr_ret
     ; k < kmin: un fallo; k = kmin, error = kmin x rejilla - duracion
-    STA [qz_k_lo],AH
+    MOV [qz_k_lo],AH
     MOV DX,CX
     CMP AH,#1
     JMPZ qr_m1
@@ -1206,23 +1225,23 @@ qr_ret:
 ; --- qz_get / qz_put: la palabra i de TMPBUF -> BX / BX -> la palabra i
 qz_get:
     CALL qz_ptr
-    LDA AL,[DX]
+    MOV AL,[DX]
     MOV BL,AL
     INC DX
-    LDA AL,[DX]
+    MOV AL,[DX]
     MOV BH,AL
     RET
 qz_put:
     CALL qz_ptr
     MOV AL,BL
-    STA [DX],AL
+    MOV [DX],AL
     INC DX
     MOV AL,BH
-    STA [DX],AL
+    MOV [DX],AL
     RET
 qz_ptr:
-    LDA DL,[qz_i_lo]
-    LDA DH,[qz_i_hi]
+    MOV DL,[qz_i_lo]
+    MOV DH,[qz_i_hi]
     ADD DX,DX
     PUSH BL
     PUSH BH
@@ -1234,13 +1253,13 @@ qz_ptr:
 
 ; --- qz_next: i + 1; C = 1 si aun quedan (i < n) --------------------------
 qz_next:
-    LDA BL,[qz_i_lo]
-    LDA BH,[qz_i_hi]
+    MOV BL,[qz_i_lo]
+    MOV BH,[qz_i_hi]
     INC BX
-    STA [qz_i_lo],BL
-    STA [qz_i_hi],BH
-    LDA DL,[qz_n_lo]
-    LDA DH,[qz_n_hi]
+    MOV [qz_i_lo],BL
+    MOV [qz_i_hi],BH
+    MOV DL,[qz_n_lo]
+    MOV DH,[qz_n_hi]
     CMP BX,DX
     RET
 
@@ -1249,11 +1268,11 @@ qz_next:
 ; division de 24, asi que el dividendo (BX + CL) y el resto (DX) se
 ; desplazan byte a byte con ADD/ADC ----------------------------------------
 qz_div24:
-    LDA BL,[qz_t0]
-    LDA BH,[qz_t1]
-    LDA CL,[qz_t2]
-    LDA AL,[qz_s0]
-    LDA AH,[qz_s1]
+    MOV BL,[qz_t0]
+    MOV BH,[qz_t1]
+    MOV CL,[qz_t2]
+    MOV AL,[qz_s0]
+    MOV AH,[qz_s1]
     MOV DX,#0
     MOV CH,#24
 qd_l:
@@ -1278,7 +1297,7 @@ qd_n:
 ; cursor ya al final, la cancion entera. Si ya sonaba, la para: el cursor
 ; se queda en la nota donde paro ---------------------------------------------
 play_toggle:
-    LDA AL,[play_state]
+    MOV AL,[play_state]
     CMP AL,#0
     JMPNZ play_stop
     CALL len_zero
@@ -1289,32 +1308,32 @@ play_toggle:
     CALL rpos_set
 pt_go:
     MOV AL,#0
-    STA [pl_late_lo],AL
-    STA [pl_late_hi],AL
+    MOV [pl_late_lo],AL
+    MOV [pl_late_hi],AL
     CALL pl_start
 pt_ret:
     RET
 play_stop:
     MOV AL,#0
-    STA [play_state],AL
+    MOV [play_state],AL
     OUT (P_SND_NOTE),AL
     MOV AL,#1
-    STA [rh_fresh],AL        ; REC: la siguiente no mide su silencio
+    MOV [rh_fresh],AL        ; REC: la siguiente no mide su silencio
     CALL replay_show_pos
     RET
 
 ; --- set_mode: AL = modo nuevo (EDIT o FILES). Para el sonido, la
 ; reproduccion y la grabacion -----------------------------------------------
 set_mode:
-    STA [mode],AL
+    MOV [mode],AL
     MOV AL,#0
     OUT (P_SND_NOTE),AL
-    STA [files_act],AL
-    STA [play_state],AL      ; para una reproduccion en marcha
-    STA [rec],AL
+    MOV [files_act],AL
+    MOV [play_state],AL      ; para una reproduccion en marcha
+    MOV [rec],AL
     MOV AL,#1
-    STA [rh_fresh],AL
-    STA [long_done],AL       ; si DATOS sigue pulsado, al soltarlo no hace nada
+    MOV [rh_fresh],AL
+    MOV [long_done],AL       ; si DATOS sigue pulsado, al soltarlo no hace nada
     CALL redraw_all
     RET
 
@@ -1322,37 +1341,37 @@ set_mode:
 ; (FILES), un paso por detente ----------------------------------------------
 poll_addr_rot:
     IN  AL,(P_DIR_POS)
-    LDA BL,[dir_prev]
-    STA [dir_prev],AL
+    MOV BL,[dir_prev]
+    MOV [dir_prev],AL
     SUB AL,BL
     JMPZ par_done
     JMPN par_neg
-    STA [rot_n],AL
+    MOV [rot_n],AL
 par_up_l:
     CALL addr_up
-    LDA AL,[rot_n]
+    MOV AL,[rot_n]
     SUB AL,#1
-    STA [rot_n],AL
+    MOV [rot_n],AL
     JMPNZ par_up_l
     RET
 par_neg:
     NOT AL
     ADD AL,#1
-    STA [rot_n],AL
+    MOV [rot_n],AL
 par_dn_l:
     CALL addr_down
-    LDA AL,[rot_n]
+    MOV AL,[rot_n]
     SUB AL,#1
-    STA [rot_n],AL
+    MOV [rot_n],AL
     JMPNZ par_dn_l
 par_done:
     RET
 
 addr_up:
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ act_next
-    LDA AL,[play_state]
+    MOV AL,[play_state]
     CMP AL,#0
     JMPNZ au_ret             ; mientras suena, el cursor lo lleva la cancion
     CALL rpos_lt_len         ; hasta "detras de la ultima", sin vuelta
@@ -1366,14 +1385,17 @@ au_ret:
     RET
 
 addr_down:
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ act_prev
-    LDA AL,[play_state]
+    MOV AL,[play_state]
     CMP AL,#0
     JMPNZ ad_ret
-    LDA AL,[rpos_lo]         ; hasta la primera, sin vuelta
-    OR  AL,[rpos_hi]
+    MOV AL,[rpos_lo]         ; hasta la primera, sin vuelta
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[rpos_hi]
+    OR  AL,CL
+    POP CL
     JMPZ ad_ret
     CALL rpos_get
     DEC BX
@@ -1387,7 +1409,7 @@ ad_ret:
 ; INSTR, TEMPO, REPEAT y QUANT, el siguiente / anterior (como el clic); en una
 ; cancion, la accion (LOAD, SAVE, DEL, con vuelta). En NEW SONG, nada -----
 act_next:
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     CMP AL,#0
     JMPZ instr_next
     CMP AL,#ROW_TEMPO
@@ -1398,14 +1420,14 @@ act_next:
     JMPZ quant_toggle
     CMP AL,#FIRST_FILE
     JMPC act_ret
-    LDA AL,[files_act]
+    MOV AL,[files_act]
     ADD AL,#1
     CMP AL,#3
     JMPNZ act_set
     MOV AL,#0
     JMP act_set
 act_prev:
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     CMP AL,#0
     JMPZ instr_prev
     CMP AL,#ROW_TEMPO
@@ -1416,14 +1438,14 @@ act_prev:
     JMPZ quant_prev
     CMP AL,#FIRST_FILE
     JMPC act_ret
-    LDA AL,[files_act]
+    MOV AL,[files_act]
     CMP AL,#0
     JMPNZ act_dec
     MOV AL,#3
 act_dec:
     SUB AL,#1
 act_set:
-    STA [files_act],AL
+    MOV [files_act],AL
     CALL draw_files
 act_ret:
     RET
@@ -1432,37 +1454,37 @@ act_ret:
 ; detente --------------------------------------------------------------------
 poll_dat_rot:
     IN  AL,(P_DAT_POS)
-    LDA BL,[dat_prev]
-    STA [dat_prev],AL
+    MOV BL,[dat_prev]
+    MOV [dat_prev],AL
     SUB AL,BL
     JMPZ pdr_done
     JMPN pdr_neg
-    STA [rot_n],AL
+    MOV [rot_n],AL
 pdr_up_l:
     CALL step_up
-    LDA AL,[rot_n]
+    MOV AL,[rot_n]
     SUB AL,#1
-    STA [rot_n],AL
+    MOV [rot_n],AL
     JMPNZ pdr_up_l
     RET
 pdr_neg:
     NOT AL
     ADD AL,#1
-    STA [rot_n],AL
+    MOV [rot_n],AL
 pdr_dn_l:
     CALL step_down
-    LDA AL,[rot_n]
+    MOV AL,[rot_n]
     SUB AL,#1
-    STA [rot_n],AL
+    MOV [rot_n],AL
     JMPNZ pdr_dn_l
 pdr_done:
     RET
 
 step_up:
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ su_files
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
     CMP AL,#REST
     JMPNZ su_n
     MOV AL,#0                ; del silencio, a DO3
@@ -1477,22 +1499,22 @@ su_set:
 su_ret:
     RET
 su_files:
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     ADD AL,#1
     CMP AL,#(FILE_COUNT+FIRST_FILE)
     JMPNZ su_fset
     MOV AL,#0
 su_fset:
-    STA [files_sel],AL
+    MOV [files_sel],AL
     MOV AL,#0
-    STA [files_act],AL
+    MOV [files_act],AL
     CALL draw_files
     RET
 step_down:
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ sd_files
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
     CMP AL,#REST
     JMPZ sd_ret              ; ya en el silencio: se queda
     CMP AL,#0
@@ -1507,26 +1529,29 @@ sd_set:
 sd_ret:
     RET
 sd_files:
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     CMP AL,#0
     JMPNZ sd_fdec
     MOV AL,#(FILE_COUNT+FIRST_FILE)
 sd_fdec:
     SUB AL,#1
-    STA [files_sel],AL
+    MOV [files_sel],AL
     MOV AL,#0
-    STA [files_act],AL
+    MOV [files_act],AL
     CALL draw_files
     RET
 ; --- preview_note: EDIT, DATOS girado -> la nota marcada suena un momento
 ; (no mientras se reproduce la cancion ni con DATOS pulsado); por Bluetooth
 ; MIDI, con la mitad de velocidad que al insertarla --------------------------
 preview_note:
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_EDIT
     JMPNZ pv_ret
-    LDA AL,[play_state]
-    OR  AL,[btn_down]
+    MOV AL,[play_state]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[btn_down]
+    OR  AL,CL
+    POP CL
     JMPNZ pv_ret
     MOV AL,#VEL_PREVIEW      ; por Bluetooth MIDI, a la mitad de fuerza que
     OUT (P_SND_VEL),AL       ; al insertarla (el zumbador suena igual)
@@ -1541,15 +1566,15 @@ pv_ret:
 set_note:
     PUSH AL
     MOV AL,#0
-    STA [dot_on],AL
+    MOV [dot_on],AL
     CALL draw_dot            ; borra el punto de la nota anterior
     POP AL
-    STA [cur_note],AL
+    MOV [cur_note],AL
     CMP AL,#REST
     JMPZ sn_rest             ; el silencio no tiene tecla ni punto
     CALL kb_follow           ; la escala sube/baja si la nota se sale
     MOV AL,#1
-    STA [dot_on],AL
+    MOV [dot_on],AL
     CALL draw_dot
 sn_rest:
     CALL show_note_line
@@ -1559,16 +1584,16 @@ sn_rest:
 ; ([kb_base]..[kb_base]+KB_SPAN), lo desplaza de octava en octava hasta
 ; que entre y lo vuelve a dibujar -- "la escala sube o baja" ------------
 kb_follow:
-    LDA AL,[kb_base]
-    STA [kf_old],AL
+    MOV AL,[kb_base]
+    MOV [kf_old],AL
 kf_l:
-    LDA AL,[cur_note]
-    LDA BL,[kb_base]
+    MOV AL,[cur_note]
+    MOV BL,[kb_base]
     CMP AL,BL
     JMPNC kf_not_below
     MOV AL,BL                ; por debajo: una octava abajo
     SUB AL,#12
-    STA [kb_base],AL
+    MOV [kb_base],AL
     JMP kf_l
 kf_not_below:
     SUB AL,BL
@@ -1576,14 +1601,14 @@ kf_not_below:
     JMPC kf_in
     MOV AL,BL                ; por encima: una octava arriba
     ADD AL,#12
-    STA [kb_base],AL
+    MOV [kb_base],AL
     JMP kf_l
 kf_in:
-    LDA AL,[kb_base]
-    LDA BL,[kf_old]
+    MOV AL,[kb_base]
+    MOV BL,[kf_old]
     CMP AL,BL
     JMPZ kf_ret
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ kf_ret              ; en FILES no hay teclado que redibujar
     CALL clsg
@@ -1594,65 +1619,65 @@ kf_ret:
 ; --- poll_dat_btn: maquina de estados del pulsador de DATOS ---------------
 poll_dat_btn:
     IN  AL,(P_DAT_BTN)
-    LDA BL,[btn_down]
+    MOV BL,[btn_down]
     CMP AL,#0
     JMPZ pdb_up
     CMP BL,#0
     JMPNZ pdb_held
     ; --- flanco de bajada: empieza una pulsacion
     MOV AL,#1
-    STA [btn_down],AL
+    MOV [btn_down],AL
     MOV AL,#0
-    STA [press_frames],AL
-    LDA AL,[chord]           ; parte de "los dos a la vez": no cuenta
-    STA [long_done],AL
+    MOV [press_frames],AL
+    MOV AL,[chord]           ; parte de "los dos a la vez": no cuenta
+    MOV [long_done],AL
     CMP AL,#0
     JMPNZ pdb_ret
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ pdb_ret
-    LDA AL,[rec]
+    MOV AL,[rec]
     CMP AL,#0
     JMPNZ rec_edge
     ; EDIT: no suena nada al pulsar (ni durante la larga, que borra). Si se
     ; esta reproduciendo, esta pulsacion solo la para.
-    LDA AL,[play_state]
+    MOV AL,[play_state]
     CMP AL,#0
     JMPZ pdb_ret
     CALL play_stop
     MOV AL,#1
-    STA [long_done],AL       ; al soltar no inserta, y no cuenta como larga
+    MOV [long_done],AL       ; al soltar no inserta, y no cuenta como larga
     RET
 
 pdb_held:
-    LDA AL,[long_done]
+    MOV AL,[long_done]
     CMP AL,#0
     JMPNZ pdb_ret
-    LDA AL,[press_frames]
+    MOV AL,[press_frames]
     ADD AL,#1
-    STA [press_frames],AL
+    MOV [press_frames],AL
     CMP AL,#LONG_FRAMES
     JMPNZ pdb_ret
     ; --- se acaba de cumplir la pulsacion larga
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPNZ pdb_edit_long
     ; SONGS: solo NEW SONG tiene larga (vaciar); en el resto, la pulsacion
     ; cuenta como clic al soltar
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     CMP AL,#ROW_NEW
     JMPNZ pdb_ret
     MOV AL,#1
-    STA [long_done],AL
+    MOV [long_done],AL
     JMP fe_new
 pdb_edit_long:
     MOV AL,#1
-    STA [long_done],AL
-    LDA AL,[rec]
+    MOV [long_done],AL
+    MOV AL,[rec]
     CMP AL,#0
     JMPZ edit_delete
     MOV AL,#0                ; en REC, una nota larga es solo eso
-    STA [long_done],AL
+    MOV [long_done],AL
     RET
 
 pdb_up:
@@ -1660,14 +1685,14 @@ pdb_up:
     JMPZ pdb_ret             ; sigue suelto: nada
     ; --- flanco de subida: termina la pulsacion
     MOV AL,#0
-    STA [btn_down],AL
-    LDA AL,[mode]
+    MOV [btn_down],AL
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ pdb_files_short
-    LDA AL,[long_done]
+    MOV AL,[long_done]
     CMP AL,#0
     JMPNZ pdb_ret            ; era larga (o se cancelo): ya hizo lo suyo
-    LDA AL,[rec]
+    MOV AL,[rec]
     CMP AL,#0
     JMPNZ rec_edge
     JMP edit_insert
@@ -1677,12 +1702,12 @@ pdb_up:
 ; silencio ----------------------------------------------------------------
 rec_moved:
     MOV AL,#1
-    STA [rh_fresh],AL
-    LDA AL,[rec]
+    MOV [rh_fresh],AL
+    MOV AL,[rec]
     CMP AL,#0
     JMPZ rm_ret
     MOV AL,#0
-    STA [rh_timing],AL
+    MOV [rh_timing],AL
     OUT (P_SND_NOTE),AL
 rm_ret:
     RET
@@ -1694,7 +1719,7 @@ rm_ret:
 ; siguiente (un silencio tambien se marca: suena nada); si no quedan, calla
 ; y sigue en REC (a EDIT solo con DIRECCION).
 rec_edge:
-    LDA AL,[rh_timing]
+    MOV AL,[rh_timing]
     CMP AL,#0
     JMPZ re_first
     CALL rec_close
@@ -1702,10 +1727,10 @@ rec_edge:
 re_first:
     CALL meas_arm            ; primer cambio: empieza a medir, sin error
     MOV AL,#0
-    STA [rh_e_lo],AL
-    STA [rh_e_hi],AL
+    MOV [rh_e_lo],AL
+    MOV [rh_e_hi],AL
     MOV AL,#0xFF
-    STA [prev_pitch],AL      ; no hay nota anterior sonando
+    MOV [prev_pitch],AL      ; no hay nota anterior sonando
     JMP re_next
 
 ; --- rec_close: cierra la nota que suena ([rh_timing]): su duracion es lo
@@ -1716,48 +1741,48 @@ re_first:
 ; cambio de DATOS -----------------------------------------------------------
 rec_close:
     MOV AL,#0
-    STA [rh_timing],AL
+    MOV [rh_timing],AL
     MOV AL,#1
-    STA [rec_dirty],AL       ; algo marcado: al salir, QUANT (si esta en ON)
+    MOV [rec_dirty],AL       ; algo marcado: al salir, QUANT (si esta en ON)
     CALL meas_read
-    STA [rh_m_lo],BL         ; duracion medida (ms)
-    STA [rh_m_hi],BH
+    MOV [rh_m_lo],BL         ; duracion medida (ms)
+    MOV [rh_m_hi],BH
     CALL meas_arm            ; ya mide la siguiente
 rc_raw:
-    LDA BL,[rh_m_lo]
-    LDA BH,[rh_m_hi]
-    LDA CL,[rh_e_lo]
-    LDA CH,[rh_e_hi]
+    MOV BL,[rh_m_lo]
+    MOV BH,[rh_m_hi]
+    MOV CL,[rh_e_lo]
+    MOV CH,[rh_e_hi]
     ADD BX,CX                ; objetivo = medido + error (con signo)
     MOV AL,BH
     AND AL,#0x80
     JMPZ rc_pos
     MOV BX,#0                ; negativo: 0
 rc_pos:
-    STA [rh_m_lo],BL
-    STA [rh_m_hi],BH
+    MOV [rh_m_lo],BL
+    MOV [rh_m_hi],BH
     CALL ms_to_units
-    STA [q_u_lo],BL
-    STA [q_u_hi],BH
+    MOV [q_u_lo],BL
+    MOV [q_u_hi],BH
     CALL units_to_ms         ; error = objetivo - guardado (+-2 ms)
-    LDA CL,[rh_m_lo]
-    LDA CH,[rh_m_hi]
+    MOV CL,[rh_m_lo]
+    MOV CH,[rh_m_hi]
     SUB CX,BX
-    STA [rh_e_lo],CL
-    STA [rh_e_hi],CH
+    MOV [rh_e_lo],CL
+    MOV [rh_e_hi],CH
 rc_entry:
     CALL rpos_entry          ; [un_*] = la nota que se cierra
-    LDA AL,[un_note]
-    STA [prev_pitch],AL
-    LDA AL,[q_u_lo]
-    STA [un_dur_lo],AL
-    LDA AL,[q_u_hi]
-    STA [un_dur_hi],AL
+    MOV AL,[un_note]
+    MOV [prev_pitch],AL
+    MOV AL,[q_u_lo]
+    MOV [un_dur_lo],AL
+    MOV AL,[q_u_hi]
+    MOV [un_dur_hi],AL
     CALL rpos_get
     CALL note_ptr
     CALL note_pack
     MOV AL,#0
-    STA [rh_fresh],AL
+    MOV [rh_fresh],AL
     CALL rpos_get
     INC BX
     CALL rpos_set
@@ -1766,15 +1791,15 @@ re_next:
     CALL rpos_lt_len
     JMPC rn_go
     MOV AL,#0                ; no quedan notas: calla, sigue en REC
-    STA [rh_timing],AL
+    MOV [rh_timing],AL
     OUT (P_SND_NOTE),AL
     RET
 rn_go:
     CALL rpos_entry
-    LDA AL,[un_note]
+    MOV AL,[un_note]
     CMP AL,#REST
     JMPZ rn_snd              ; un silencio: no hay nada que re-atacar
-    LDA BL,[prev_pitch]
+    MOV BL,[prev_pitch]
     CMP AL,BL
     JMPNZ rn_snd
     ; la misma nota que la que se acaba de cerrar: sin un corte, el tono
@@ -1784,16 +1809,16 @@ rn_go:
     OUT (P_SND_NOTE),AL
     MOV AL,#3
     CALL frame_wait
-    LDA AL,[un_note]
+    MOV AL,[un_note]
 rn_snd:
     CALL sound_note          ; suena ya: la pantalla, despues
     MOV AL,#1
-    STA [rh_timing],AL
+    MOV [rh_timing],AL
     CALL replay_show_pos
     RET
 
 pdb_files_short:
-    LDA AL,[long_done]
+    MOV AL,[long_done]
     CMP AL,#0
     JMPNZ pdb_ret            ; parte de los dos a la vez
     JMP files_execute
@@ -1806,28 +1831,28 @@ pdb_ret:
 ; ============================================================================
 ; --- len_minus_rpos: CX = longitud - [rpos] (notas desde el cursor al final)
 len_minus_rpos:
-    LDA CL,[len_lo]
-    LDA CH,[len_hi]
-    LDA BL,[rpos_lo]
-    LDA BH,[rpos_hi]
+    MOV CL,[len_lo]
+    MOV CH,[len_hi]
+    MOV BL,[rpos_lo]
+    MOV BH,[rpos_hi]
     SUB CX,BX                ; resta de 16 bits (ISA 2)
     RET
 
 ; --- edit_insert: pulsacion corta -> inserta la nota marcada DELANTE de la
 ; del cursor (con el ritmo por defecto) y avanza el cursor -----------------
 edit_insert:
-    LDA AL,[len_hi]
+    MOV AL,[len_hi]
     CMP AL,#MAX_HI
     JMPNZ ei_room            ; 512 notas (alto = 2 solo en el tope)
     CALL beep_low
     RET
 ei_room:
-    LDA AL,[cur_note]
-    STA [un_note],AL
+    MOV AL,[cur_note]
+    MOV [un_note],AL
     MOV AL,#DEF_DUR
-    STA [un_dur_lo],AL
+    MOV [un_dur_lo],AL
     MOV AL,#0
-    STA [un_dur_hi],AL
+    MOV [un_dur_hi],AL
     CALL note_insert
     CALL show_song
     CALL show_note_line
@@ -1856,8 +1881,8 @@ note_insert:
     CALL note_pack
     CALL len_get
     INC BX
-    STA [len_lo],BL
-    STA [len_hi],BH
+    MOV [len_lo],BL
+    MOV [len_hi],BH
     CALL rpos_get
     INC BX
     CALL rpos_set
@@ -1871,16 +1896,19 @@ note_insert:
 edit_delete:
     CALL rpos_lt_len
     JMPC ed_sel              ; sobre una nota: esa
-    LDA AL,[rpos_lo]
-    OR  AL,[rpos_hi]
+    MOV AL,[rpos_lo]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[rpos_hi]
+    OR  AL,CL
+    POP CL
     JMPZ eb_ret
     CALL rpos_get            ; al final: la ultima
     DEC BX
     CALL rpos_set
 ed_sel:
     CALL rpos_entry
-    LDA AL,[un_note]
-    STA [gap_val],AL         ; la nota que se va (para dejarla marcada)
+    MOV AL,[un_note]
+    MOV [gap_val],AL         ; la nota que se va (para dejarla marcada)
     ; las notas de detras se corren una posicion hacia delante (MOVW,
     ; destino antes que el origen: la copia hacia adelante es segura)
     CALL len_minus_rpos
@@ -1899,9 +1927,9 @@ ed_sel:
     MOVW
     CALL len_get
     DEC BX
-    STA [len_lo],BL
-    STA [len_hi],BH
-    LDA AL,[gap_val]
+    MOV [len_lo],BL
+    MOV [len_hi],BH
+    MOV AL,[gap_val]
     CALL set_note
     CALL show_song
     CALL beep_low
@@ -1913,7 +1941,7 @@ replay_show_pos:
     CALL rpos_lt_len
     JMPNC rsp_end            ; en el final no hay nota que marcar
     CALL rpos_entry
-    LDA AL,[un_note]
+    MOV AL,[un_note]
     CALL set_note
 rsp_end:
     CALL show_song
@@ -1927,35 +1955,35 @@ rsp_end:
 ; siguiente, asi el retraso no se acumula. [play_state]: 0 parado, 1
 ; sonando, 2 ya cortada (dos iguales seguidas: CUT_MS de silencio) --------
 tick_play:
-    LDA AL,[play_state]
+    MOV AL,[play_state]
     CMP AL,#0
     JMPZ tp_ret
     CALL meas_read           ; BX = ms desde que empezo esta entrada
-    LDA AL,[play_state]
+    MOV AL,[play_state]
     CMP AL,#1
     JMPNZ tp_end
-    LDA DL,[pl_c_lo]
-    LDA DH,[pl_c_hi]
+    MOV DL,[pl_c_lo]
+    MOV DH,[pl_c_hi]
     CMP BX,DX
     JMPC tp_ret              ; aun no toca cortar
     MOV AL,#0
     OUT (P_SND_NOTE),AL      ; corte (o el final, si no hay corte)
     MOV AL,#2
-    STA [play_state],AL
+    MOV [play_state],AL
 tp_end:
-    LDA DL,[pl_t_lo]
-    LDA DH,[pl_t_hi]
+    MOV DL,[pl_t_lo]
+    MOV DH,[pl_t_hi]
     CMP BX,DX
     JMPC tp_ret              ; aun no acaba
     SUB BX,DX                ; lo que se ha pasado
-    STA [pl_late_lo],BL
-    STA [pl_late_hi],BH
+    MOV [pl_late_lo],BL
+    MOV [pl_late_hi],BH
     CALL rpos_get
     INC BX
     CALL rpos_set
     CALL rpos_lt_len
     JMPC pl_start
-    LDA AL,[work_rep]
+    MOV AL,[work_rep]
     CMP AL,#0
     JMPZ tp_stop
     MOV BX,#0                ; REPEAT: otra vez desde la primera
@@ -1963,7 +1991,7 @@ tp_end:
     JMP pl_start
 tp_stop:
     MOV AL,#0                ; final de la cancion
-    STA [play_state],AL
+    MOV [play_state],AL
     OUT (P_SND_NOTE),AL
     CALL show_song
     CALL show_note_line
@@ -1975,40 +2003,40 @@ tp_ret:
 ; corta CUT_MS antes para que se oigan dos ----------------------------------
 pl_start:
     CALL rpos_entry
-    LDA AL,[un_note]
+    MOV AL,[un_note]
     CALL sound_note
     CALL meas_arm
     MOV AL,#1
-    STA [play_state],AL
+    MOV [play_state],AL
     CALL dur_ms
     CALL tempo_scale         ; al TEMPO de la cancion
-    LDA CL,[pl_late_lo]
-    LDA CH,[pl_late_hi]
+    MOV CL,[pl_late_lo]
+    MOV CH,[pl_late_hi]
     SUB BX,CX
     MOV AL,BH
     AND AL,#0x80
     JMPZ ps_t
     MOV BX,#0                ; ya se paso de toda ella
 ps_t:
-    STA [pl_t_lo],BL
-    STA [pl_t_hi],BH
-    STA [pl_c_lo],BL         ; sin corte: cortar = acabar
-    STA [pl_c_hi],BH
+    MOV [pl_t_lo],BL
+    MOV [pl_t_hi],BH
+    MOV [pl_c_lo],BL         ; sin corte: cortar = acabar
+    MOV [pl_c_hi],BH
     CALL next_same
     CMP AL,#0
     JMPZ ps_show
-    LDA BL,[pl_t_lo]
-    LDA BH,[pl_t_hi]
+    MOV BL,[pl_t_lo]
+    MOV BH,[pl_t_hi]
     MOV DX,#(2*CUT_MS)
     CMP BX,DX
     JMPC ps_show             ; demasiado corta para cortarla
     MOV DX,#CUT_MS
     SUB BX,DX
-    STA [pl_c_lo],BL
-    STA [pl_c_hi],BH
+    MOV [pl_c_lo],BL
+    MOV [pl_c_hi],BH
 ps_show:
     CALL rpos_entry
-    LDA AL,[un_note]
+    MOV AL,[un_note]
     CALL set_note            ; el punto y la linea siguen a la nota
     CALL show_song
     RET
@@ -2017,20 +2045,20 @@ ps_show:
 ; existe y es la MISMA nota (no silencio): seguidas, sin un corte entre
 ; las dos sonarian como una sola. Pisa [un_*] -----------------------------
 next_same:
-    LDA AL,[un_note]
-    STA [ns_note],AL
+    MOV AL,[un_note]
+    MOV [ns_note],AL
     CMP AL,#REST
     JMPZ ns_no
     CALL rpos_get
     INC BX
-    LDA DL,[len_lo]
-    LDA DH,[len_hi]
+    MOV DL,[len_lo]
+    MOV DH,[len_hi]
     CMP BX,DX
     JMPNC ns_no              ; no hay siguiente
     CALL note_ptr
     CALL note_unpack
-    LDA AL,[un_note]
-    LDA BL,[ns_note]
+    MOV AL,[un_note]
+    MOV BL,[ns_note]
     CMP AL,BL
     JMPNZ ns_no
     MOV AL,#1
@@ -2043,7 +2071,7 @@ ns_no:
 ;  SONIDO
 ; ============================================================================
 sound_cur:
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
 ; AL = nota (0..60, o REST = calla): suena sostenida (REC y la
 ; reproduccion, que la hacen sonar antes de mover el punto y redibujar)
 sound_note:
@@ -2066,7 +2094,7 @@ sound_short:
     MOV AL,#PREVIEW_DUR
 sound_for:                   ; AL = duracion (x 10 ms) de la nota marcada
     PUSH AL
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
     CMP AL,#REST
     JMPNZ ssh_n
     POP AL
@@ -2074,7 +2102,7 @@ sound_for:                   ; AL = duracion (x 10 ms) de la nota marcada
 ssh_n:
     POP AL
     OUT (P_SND_DUR),AL
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
     ADD AL,#BASE_MIDI
     OUT (P_SND_NOTE),AL
     MOV AL,#0
@@ -2095,49 +2123,49 @@ beep_low:
 ;  entonces, cada arranque convierte otra vez lo que hay en la flash).
 ; ============================================================================
 convert_all:
-    LDA AL,[song_fmt]
+    MOV AL,[song_fmt]
     CMP AL,#2
     JMPZ ca_ret
     CMP AL,#1
     JMPZ convert_long        ; formato 1: solo las notas largas
     MOV AL,#0
-    STA [cv_f],AL
+    MOV [cv_f],AL
 ca_l:
-    LDA AL,[cv_f]
+    MOV AL,[cv_f]
     CALL file_len
     MOV AL,BL
     OR  AL,BH
     JMPZ ca_next             ; vacia
-    STA [cv_len_lo],BL
-    STA [cv_len_hi],BH
-    LDA AL,[cv_f]
+    MOV [cv_len_lo],BL
+    MOV [cv_len_hi],BH
+    MOV AL,[cv_f]
     CALL file_base
     CALL convert_song
-    LDA AL,[cv_f]
+    MOV AL,[cv_f]
     CALL file_len_ptr
-    LDA AL,[cv_n_lo]
-    STA [DX],AL
+    MOV AL,[cv_n_lo]
+    MOV [DX],AL
     INC DX
-    LDA AL,[cv_n_hi]
-    STA [DX],AL
+    MOV AL,[cv_n_hi]
+    MOV [DX],AL
 ca_next:
-    LDA AL,[cv_f]
+    MOV AL,[cv_f]
     ADD AL,#1
-    STA [cv_f],AL
+    MOV [cv_f],AL
     CMP AL,#FILE_COUNT
     JMPNZ ca_l
     CALL len_get             ; y la cancion de trabajo
     CALL len_valid
-    STA [cv_len_lo],BL
-    STA [cv_len_hi],BH
+    MOV [cv_len_lo],BL
+    MOV [cv_len_hi],BH
     MOV BX,#WORK
     CALL convert_song
-    LDA AL,[cv_n_lo]
-    STA [len_lo],AL
-    LDA AL,[cv_n_hi]
-    STA [len_hi],AL
+    MOV AL,[cv_n_lo]
+    MOV [len_lo],AL
+    MOV AL,[cv_n_hi]
+    MOV [len_hi],AL
     MOV AL,#1
-    STA [song_fmt],AL
+    MOV [song_fmt],AL
     JMP convert_long         ; y de ahi, al 2
 ca_ret:
     RET
@@ -2147,47 +2175,50 @@ ca_ret:
 ; (ver ms_to_units). Solo cambian las entradas de 512 o mas (> 2 s) -------
 convert_long:
     MOV AL,#0
-    STA [cv_f],AL
+    MOV [cv_f],AL
 cl_l:
-    LDA AL,[cv_f]
+    MOV AL,[cv_f]
     CALL file_len
-    STA [cv_len_lo],BL
-    STA [cv_len_hi],BH
-    LDA AL,[cv_f]
+    MOV [cv_len_lo],BL
+    MOV [cv_len_hi],BH
+    MOV AL,[cv_f]
     CALL file_base
     CALL long_song
-    LDA AL,[cv_f]
+    MOV AL,[cv_f]
     ADD AL,#1
-    STA [cv_f],AL
+    MOV [cv_f],AL
     CMP AL,#FILE_COUNT
     JMPNZ cl_l
     CALL len_get             ; y la cancion de trabajo
     CALL len_valid
-    STA [cv_len_lo],BL
-    STA [cv_len_hi],BH
+    MOV [cv_len_lo],BL
+    MOV [cv_len_hi],BH
     MOV BX,#WORK
     CALL long_song
     MOV AL,#2
-    STA [song_fmt],AL
+    MOV [song_fmt],AL
     RET
 
 ; --- long_song: BX = sus notas, [cv_len] = cuantas -> las de 512 o mas,
 ; pasadas al formato 2, en su sitio --------------------------------------
 long_song:
-    STA [cv_src_lo],BL
-    STA [cv_src_hi],BH
+    MOV [cv_src_lo],BL
+    MOV [cv_src_hi],BH
 ls_l:
-    LDA AL,[cv_len_lo]
-    OR  AL,[cv_len_hi]
+    MOV AL,[cv_len_lo]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[cv_len_hi]
+    OR  AL,CL
+    POP CL
     JMPZ ls_ret
-    LDA BL,[cv_src_lo]
-    LDA BH,[cv_src_hi]
+    MOV BL,[cv_src_lo]
+    MOV BH,[cv_src_hi]
     CALL note_unpack
-    LDA AL,[un_dur_hi]
+    MOV AL,[un_dur_hi]
     CMP AL,#2
     JMPC ls_next             ; < 512: igual en los dos formatos
-    LDA BL,[un_dur_lo]       ; formato 1: x 4 ms
-    LDA BH,[un_dur_hi]
+    MOV BL,[un_dur_lo]       ; formato 1: x 4 ms
+    MOV BH,[un_dur_hi]
     MOV AL,BH
     SHL AL,#2
     MOV CL,BL
@@ -2196,23 +2227,23 @@ ls_l:
     MOV BH,AL
     SHL BL,#2
     CALL ms_to_units
-    STA [un_dur_lo],BL
-    STA [un_dur_hi],BH
-    LDA BL,[cv_src_lo]
-    LDA BH,[cv_src_hi]
+    MOV [un_dur_lo],BL
+    MOV [un_dur_hi],BH
+    MOV BL,[cv_src_lo]
+    MOV BH,[cv_src_hi]
     CALL note_pack
 ls_next:
-    LDA BL,[cv_src_lo]
-    LDA BH,[cv_src_hi]
+    MOV BL,[cv_src_lo]
+    MOV BH,[cv_src_hi]
     INC BX
     INC BX
-    STA [cv_src_lo],BL
-    STA [cv_src_hi],BH
-    LDA BL,[cv_len_lo]
-    LDA BH,[cv_len_hi]
+    MOV [cv_src_lo],BL
+    MOV [cv_src_hi],BH
+    MOV BL,[cv_len_lo]
+    MOV BH,[cv_len_hi]
     DEC BX
-    STA [cv_len_lo],BL
-    STA [cv_len_hi],BH
+    MOV [cv_len_lo],BL
+    MOV [cv_len_hi],BH
     JMP ls_l
 ls_ret:
     RET
@@ -2221,31 +2252,34 @@ ls_ret:
 ; -> las mismas en el formato actual, en el mismo sitio; [cv_n] = cuantas
 ; entradas quedan (un silencio previo pasa a ser una entrada; tope 512) ---
 convert_song:
-    STA [cv_src_lo],BL
-    STA [cv_src_hi],BH
-    STA [cv_base_lo],BL
-    STA [cv_base_hi],BH
+    MOV [cv_src_lo],BL
+    MOV [cv_src_hi],BH
+    MOV [cv_base_lo],BL
+    MOV [cv_base_hi],BH
     MOV BX,#TMPBUF
-    STA [cv_dst_lo],BL
-    STA [cv_dst_hi],BH
+    MOV [cv_dst_lo],BL
+    MOV [cv_dst_hi],BH
     MOV AL,#0
-    STA [cv_n_lo],AL
-    STA [cv_n_hi],AL
+    MOV [cv_n_lo],AL
+    MOV [cv_n_hi],AL
 cs_l:
-    LDA AL,[cv_len_lo]
-    OR  AL,[cv_len_hi]
+    MOV AL,[cv_len_lo]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[cv_len_hi]
+    OR  AL,CL
+    POP CL
     JMPZ cs_done
-    LDA BL,[cv_src_lo]
-    LDA BH,[cv_src_hi]
-    LDA AL,[BX]
-    STA [cv_b0],AL
+    MOV BL,[cv_src_lo]
+    MOV BH,[cv_src_hi]
+    MOV AL,[BX]
+    MOV [cv_b0],AL
     INC BX
-    LDA AL,[BX]
-    STA [cv_b1],AL
+    MOV AL,[BX]
+    MOV [cv_b1],AL
     INC BX
-    STA [cv_src_lo],BL
-    STA [cv_src_hi],BH
-    LDA AL,[cv_b1]           ; silencio previo (indice de 5 bits)
+    MOV [cv_src_lo],BL
+    MOV [cv_src_hi],BH
+    MOV AL,[cv_b1]           ; silencio previo (indice de 5 bits)
     SHR AL,#3
     CMP AL,#0
     JMPZ cs_note
@@ -2253,56 +2287,56 @@ cs_l:
     MOV AL,#REST
     CALL cs_emit
 cs_note:
-    LDA AL,[cv_b1]           ; duracion: bits 0-1 en el byte 0, 2-4 en el 1
+    MOV AL,[cv_b1]           ; duracion: bits 0-1 en el byte 0, 2-4 en el 1
     AND AL,#0x07
     SHL AL,#2
     MOV CL,AL
-    LDA AL,[cv_b0]
+    MOV AL,[cv_b0]
     SHR AL,#6
     OR  AL,CL
     CALL old_units
-    LDA AL,[cv_b0]
+    MOV AL,[cv_b0]
     AND AL,#0x3F
     CALL cs_emit
-    LDA BL,[cv_len_lo]
-    LDA BH,[cv_len_hi]
+    MOV BL,[cv_len_lo]
+    MOV BH,[cv_len_hi]
     DEC BX
-    STA [cv_len_lo],BL
-    STA [cv_len_hi],BH
+    MOV [cv_len_lo],BL
+    MOV [cv_len_hi],BH
     JMP cs_l
 cs_done:
-    LDA CL,[cv_n_lo]         ; de vuelta a su sitio
-    LDA CH,[cv_n_hi]
-    LDA DL,[cv_base_lo]
-    LDA DH,[cv_base_hi]
+    MOV CL,[cv_n_lo]         ; de vuelta a su sitio
+    MOV CH,[cv_n_hi]
+    MOV DL,[cv_base_lo]
+    MOV DH,[cv_base_hi]
     MOV BX,#TMPBUF
     MOVW
     RET
 
 ; --- cs_emit: AL = nota, BX = duracion (pasos de 4 ms) -> una entrada mas
 cs_emit:
-    STA [un_note],AL
+    MOV [un_note],AL
     MOV AL,BL
     OR  AL,BH
     JMPNZ ce_nz
     MOV BL,#1                ; nunca 0
 ce_nz:
-    STA [un_dur_lo],BL
-    STA [un_dur_hi],BH
-    LDA AL,[cv_n_hi]
+    MOV [un_dur_lo],BL
+    MOV [un_dur_hi],BH
+    MOV AL,[cv_n_hi]
     CMP AL,#MAX_HI
     JMPZ ce_ret              ; 512: no cabe mas
-    LDA BL,[cv_dst_lo]
-    LDA BH,[cv_dst_hi]
+    MOV BL,[cv_dst_lo]
+    MOV BH,[cv_dst_hi]
     CALL note_pack
     INC BX
-    STA [cv_dst_lo],BL
-    STA [cv_dst_hi],BH
-    LDA BL,[cv_n_lo]
-    LDA BH,[cv_n_hi]
+    MOV [cv_dst_lo],BL
+    MOV [cv_dst_hi],BH
+    MOV BL,[cv_n_lo]
+    MOV BH,[cv_n_hi]
     INC BX
-    STA [cv_n_lo],BL
-    STA [cv_n_hi],BH
+    MOV [cv_n_lo],BL
+    MOV [cv_n_hi],BH
 ce_ret:
     RET
 
@@ -2311,7 +2345,7 @@ old_units:
     MOV CL,AL
     MOV BX,#OLD_TT
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     MOV CL,#4                ; pasos de 16 ms -> de 4 ms
     MUL CL
     MOV BX,AX
@@ -2351,27 +2385,27 @@ file_rep_ptr:
 ; --- file_len: AL = fichero -> BX = su longitud (validada) ---------------
 file_len:
     CALL file_len_ptr
-    LDA BL,[DX]
+    MOV BL,[DX]
     INC DX
-    LDA BH,[DX]
+    MOV BH,[DX]
     CALL len_valid
     RET
 
 ; --- instr_set: AL = instrumento -> [work_instr] y PORT_SND_INSTR -------
 instr_set:
     AND AL,#(INSTR_COUNT-1)
-    STA [work_instr],AL
+    MOV [work_instr],AL
     OUT (P_SND_INSTR),AL
     RET
 
 ; --- instr_next: SONGS, corta en INSTR -> el instrumento siguiente; suena
 ; la nota marcada con el ------------------------------------------------------
 instr_prev:
-    LDA AL,[work_instr]
+    MOV AL,[work_instr]
     SUB AL,#1                ; de 0 a 255: instr_set se queda con 2 bits = 3
     JMP instr_show
 instr_next:
-    LDA AL,[work_instr]
+    MOV AL,[work_instr]
     ADD AL,#1
 instr_show:
     CALL instr_set
@@ -2388,7 +2422,7 @@ file_tempo_ptr:
 ; --- tempo_get: AL = el TEMPO de la cancion de trabajo, TEMPO_MIN..MAX
 ; (fuera de rango -- p. ej. 0, el de las canciones de antes -- = 120) -------
 tempo_get:
-    LDA AL,[work_tempo]
+    MOV AL,[work_tempo]
 tempo_valid:                 ; AL = TEMPO guardado -> AL = TEMPO valido
     CMP AL,#TEMPO_MIN
     JMPC tg_def
@@ -2424,7 +2458,7 @@ tempo_down:
     JMPNC tempo_set
     MOV AL,#TEMPO_MIN
 tempo_set:
-    STA [work_tempo],AL
+    MOV [work_tempo],AL
     CALL draw_files
     RET
 
@@ -2460,10 +2494,10 @@ tsc_ret:
 
 ; --- repeat_toggle: SONGS, clic en REPEAT -> NO <-> YES ----------------
 repeat_toggle:
-    LDA AL,[work_rep]
+    MOV AL,[work_rep]
     XOR AL,#1
     AND AL,#1
-    STA [work_rep],AL
+    MOV [work_rep],AL
     CALL draw_files
     RET
 
@@ -2471,20 +2505,20 @@ repeat_toggle:
 ; sentidos y el clic hacen lo mismo) -----------------------------------------
 quant_prev:
 quant_toggle:
-    LDA AL,[quant_mode]
+    MOV AL,[quant_mode]
     CMP AL,#0
     MOV AL,#1
     JMPZ qt_set
     MOV AL,#0
 qt_set:
-    STA [quant_mode],AL
+    MOV [quant_mode],AL
     CALL draw_files
     RET
 
 ; --- files_execute: clic en SONGS -> lo de la fila (INSTR: el siguiente;
 ; NEW SONG: vaciar; cancion: su accion, que despues vuelve a LOAD) ----------
 files_execute:
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     CMP AL,#0
     JMPZ instr_next
     CMP AL,#ROW_TEMPO
@@ -2495,54 +2529,65 @@ files_execute:
     JMPZ quant_toggle
     CMP AL,#ROW_NEW
     JMPZ fe_hold             ; NEW SONG: solo con DATOS larga
-    LDA AL,[files_act]
+    MOV AL,[files_act]
     CMP AL,#0
     JMPZ fe_load
     CMP AL,#1
     JMPZ fe_save
     ; --- DEL: longitud 0 y graba el programa
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_len_ptr
     MOV AL,#0
-    STA [DX],AL
+    MOV [DX],AL
     INC DX
-    STA [DX],AL
+    MOV [DX],AL
+    MOV AL,[files_sel]
+    SUB AL,#FIRST_FILE
+    MOV BL,[cur_file]
+    CMP AL,BL
+    JMPNZ fe_del_go
+    MOV AL,#0xFF
+    MOV [cur_file],AL        ; borrada la cargada: ya no hay
+fe_del_go:
     CALL save_self
     MOV BX,#s_deleted
     JMP fe_status
 fe_new:
     MOV AL,#0
-    STA [len_lo],AL
-    STA [len_hi],AL
+    MOV [len_lo],AL
+    MOV [len_hi],AL
+    MOV AL,#0xFF
+    MOV [cur_file],AL        ; cancion nueva: no viene de ninguna
     JMP fe_to_edit
 fe_load:
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_len
     MOV AL,BL
     OR  AL,BH
     JMPZ fe_empty
-    STA [len_lo],BL
-    STA [len_hi],BH
-    LDA AL,[files_sel]
+    MOV [len_lo],BL
+    MOV [len_hi],BH
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
+    MOV [cur_file],AL        ; la cargada (la "<" de SONGS)
     CALL file_instr_ptr
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL instr_set           ; su instrumento
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_rep_ptr
-    LDA AL,[BX]
+    MOV AL,[BX]
     AND AL,#1
-    STA [work_rep],AL        ; y si se repite
-    LDA AL,[files_sel]
+    MOV [work_rep],AL        ; y si se repite
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_tempo_ptr
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL tempo_valid
-    STA [work_tempo],AL      ; y su TEMPO
-    LDA AL,[files_sel]
+    MOV [work_tempo],AL      ; y su TEMPO
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_base
     MOV DX,#WORK
@@ -2565,30 +2610,30 @@ fe_empty:
 fe_save:
     CALL len_zero
     JMPZ fe_nothing
-    LDA AL,[files_sel]
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_instr_ptr
-    LDA AL,[work_instr]
-    STA [BX],AL              ; con su instrumento
-    LDA AL,[files_sel]
+    MOV AL,[work_instr]
+    MOV [BX],AL              ; con su instrumento
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_rep_ptr
-    LDA AL,[work_rep]
-    STA [BX],AL              ; y si se repite
-    LDA AL,[files_sel]
+    MOV AL,[work_rep]
+    MOV [BX],AL              ; y si se repite
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_tempo_ptr
-    LDA AL,[work_tempo]
-    STA [BX],AL              ; y su TEMPO
-    LDA AL,[files_sel]
+    MOV AL,[work_tempo]
+    MOV [BX],AL              ; y su TEMPO
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_len_ptr
-    LDA AL,[len_lo]
-    STA [DX],AL
+    MOV AL,[len_lo]
+    MOV [DX],AL
     INC DX
-    LDA AL,[len_hi]
-    STA [DX],AL
-    LDA AL,[files_sel]
+    MOV AL,[len_hi]
+    MOV [DX],AL
+    MOV AL,[files_sel]
     SUB AL,#FIRST_FILE
     CALL file_base
     MOV DL,BL                ; destino: el hueco del fichero
@@ -2596,6 +2641,9 @@ fe_save:
     MOV BX,#WORK
     MOV CX,#512
     MOVW
+    MOV AL,[files_sel]
+    SUB AL,#FIRST_FILE
+    MOV [cur_file],AL        ; la cancion de trabajo esta ahora en esta
     CALL save_self
     MOV BX,#s_saved
     JMP fe_status
@@ -2605,7 +2653,7 @@ fe_status:
     PUSH BL
     PUSH BH
     MOV AL,#0
-    STA [files_act],AL       ; tras hacerla, otra vez LOAD
+    MOV [files_act],AL       ; tras hacerla, otra vez LOAD
     CALL beep_low
     CALL draw_files
     MOV CH,#7
@@ -2645,12 +2693,12 @@ redraw_all:
     CALL clst
     CALL clsg
     CALL show_mode
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ ra_files
     CALL draw_keyboard
     MOV AL,#1
-    STA [dot_on],AL
+    MOV [dot_on],AL
     CALL draw_dot
     CALL show_song
     CALL show_note_line
@@ -2663,20 +2711,20 @@ ra_files:
 show_mode:
     MOV CH,#0
     CALL clear_row
-    LDA AL,[mode]
+    MOV AL,[mode]
     CMP AL,#MODE_FILES
     JMPZ sm_files
     MOV CX,#0x000F           ; el instrumento, arriba a la derecha
-    LDA AL,[work_instr]
+    MOV AL,[work_instr]
     CALL put_instr
-    LDA AL,[work_rep]
+    MOV AL,[work_rep]
     CMP AL,#0
     JMPZ sm_norep
     MOV BX,#s_rep            ; "REP", arriba a la izquierda
     MOV CX,#0x0000
     CALL puts
 sm_norep:
-    LDA AL,[rec]
+    MOV AL,[rec]
     CMP AL,#0
     JMPNZ sm_rec
     MOV BX,#s_m_edit
@@ -2693,9 +2741,9 @@ sm_rec:
     CALL puts
     MOV CX,#0x0005
     MOV AL,#ATTR_INVERSE
-    STA [attr_val],AL
+    MOV [attr_val],AL
     MOV AL,#10
-    STA [attr_n],AL
+    MOV [attr_n],AL
     CALL set_attr
     RET
 
@@ -2731,23 +2779,23 @@ ss_pg:
     MOV BL,AL
     MOV BH,AH
 ss_first:
-    STA [ss_lo],BL
-    STA [ss_hi],BH
+    MOV [ss_lo],BL
+    MOV [ss_hi],BH
     MOV AL,#0
-    STA [ss_k],AL
+    MOV [ss_k],AL
 ss_l:
     ; ss < longitud?
-    LDA AL,[ss_hi]
-    LDA BL,[len_hi]
+    MOV AL,[ss_hi]
+    MOV BL,[len_hi]
     CMP AL,BL
     JMPNZ ss_cmp
-    LDA AL,[ss_lo]
-    LDA BL,[len_lo]
+    MOV AL,[ss_lo]
+    MOV BL,[len_lo]
     CMP AL,BL
 ss_cmp:
     JMPNC ss_done
     ; posicion en pantalla: k<5 fila 1, si no fila 2; columna (k mod 5)*4
-    LDA AL,[ss_k]
+    MOV AL,[ss_k]
     MOV AH,#0
     MOV BL,#5
     DIV BL                   ; AL = fila-1, AH = columna/4
@@ -2758,11 +2806,11 @@ ss_cmp:
     MOV CL,AL
     PUSH CL
     PUSH CH
-    LDA BL,[ss_lo]
-    LDA BH,[ss_hi]
+    MOV BL,[ss_lo]
+    MOV BH,[ss_hi]
     CALL note_ptr
     CALL note_unpack
-    LDA AL,[un_note]
+    MOV AL,[un_note]
     POP CH
     POP CL
     PUSH CL
@@ -2771,28 +2819,28 @@ ss_cmp:
     POP CH
     POP CL
     ; la nota de [rpos] (cursor / la que toca) va en inverso
-    LDA AL,[ss_lo]
-    LDA BL,[rpos_lo]
+    MOV AL,[ss_lo]
+    MOV BL,[rpos_lo]
     CMP AL,BL
     JMPNZ ss_next
-    LDA AL,[ss_hi]
-    LDA BL,[rpos_hi]
+    MOV AL,[ss_hi]
+    MOV BL,[rpos_hi]
     CMP AL,BL
     JMPNZ ss_next
     MOV AL,#ATTR_INVERSE
-    STA [attr_val],AL
+    MOV [attr_val],AL
     MOV AL,#3
-    STA [attr_n],AL
+    MOV [attr_n],AL
     CALL set_attr
 ss_next:
-    LDA BL,[ss_lo]
-    LDA BH,[ss_hi]
+    MOV BL,[ss_lo]
+    MOV BH,[ss_hi]
     INC BX
-    STA [ss_lo],BL
-    STA [ss_hi],BH
-    LDA AL,[ss_k]
+    MOV [ss_lo],BL
+    MOV [ss_hi],BH
+    MOV AL,[ss_k]
     ADD AL,#1
-    STA [ss_k],AL
+    MOV [ss_k],AL
     CMP AL,#10
     JMPNZ ss_l
 ss_done:
@@ -2806,7 +2854,7 @@ show_note_line:
     MOV BX,#s_note
     MOV CX,#0x0300
     CALL puts
-    LDA AL,[cur_note]
+    MOV AL,[cur_note]
     MOV CX,#0x0305
     CALL put_note
     CALL rpos_lt_len
@@ -2844,19 +2892,19 @@ snl_ret:
 ; dentro; fila 7 = estado ("ACTION: LOAD", "SAVED"...) ----------------------
 draw_files:
     ; ajusta la ventana para que [files_sel] quede visible
-    LDA AL,[files_sel]
-    LDA BL,[files_top]
+    MOV AL,[files_sel]
+    MOV BL,[files_top]
     CMP AL,BL
     JMPNC df_t1
-    STA [files_top],AL       ; sel < top: la ventana sube
+    MOV [files_top],AL       ; sel < top: la ventana sube
     JMP df_t2
 df_t1:
     SUB AL,BL
     CMP AL,#LIST_ROWS
     JMPC df_t2
-    LDA AL,[files_sel]       ; sel >= top+ROWS: la ventana baja
+    MOV AL,[files_sel]       ; sel >= top+ROWS: la ventana baja
     SUB AL,#(LIST_ROWS-1)
-    STA [files_top],AL
+    MOV [files_top],AL
 df_t2:
     MOV CH,#1
 df_clr:
@@ -2868,22 +2916,22 @@ df_clr:
     JMPNZ df_clr
 
     MOV AL,#0
-    STA [df_k],AL
+    MOV [df_k],AL
 df_l:
-    LDA AL,[files_top]
-    LDA BL,[df_k]
+    MOV AL,[files_top]
+    MOV BL,[df_k]
     ADD AL,BL
-    STA [df_i],AL            ; entrada de la lista (0 INSTR, 1 TEMPO, 2 REPEAT, 3 QUANT, 4 NEW)
-    LDA AL,[df_k]
+    MOV [df_i],AL            ; entrada de la lista (0 INSTR, 1 TEMPO, 2 REPEAT, 3 QUANT, 4 NEW)
+    MOV AL,[df_k]
     ADD AL,#1
     MOV CH,AL                ; fila de pantalla
     MOV CL,#0
-    LDA AL,[df_i]
+    MOV AL,[df_i]
     CMP AL,#0
     JMPNZ df_not_instr
     MOV BX,#s_instr          ; "INSTR: PIANO"
     CALL puts
-    LDA AL,[work_instr]
+    MOV AL,[work_instr]
     CALL put_instr
     JMP df_mark
 df_not_instr:
@@ -2910,7 +2958,7 @@ df_not_tempo:
     MOV BX,#s_repeat         ; "REPEAT: YES"
     CALL puts
     MOV BX,#s_no
-    LDA AL,[work_rep]
+    MOV AL,[work_rep]
     CMP AL,#0
     JMPZ df_r
     MOV BX,#s_yes
@@ -2923,7 +2971,7 @@ df_not_rep:
     MOV BX,#s_quant          ; "QUANT: ON"
     CALL puts
     MOV BX,#s_off
-    LDA AL,[quant_mode]
+    MOV AL,[quant_mode]
     CMP AL,#0
     JMPZ df_q
     MOV BX,#s_on
@@ -2941,98 +2989,106 @@ df_file:
     MOV CL,#0
     MOV AL,#'S'
     CALL putc
-    LDA AL,[df_i]
+    MOV AL,[df_i]
     SUB AL,#(FIRST_FILE-1)
     CALL put2                ; S01..S32
     ADD CL,#1
     PUSH CL
     PUSH CH
-    LDA AL,[df_i]
+    MOV AL,[df_i]
     SUB AL,#FIRST_FILE
     CALL file_len
     POP CH
     POP CL
-    STA [df_len_lo],BL
-    STA [df_len_hi],BH
+    MOV [df_len_lo],BL
+    MOV [df_len_hi],BH
     MOV AL,BL
     OR  AL,BH
     JMPZ df_empty
     MOV AL,#0
-    STA [df_n],AL
+    MOV [df_n],AL
 df_nl:
-    LDA AL,[df_len_hi]       ; quedan notas? (n < longitud)
+    MOV AL,[df_len_hi]       ; quedan notas? (n < longitud)
     CMP AL,#0
     JMPNZ df_has
-    LDA AL,[df_n]
-    LDA BL,[df_len_lo]
+    MOV AL,[df_n]
+    MOV BL,[df_len_lo]
     CMP AL,BL
     JMPNC df_len
 df_has:
     PUSH CL
     PUSH CH
-    LDA AL,[df_i]
+    MOV AL,[df_i]
     SUB AL,#FIRST_FILE
     CALL file_base
-    LDA AL,[df_n]
+    MOV AL,[df_n]
     SHL AL
     ADD BX,AL                ; entrada n de ese fichero
     CALL note_unpack
-    LDA AL,[un_note]
+    MOV AL,[un_note]
     POP CH
     POP CL
     CALL put_note
     ADD CL,#1
-    LDA AL,[df_n]
+    MOV AL,[df_n]
     ADD AL,#1
-    STA [df_n],AL
+    MOV [df_n],AL
     CMP AL,#3
     JMPNZ df_nl
 df_len:
     MOV CL,#16
-    LDA BL,[df_len_lo]
-    LDA BH,[df_len_hi]
+    MOV BL,[df_len_lo]
+    MOV BH,[df_len_hi]
     CALL put_n16
+    MOV AL,[df_i]            ; la cargada (o la ultima guardada): "<" al final
+    SUB AL,#FIRST_FILE
+    MOV BL,[cur_file]
+    CMP AL,BL
+    JMPNZ df_mark
+    MOV CL,#20
+    MOV AL,#'<'
+    CALL putc
     JMP df_mark
 df_empty:
     MOV BX,#s_dashes
     CALL puts
 df_mark:
     ; la fila marcada: inverso entero + la accion elegida
-    LDA AL,[df_i]
-    LDA BL,[files_sel]
+    MOV AL,[df_i]
+    MOV BL,[files_sel]
     CMP AL,BL
     JMPNZ df_next
     MOV CL,#0
     MOV AL,#ATTR_INVERSE
-    STA [attr_val],AL
+    MOV [attr_val],AL
     MOV AL,#21
-    STA [attr_n],AL
+    MOV [attr_n],AL
     PUSH CH
     CALL set_attr
     POP CH
-    LDA AL,[df_i]
+    MOV AL,[df_i]
     CMP AL,#FIRST_FILE
     JMPC df_next             ; INSTR / NEW SONG: sin accion que elegir
     PUSH CH
     MOV BX,#s_action         ; fila de estado: "ACTION: LOAD"
     MOV CX,#0x0701
     CALL puts
-    LDA AL,[files_act]
+    MOV AL,[files_act]
     SHL AL,#1
     MOV CL,AL
     MOV BX,#ACT_NAMES
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     INC BX
-    LDA BH,[BX]
+    MOV BH,[BX]
     MOV BL,AL
     MOV CX,#0x0709
     CALL puts
     POP CH
 df_next:
-    LDA AL,[df_k]
+    MOV AL,[df_k]
     ADD AL,#1
-    STA [df_k],AL
+    MOV [df_k],AL
     CMP AL,#LIST_ROWS
     JMPNZ df_l
 
@@ -3047,9 +3103,9 @@ draw_keyboard:
     ; byte a byte, directo al framebuffer -- mucho mas rapido que pixel a
     ; pixel --, y luego se apagan los separadores y las negras
     MOV AL,#KB_Y0
-    STA [fr_y],AL
+    MOV [fr_y],AL
 dk_row:
-    LDA AL,[fr_y]
+    MOV AL,[fr_y]
     MOV BL,#16
     MUL BL
     MOV BL,AL
@@ -3066,56 +3122,56 @@ dk_byte:
     JMPNZ dk_byte
     MOV AL,#0xF8             ; x 120..124
     OUT (BX),AL
-    LDA AL,[fr_y]
+    MOV AL,[fr_y]
     ADD AL,#1
-    STA [fr_y],AL
+    MOV [fr_y],AL
     CMP AL,#(KB_Y1+1)
     JMPNZ dk_row
     ; separadores entre las 15 blancas (14 lineas apagadas)
     MOV AL,#0
-    STA [fr_val],AL
+    MOV [fr_val],AL
     MOV AL,#KB_Y0
-    STA [fr_y],AL
+    MOV [fr_y],AL
     MOV AL,#1
-    STA [fr_w],AL
+    MOV [fr_w],AL
     MOV AL,#(KB_Y1-KB_Y0+1)
-    STA [fr_h],AL
+    MOV [fr_h],AL
     MOV AL,#(KB_X0+8)
-    STA [fr_x],AL
+    MOV [fr_x],AL
 dk_v:
     CALL fill_rect
-    LDA AL,[fr_x]
+    MOV AL,[fr_x]
     ADD AL,#8
-    STA [fr_x],AL
+    MOV [fr_x],AL
     CMP AL,#(KB_X0+8*15)
     JMPNZ dk_v
     ; negras: APAGADAS, 5 px de ancho centradas en su separador
     MOV AL,#0
-    STA [dk_n],AL
+    MOV [dk_n],AL
 dk_b:
-    LDA CL,[dk_n]
+    MOV CL,[dk_n]
     MOV BX,#NOTE_KEY
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     AND AL,#0x80
     JMPZ dk_bnext
-    LDA AL,[BX]
+    MOV AL,[BX]
     AND AL,#0x1F
     ADD AL,#1
     SHL AL,#3
     ADD AL,#(KB_X0-2)
-    STA [fr_x],AL
+    MOV [fr_x],AL
     MOV AL,#KB_Y0
-    STA [fr_y],AL
+    MOV [fr_y],AL
     MOV AL,#5
-    STA [fr_w],AL
+    MOV [fr_w],AL
     MOV AL,#BK_H
-    STA [fr_h],AL
+    MOV [fr_h],AL
     CALL fill_rect
 dk_bnext:
-    LDA AL,[dk_n]
+    MOV AL,[dk_n]
     ADD AL,#1
-    STA [dk_n],AL
+    MOV [dk_n],AL
     CMP AL,#(KB_SPAN+1)
     JMPNZ dk_b
     RET
@@ -3123,8 +3179,8 @@ dk_bnext:
 ; --- draw_dot: punto de [cur_note]; [dot_on]=1 lo pinta, 0 lo borra. En
 ; blanca (encendida), 3x3 APAGADO abajo; en negra (apagada), 3x3 ENCENDIDO.
 draw_dot:
-    LDA AL,[cur_note]
-    LDA BL,[kb_base]
+    MOV AL,[cur_note]
+    MOV BL,[kb_base]
     SUB AL,BL
     CMP AL,#(KB_SPAN+1)
     JMPC dd_in
@@ -3133,23 +3189,23 @@ dd_in:
     MOV CL,AL
     MOV BX,#NOTE_KEY
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     MOV DL,AL
     MOV AL,#3
-    STA [fr_w],AL
-    STA [fr_h],AL
+    MOV [fr_w],AL
+    MOV [fr_h],AL
     MOV AL,DL
     AND AL,#0x80
     JMPNZ dd_black
     MOV AL,DL
     SHL AL,#3
     ADD AL,#(KB_X0+3)
-    STA [fr_x],AL
+    MOV [fr_x],AL
     MOV AL,#DOT_WY
-    STA [fr_y],AL
-    LDA AL,[dot_on]
+    MOV [fr_y],AL
+    MOV AL,[dot_on]
     XOR AL,#1
-    STA [fr_val],AL
+    MOV [fr_val],AL
     CALL fill_rect
     RET
 dd_black:
@@ -3158,62 +3214,62 @@ dd_black:
     ADD AL,#1
     SHL AL,#3
     ADD AL,#(KB_X0-1)
-    STA [fr_x],AL
+    MOV [fr_x],AL
     MOV AL,#DOT_BY
-    STA [fr_y],AL
-    LDA AL,[dot_on]
-    STA [fr_val],AL
+    MOV [fr_y],AL
+    MOV AL,[dot_on]
+    MOV [fr_val],AL
     CALL fill_rect
     RET
 
 ; --- fill_rect: rectangulo [fr_x],[fr_y],[fr_w],[fr_h] a [fr_val] (1/0) ----
 fill_rect:
-    LDA AL,[fr_y]
-    STA [px_y],AL
-    LDA AL,[fr_h]
-    STA [fr_rows],AL
+    MOV AL,[fr_y]
+    MOV [px_y],AL
+    MOV AL,[fr_h]
+    MOV [fr_rows],AL
 fr_row:
-    LDA AL,[fr_x]
-    STA [px_x],AL
-    LDA AL,[fr_w]
-    STA [fr_cols],AL
+    MOV AL,[fr_x]
+    MOV [px_x],AL
+    MOV AL,[fr_w]
+    MOV [fr_cols],AL
 fr_col:
     CALL put_px
-    LDA AL,[px_x]
+    MOV AL,[px_x]
     ADD AL,#1
-    STA [px_x],AL
-    LDA AL,[fr_cols]
+    MOV [px_x],AL
+    MOV AL,[fr_cols]
     SUB AL,#1
-    STA [fr_cols],AL
+    MOV [fr_cols],AL
     JMPNZ fr_col
-    LDA AL,[px_y]
+    MOV AL,[px_y]
     ADD AL,#1
-    STA [px_y],AL
-    LDA AL,[fr_rows]
+    MOV [px_y],AL
+    MOV AL,[fr_rows]
     SUB AL,#1
-    STA [fr_rows],AL
+    MOV [fr_rows],AL
     JMPNZ fr_row
     RET
 
 ; --- put_px: pixel ([px_x],[px_y]) a [fr_val], leyendo y reescribiendo el
 ; byte del framebuffer (puerto = y*16 + x/8, bit 7 = el de la izquierda) --
 put_px:
-    LDA AL,[px_y]
+    MOV AL,[px_y]
     MOV BL,#16
     MUL BL                   ; AX = y*16
     MOV BL,AL
     MOV BH,AH
-    LDA AL,[px_x]
+    MOV AL,[px_x]
     SHR AL,#3
     ADD BX,AL
-    LDA AL,[px_x]
+    MOV AL,[px_x]
     AND AL,#7
     MOV CL,AL
     MOV DX,#MASK8
     ADD DX,CL
-    LDA CL,[DX]
+    MOV CL,[DX]
     IN  AL,(BX)
-    LDA AH,[fr_val]
+    MOV AH,[fr_val]
     CMP AH,#0
     JMPZ pp_clr
     OR  AL,CL
@@ -3231,7 +3287,7 @@ pp_clr:
 ; --- puts: BX = cadena asciiz, CH = fila, CL = col; sale CL tras el ultimo -
 puts:
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     CALL putc
@@ -3273,9 +3329,9 @@ put_instr:
     MOV DL,AL
     MOV BX,#INSTR_NAMES
     ADD BX,DL
-    LDA AL,[BX]
+    MOV AL,[BX]
     INC BX
-    LDA BH,[BX]
+    MOV BH,[BX]
     MOV BL,AL
     CALL puts
     RET
@@ -3297,7 +3353,7 @@ pn_go:
     MOV DL,#12
     DIV DL                   ; AL = octava sobre la 3, AH = semitono
     ADD AL,#'3'
-    STA [pn_oct],AL
+    MOV [pn_oct],AL
     MOV AL,AH
     SHL AL,#1
     PUSH CL
@@ -3305,18 +3361,18 @@ pn_go:
     MOV BX,#NOTE_NAMES
     ADD BX,CL
     POP CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CALL putc
     INC BX
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0x20
     JMPZ pn_nat
     CALL putc                ; '#'
-    LDA AL,[pn_oct]
+    MOV AL,[pn_oct]
     CALL putc
     RET
 pn_nat:
-    LDA AL,[pn_oct]
+    MOV AL,[pn_oct]
     CALL putc
     MOV AL,#0x20
     CALL putc
@@ -3329,15 +3385,15 @@ set_attr:
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x05
-    LDA AL,[attr_n]
-    STA [sa_n],AL
+    MOV AL,[attr_n]
+    MOV [sa_n],AL
 sa_l:
-    LDA AL,[attr_val]
+    MOV AL,[attr_val]
     OUT (DX),AL
     INC DX
-    LDA AL,[sa_n]
+    MOV AL,[sa_n]
     SUB AL,#1
-    STA [sa_n],AL
+    MOV [sa_n],AL
     JMPNZ sa_l
     RET
 
@@ -3457,6 +3513,7 @@ rh_fresh:     .space 1    ; 1 = REC: la siguiente nota no mide su silencio
 rh_m_lo:      .space 1    ; REC: duracion objetivo (ms, 16 bits)
 rh_m_hi:      .space 1
 rh_timing:    .space 1    ; REC: 1 = suena la nota [rpos] y se esta midiendo
+cur_file:     .space 1    ; cancion cargada o guardada la ultima (0xFF = ninguna)
 rec_dirty:    .space 1    ; 1 = en este REC se ha marcado alguna nota
 qz_n_lo:      .space 1    ; quantize: entradas de la cancion
 qz_n_hi:      .space 1

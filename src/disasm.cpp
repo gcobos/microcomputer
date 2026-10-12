@@ -28,6 +28,10 @@ const char* condSuffix(uint8_t c) {
         default:    return "?";
     }
 }
+const char* shxName(uint8_t op) {
+    static const char* const N[5] = {"SAR", "ROL", "ROR", "RCL", "RCR"};
+    return (op < 5) ? N[op] : "?";
+}
 const char* aluName(uint8_t op) {
     static const char* const N[ALU_COUNT] = {
         "MOV", "ADD", "ADC", "SUB", "SBC", "CMP", "AND", "OR", "XOR",
@@ -41,17 +45,22 @@ uint8_t instrLen(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
     uint8_t r = opReg(op0);
     switch (opFamily(op0)) {
         case OP_LDI: case OP_LDAR: case OP_STAR: case OP_INR: case OP_OUTR:
-        case OP_ALURR: case OP_ALUP: case OP_SHR: case OP_SHL:
+        case OP_ALURR: case OP_SHX: case OP_SHR: case OP_SHL:
             return 2;
         case OP_LDA: case OP_STA: case OP_IN: case OP_OUT:
-        case OP_ALUI: case OP_JMP: case OP_CALL:
+        case OP_ALUI: case OP_JMP:
             return 3;
-        case OP_ALUM:
-            return 4;
-        case OP_JX:
-            if (r == JX_JMPNV || r == JX_CALLNV) return 3;
-            if (r == JX_JMPR || r == JX_CALLR) return 2;
+        case OP_CALL:
+            if (r == CALL_ADDR) return 3;
+            if (r == CALL_STI) return 4;
+            if (r >= CALL_STIR) return 2;
             return 1;
+        case OP_JX:
+            if (r == JX_JMPR || r == JX_CALLR) return 2;
+            if (r == 7) return 1;
+            return 3;                      // JMPNV y saltos con signo
+        case OP_X16:
+            return (r < 4) ? 2 : 1;
         case OP_R16:
             return (r <= R16_SUB8) ? 2 : 1;
         case OP_R16I:
@@ -81,18 +90,28 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
             return 1;
         }
         case OP_LDI:  snprintf(out, n, "MOV %s,#0x%02X", regName8(r), b1);   return 2;
-        case OP_LDA:  snprintf(out, n, "LDA %s,[0x%04X]", regName8(r), a16); return 3;
-        case OP_STA:  snprintf(out, n, "STA [0x%04X],%s", a16, regName8(r)); return 3;
-        case OP_LDAR: snprintf(out, n, "LDA %s,[%s]", regName8(r), regName16(b1)); return 2;
-        case OP_STAR: snprintf(out, n, "STA [%s],%s", regName16(b1), regName8(r)); return 2;
+        case OP_LDA:  snprintf(out, n, "MOV %s,[0x%04X]", regName8(r), a16); return 3;
+        case OP_STA:  snprintf(out, n, "MOV [0x%04X],%s", a16, regName8(r)); return 3;
+        case OP_LDAR: snprintf(out, n, "MOV %s,[%s]", regName8(r), regName16(b1)); return 2;
+        case OP_STAR: snprintf(out, n, "MOV [%s],%s", regName16(b1), regName8(r)); return 2;
         case OP_IN:   snprintf(out, n, "IN %s,(0x%04X)",  regName8(r), a16); return 3;
         case OP_OUT:  snprintf(out, n, "OUT (0x%04X),%s", a16, regName8(r)); return 3;
         case OP_INR:  snprintf(out, n, "IN %s,(%s)",  regName8(r), regName16(b1)); return 2;
         case OP_OUTR: snprintf(out, n, "OUT (%s),%s", regName16(b1), regName8(r)); return 2;
         case OP_ALURR: snprintf(out, n, "%s %s,%s", aluName((uint8_t)(b1 >> 3)), regName8(r), regName8(b1)); return 2;
         case OP_ALUI:  snprintf(out, n, "%s %s,#0x%02X", aluName(b1), regName8(r), b2); return 3;
-        case OP_ALUM:  snprintf(out, n, "%s %s,[0x%04X]", aluName(b1), regName8(r), a16b); return 4;
-        case OP_ALUP:  snprintf(out, n, "%s %s,[%s]", aluName((uint8_t)(b1 >> 2)), regName8(r), regName16(b1)); return 2;
+        case OP_SHX:   snprintf(out, n, "%s %s,#%d", shxName((uint8_t)((b1 >> 3) & 7)), regName8(r), (b1 & 7) + 1); return 2;
+        case OP_NEG:   snprintf(out, n, "NEG %s", regName8(r)); return 1;
+        case OP_IMUL:  snprintf(out, n, "IMUL %s", regName8(r)); return 1;
+        case OP_X16: {
+            if (r >= 4) { snprintf(out, n, "DB 0x%02X", op); return 1; }
+            static const char* const X[6] = {"SHL", "SHR", "SAR", "NEG", "MUL", "DIV"};
+            uint8_t x = (uint8_t)(b1 >> 4);
+            if (x >= 6)      snprintf(out, n, "DB 0x%02X,0x%02X", op, b1);
+            else if (x <= 2) snprintf(out, n, "%s %s,#%d", X[x], regName16(r), (b1 & 15) + 1);
+            else             snprintf(out, n, "%s %s", X[x], regName16(r));
+            return 2;
+        }
         case OP_NOT:  snprintf(out, n, "NOT %s", regName8(r)); return 1;
         case OP_SHR:  snprintf(out, n, "SHR %s,#%d", regName8(r), (b1 & 7) + 1); return 2;
         case OP_SHL:  snprintf(out, n, "SHL %s,#%d", regName8(r), (b1 & 7) + 1); return 2;
@@ -103,11 +122,21 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
         case OP_PUSH: snprintf(out, n, "PUSH %s", regName8(r)); return 1;
         case OP_POP:  snprintf(out, n, "POP %s",  regName8(r)); return 1;
         case OP_JMP:  snprintf(out, n, "JMP%s 0x%04X",  condSuffix(r), a16); return 3;
-        case OP_CALL: snprintf(out, n, "CALL%s 0x%04X", condSuffix(r), a16); return 3;
+        case OP_CALL:
+            if (r == CALL_ADDR) { snprintf(out, n, "CALL 0x%04X", a16); return 3; }
+            // compacta (hexadecimal sin 0x, como la columna de direcciones):
+            // en el listado del panel caben 15 caracteres y la forma larga
+            // "MOV [0x2000],#0x5A" (18) se cortaria
+            if (r == CALL_STI)  { snprintf(out, n, "MOV [%04X],#%02X", a16, b3); return 4; }
+            if (r >= CALL_STIR) { snprintf(out, n, "MOV [%s],#0x%02X", regName16(r), b1); return 2; }
+            snprintf(out, n, "DB 0x%02X", op); return 1;
         case OP_JX:
             switch (r) {
                 case JX_JMPNV:  snprintf(out, n, "JMPNV 0x%04X", a16);  return 3;
-                case JX_CALLNV: snprintf(out, n, "CALLNV 0x%04X", a16); return 3;
+                case JX_JMPLT:  snprintf(out, n, "JMPLT 0x%04X", a16);  return 3;
+                case JX_JMPGE:  snprintf(out, n, "JMPGE 0x%04X", a16);  return 3;
+                case JX_JMPLE:  snprintf(out, n, "JMPLE 0x%04X", a16);  return 3;
+                case JX_JMPGT:  snprintf(out, n, "JMPGT 0x%04X", a16);  return 3;
                 case JX_JMPR:   snprintf(out, n, "JMP %s", regName16(b1));  return 2;
                 case JX_CALLR:  snprintf(out, n, "CALL %s", regName16(b1)); return 2;
                 default: snprintf(out, n, "DB 0x%02X", op); return 1;

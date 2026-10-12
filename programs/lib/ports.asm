@@ -47,6 +47,7 @@ P_T_MONTH     = 0x0679
 P_T_YEAR      = 0x067A
 P_T_WDAY      = 0x067B
 P_T_LMIN      = 0x067C   ; 0x067C..0x067E: minutos locales desde 1-1-2020
+P_TIME_SYNC   = 0x067F   ; OUT: intentar ponerse en hora ya (Wi-Fi)
 P_EEP_BASE    = 0x0700   ; EEPROM del slot: bufer de 256 bytes
 P_EEP_LOAD    = 0x0800
 P_EEP_SAVE    = 0x0801

@@ -122,6 +122,61 @@ void SpiFlashStorage::readJedecId(uint8_t* manufacturer, uint8_t* memType, uint8
     deselect();
 }
 
+void SpiFlashStorage::readStatus(uint8_t* mf, uint8_t* type, uint8_t* cap, uint8_t* sr1, uint8_t* sr2, uint8_t* sr3, uint8_t* sr1AfterWel) {
+    auto rd = [this](uint8_t cmd) {
+        select();
+        SPI.transfer(cmd);
+        uint8_t v = SPI.transfer(0xFF);
+        deselect();
+        return v;
+    };
+    wake();
+    readJedecId(mf, type, cap);
+    *sr1 = rd(CMD_READ_STATUS1);
+    *sr2 = rd(0x35);
+    *sr3 = rd(0x15);
+    writeEnable();
+    *sr1AfterWel = rd(CMD_READ_STATUS1);
+    select();
+    SPI.transfer(0x04);                     // WRITE DISABLE
+    deselect();
+    sleep();
+}
+
+bool SpiFlashStorage::writeTest(int slot, uint32_t wakeUs, char* out, size_t outLen) {
+    if (!validSlot(slot)) return false;
+    const uint32_t base = slotAddr(slot);
+    uint8_t before[16], after[16], pattern[16], mark = 0;
+    for (uint8_t i = 0; i < 16; ++i) pattern[i] = (uint8_t)(0xA0 + i);
+    wake();
+    delayMicroseconds(wakeUs);              // espera extra tras despertar
+    readBytes(base, &mark, 1);
+    uint8_t mf, ty, cap;
+    readJedecId(&mf, &ty, &cap);
+    if (mark == USED_MARK || mf != 0xEF) {  // ocupado, o el chip no contesta
+        sleep();
+        snprintf(out, outLen, "NO SE TOCA: marca=%02X id=%02X", mark, mf);
+        return true;
+    }
+    unsigned long t0 = micros();
+    eraseSector(base);
+    unsigned long tErase = micros() - t0;
+    readBytes(base, before, 16);
+    t0 = micros();
+    writeBytes(base, pattern, 16);
+    unsigned long tProg = micros() - t0;
+    readBytes(base, after, 16);
+    eraseSector(base);                      // lo deja libre otra vez
+    sleep();
+    int n = snprintf(out, outLen, "borrado=%luus prog=%luus tras_borrar=", tErase, tProg);
+    for (uint8_t i = 0; i < 4 && n > 0 && (size_t)n < outLen; ++i)
+        n += snprintf(out + n, outLen - n, "%02X", before[i]);
+    if (n > 0 && (size_t)n < outLen) n += snprintf(out + n, outLen - n, " leido=");
+    for (uint8_t i = 0; i < 16 && n > 0 && (size_t)n < outLen; ++i)
+        n += snprintf(out + n, outLen - n, "%02X", after[i]);
+    return true;
+}
+
 bool SpiFlashStorage::init() {
     pinMode(csPin_, OUTPUT);
     digitalWrite(csPin_, HIGH);
@@ -191,11 +246,15 @@ bool SpiFlashStorage::saveProgram(int slot, const uint8_t* src, const uint8_t* m
     memset(header, 0xFF, sizeof(header));
     header[0] = USED_MARK;
     if (meta) memcpy(header + 1, meta, SLOT_META_SIZE);
-    writeBytes(base, header, IMAGE_OFFSET);
+    // la imagen primero y la marca de usado al final: si algo falla a medias,
+    // el slot queda libre en vez de "usado" con datos a medio grabar
     writeBytes(base + IMAGE_OFFSET, src, (uint32_t)PROGRAM_SIZE);
+    writeBytes(base, header, IMAGE_OFFSET);
+    bool ok = verify(base + IMAGE_OFFSET, src, (uint32_t)PROGRAM_SIZE) &&
+              verify(base, header, IMAGE_OFFSET);
 
     sleep();
-    return true;
+    return ok;
 }
 
 bool SpiFlashStorage::readSlotMeta(int slot, uint8_t* meta) {
@@ -224,8 +283,9 @@ bool SpiFlashStorage::deleteProgram(int slot) {
     for (uint32_t i = 0; i < SECTORS_PER_SLOT; ++i) {
         eraseSector(base + i * SECTOR_SIZE);
     }
+    bool ok = verify(base, nullptr, SLOT_STRIDE);   // marca a 0xFF = libre
     sleep();
-    return true; // marca a 0xFF = libre
+    return ok;
 }
 
 bool SpiFlashStorage::readEeprom(int slot, uint8_t* dest) {
@@ -239,9 +299,9 @@ bool SpiFlashStorage::readEeprom(int slot, uint8_t* dest) {
 bool SpiFlashStorage::writeEeprom(int slot, const uint8_t* src) {
     if (!validSlot(slot)) return false;
     wake();
-    patchSector(eepromAddr(slot), src, (uint32_t)EEPROM_SLOT_SIZE);
+    bool ok = patchSector(eepromAddr(slot), src, (uint32_t)EEPROM_SLOT_SIZE);
     sleep();
-    return true;
+    return ok;
 }
 
 bool SpiFlashStorage::readSettings(uint8_t* dest) {
@@ -253,9 +313,9 @@ bool SpiFlashStorage::readSettings(uint8_t* dest) {
 
 bool SpiFlashStorage::writeSettings(const uint8_t* src) {
     wake();
-    patchSector(SETTINGS_ADDR, src, (uint32_t)SETTINGS_SIZE);
+    bool ok = patchSector(SETTINGS_ADDR, src, (uint32_t)SETTINGS_SIZE);
     sleep();
-    return true;
+    return ok;
 }
 
 bool SpiFlashStorage::readNetConfig(uint8_t* dest) {
@@ -267,9 +327,9 @@ bool SpiFlashStorage::readNetConfig(uint8_t* dest) {
 
 bool SpiFlashStorage::writeNetConfig(const uint8_t* src) {
     wake();
-    patchSector(NET_CONFIG_ADDR, src, (uint32_t)NET_CONFIG_SIZE);
+    bool ok = patchSector(NET_CONFIG_ADDR, src, (uint32_t)NET_CONFIG_SIZE);
     sleep();
-    return true;
+    return ok;
 }
 
 // Unico modo de tocar unos pocos bytes en NOR flash sin perder el resto:
@@ -279,7 +339,7 @@ bool SpiFlashStorage::writeNetConfig(const uint8_t* src) {
 // es demasiado para arriesgarse en una pila de tarea de Arduino, y esta
 // funcion nunca se reentra (single task, ver el resto del driver). Quien
 // llama ya tiene el chip despierto (wake()).
-void SpiFlashStorage::patchSector(uint32_t addr, const uint8_t* src, uint32_t len) {
+bool SpiFlashStorage::patchSector(uint32_t addr, const uint8_t* src, uint32_t len) {
     static uint8_t sector[SECTOR_SIZE];
     uint32_t sectorAddr = addr - (addr % SECTOR_SIZE);
     uint32_t offsetInSector = addr - sectorAddr;
@@ -288,6 +348,21 @@ void SpiFlashStorage::patchSector(uint32_t addr, const uint8_t* src, uint32_t le
     memcpy(sector + offsetInSector, src, len);
     eraseSector(sectorAddr);
     writeBytes(sectorAddr, sector, SECTOR_SIZE);
+    return verify(sectorAddr, sector, SECTOR_SIZE);
+}
+
+bool SpiFlashStorage::verify(uint32_t addr, const uint8_t* data, uint32_t len) {
+    uint8_t buf[256];
+    for (uint32_t done = 0; done < len; ) {
+        uint32_t n = len - done;
+        if (n > sizeof(buf)) n = sizeof(buf);
+        readBytes(addr + done, buf, n);
+        for (uint32_t i = 0; i < n; ++i) {
+            if (buf[i] != (data ? data[done + i] : 0xFF)) return false;
+        }
+        done += n;
+    }
+    return true;
 }
 
 } // namespace compi

@@ -187,30 +187,30 @@ start:
     CALL clst
 
     MOV AL,#0
-    STA [map_idx],AL
+    MOV [map_idx],AL
     CALL load_level         ; posiciona al jugador y puebla mapa/bolitas
                               ; del nivel 0 (ver load_level)
     CALL show_hud
 
     MOV AL,#0
-    STA [proj_active],AL
-    STA [proj_active+1],AL
-    STA [proj_active+2],AL
-    STA [proj_active+3],AL
-    STA [snd_timer],AL
-    STA [cloud_drift_a],AL
-    STA [cloud_drift_b],AL
+    MOV [proj_active],AL
+    MOV [proj_active+1],AL
+    MOV [proj_active+2],AL
+    MOV [proj_active+3],AL
+    MOV [snd_timer],AL
+    MOV [cloud_drift_a],AL
+    MOV [cloud_drift_b],AL
     MOV AL,#CLOUD_DRIFT_PERIOD
-    STA [cloud_drift_cnt],AL
+    MOV [cloud_drift_cnt],AL
 
     IN  AL,(P_DIR_POS)
-    STA [dir_prev],AL
+    MOV [dir_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_prev],AL
+    MOV [dat_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
 
 ; ============================================================================
 ;  BUCLE PRINCIPAL
@@ -226,39 +226,39 @@ main_l:
 
     CALL clr_shadow
     MOV AL,#0
-    STA [ray_i],AL
+    MOV [ray_i],AL
 ray_loop:
-    LDA AL,[facing]
-    LDA BL,[ray_i]
+    MOV AL,[facing]
+    MOV BL,[ray_i]
     ADD AL,BL
     SUB AL,#16              ; centra el abanico de 32 rayos en `facing`
     AND AL,#0x7F
-    STA [ray_ang],AL
+    MOV [ray_ang],AL
 
     CALL march_ray
     CALL render_column
 
     ; guarda el techo libre de esta columna (para la oclusion de las
     ; nubes, que se dibujan aparte tras el bucle -- ver dibuja_nubes)
-    LDA AL,[y0]
+    MOV AL,[y0]
     MOV BX,#y0_tbl
-    LDA CL,[ray_i]
+    MOV CL,[ray_i]
     ADD BX,CL
-    STA [BX],AL
+    MOV [BX],AL
 
     ; distancia de la pared de esta columna, x4 (en cuartos de baldosa, la
     ; escala de [ov_q]): dibuja_objetos la usa DESPUES del bucle para
     ; recortar bolitas y proyectiles pixel a pixel tras las paredes
-    LDA AL,[dist]
+    MOV AL,[dist]
     SHL AL,#2
     MOV BX,#dist4_tbl
-    LDA CL,[ray_i]
+    MOV CL,[ray_i]
     ADD BX,CL
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA AL,[ray_i]
+    MOV AL,[ray_i]
     ADD AL,#1
-    STA [ray_i],AL
+    MOV [ray_i],AL
     CMP AL,#FOV_RAYS
     JMPNZ ray_loop
 
@@ -276,26 +276,26 @@ ray_loop:
 ; --- leer_giro: gira `facing` segun el sentido del encoder DIRECCION -------
 leer_giro:
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dir_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_prev],CL
     CMP AL,#0
     JMPZ lg_d
     AND AL,#0x80
     JMPNZ gira_izq
 gira_der:
-    LDA AL,[facing]
+    MOV AL,[facing]
     ADD AL,#TURN_STEP
     AND AL,#0x7F
-    STA [facing],AL
+    MOV [facing],AL
     JMP lg_d
 gira_izq:
-    LDA AL,[facing]
+    MOV AL,[facing]
     SUB AL,#TURN_STEP
     AND AL,#0x7F
-    STA [facing],AL
+    MOV [facing],AL
 lg_d:
     RET
 
@@ -303,11 +303,11 @@ lg_d:
 ; sin atravesar paredes (si la baldosa de destino es pared, no se mueve) ---
 leer_avance:
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_prev],CL
     CMP AL,#0
     JMPZ la_d
     AND AL,#0x80
@@ -317,53 +317,53 @@ mueve_adelante:
     JMP la_aplica
 mueve_atras:
     CALL buscar_mov
-    LDA AL,[mv_dx]
+    MOV AL,[mv_dx]
     NOT AL
     ADD AL,#1
-    STA [mv_dx],AL
-    LDA AL,[mv_dy]
+    MOV [mv_dx],AL
+    MOV AL,[mv_dy]
     NOT AL
     ADD AL,#1
-    STA [mv_dy],AL
+    MOV [mv_dy],AL
 la_aplica:
-    LDA AL,[player_x]
-    LDA BL,[mv_dx]
+    MOV AL,[player_x]
+    MOV BL,[mv_dx]
     ADD AL,BL
-    STA [try_x],AL
-    LDA AL,[player_y]
-    LDA BL,[mv_dy]
+    MOV [try_x],AL
+    MOV AL,[player_y]
+    MOV BL,[mv_dy]
     ADD AL,BL
-    STA [try_y],AL
+    MOV [try_y],AL
 
-    LDA AL,[try_x]
+    MOV AL,[try_x]
     SHR AL,#4
     MOV CL,AL
-    LDA AL,[try_y]
+    MOV AL,[try_y]
     SHR AL,#4
     MOV CH,AL
     CALL es_pared
     CMP AL,#0
     JMPNZ la_d              ; pared en destino -> no mover
 
-    LDA AL,[try_x]
-    STA [player_x],AL
-    LDA AL,[try_y]
-    STA [player_y],AL
+    MOV AL,[try_x]
+    MOV [player_x],AL
+    MOV AL,[try_y]
+    MOV [player_y],AL
 la_d:
     RET
 
 ; --- buscar_mov: [facing] -> [mv_dx],[mv_dy] (tabla move_tbl, escala 4) ----
 buscar_mov:
-    LDA AL,[facing]
+    MOV AL,[facing]
     SHL AL                  ; offset = facing*2 (2 bytes/entrada)
     MOV CL,AL
     MOV BX,#move_tbl
     ADD BX,CL
-    LDA AL,[BX]
-    STA [mv_dx],AL
+    MOV AL,[BX]
+    MOV [mv_dx],AL
     INC BX
-    LDA AL,[BX]
-    STA [mv_dy],AL
+    MOV AL,[BX]
+    MOV [mv_dy],AL
     RET
 
 ; ============================================================================
@@ -378,10 +378,10 @@ buscar_mov:
 ; mantenerlo pulsado no dispare a cada vuelta del bucle) -------------------
 leer_disparo:
     IN  AL,(P_DIR_BTN)
-    STA [tmp1],AL
-    LDA BL,[dir_btn_prev]
-    LDA CL,[tmp1]
-    STA [dir_btn_prev],CL
+    MOV [tmp1],AL
+    MOV BL,[dir_btn_prev]
+    MOV CL,[tmp1]
+    MOV [dir_btn_prev],CL
     CMP CL,#0
     JMPZ ld2_dat
     CMP BL,#0
@@ -389,10 +389,10 @@ leer_disparo:
     CALL dispara
 ld2_dat:
     IN  AL,(P_DAT_BTN)
-    STA [tmp1],AL
-    LDA BL,[dat_btn_prev]
-    LDA CL,[tmp1]
-    STA [dat_btn_prev],CL
+    MOV [tmp1],AL
+    MOV BL,[dat_btn_prev]
+    MOV CL,[tmp1]
+    MOV [dat_btn_prev],CL
     CMP CL,#0
     JMPZ ld2_d
     CMP BL,#0
@@ -406,70 +406,70 @@ ld2_d:
 ; PROJ_COUNT estan ocupados, ignora la pulsacion ---------------------------
 dispara:
     MOV AL,#0
-    STA [proj_i],AL
+    MOV [proj_i],AL
 dsp_find:
     MOV BX,#proj_active
     CALL proj_field_addr
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ dsp_found
-    LDA AL,[proj_i]
+    MOV AL,[proj_i]
     ADD AL,#1
-    STA [proj_i],AL
+    MOV [proj_i],AL
     CMP AL,#PROJ_COUNT
     JMPNZ dsp_find
     RET                      ; los PROJ_COUNT estan ocupados
 dsp_found:
     MOV AL,#1
-    STA [BX],AL              ; proj_active[proj_i] = 1 (BX ya apunta ahi)
+    MOV [BX],AL              ; proj_active[proj_i] = 1 (BX ya apunta ahi)
 
-    LDA AL,[facing]
+    MOV AL,[facing]
     MOV BX,#proj_launch_facing
     CALL proj_field_addr
-    STA [BX],AL
+    MOV [BX],AL
 
     MOV AL,#0
     MOV BX,#proj_steps
     CALL proj_field_addr
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA AL,[facing]
+    MOV AL,[facing]
     SHL AL                  ; offset = facing*2 (move_tbl, 2 bytes/entrada:
                               ; 1/4 de baldosa por fotograma, para que se
                               ; vea volar en vez de cruzar el mapa de golpe)
     MOV CL,AL
     MOV BX,#move_tbl
     ADD BX,CL
-    LDA AL,[BX]
-    STA [dsp_dx],AL
+    MOV AL,[BX]
+    MOV [dsp_dx],AL
     INC BX
-    LDA AL,[BX]
-    STA [dsp_dy],AL
+    MOV AL,[BX]
+    MOV [dsp_dy],AL
 
-    LDA AL,[dsp_dx]
+    MOV AL,[dsp_dx]
     MOV BX,#proj_dx
     CALL proj_field_addr
-    STA [BX],AL
-    LDA AL,[dsp_dy]
+    MOV [BX],AL
+    MOV AL,[dsp_dy]
     MOV BX,#proj_dy
     CALL proj_field_addr
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA AL,[player_x]
+    MOV AL,[player_x]
     MOV BX,#proj_rx
     CALL proj_field_addr
-    STA [BX],AL
-    LDA AL,[player_y]
+    MOV [BX],AL
+    MOV AL,[player_y]
     MOV BX,#proj_ry
     CALL proj_field_addr
-    STA [BX],AL
+    MOV [BX],AL
 
     MOV AL,#SND_SWEEP_FRAMES
-    STA [snd_timer],AL
+    MOV [snd_timer],AL
     MOV AL,#lo(SND_FREQ_START)
-    STA [snd_freq_lo],AL
+    MOV [snd_freq_lo],AL
     MOV AL,#hi(SND_FREQ_START)
-    STA [snd_freq_hi],AL
+    MOV [snd_freq_hi],AL
     RET
 
 ; --- proj_field_addr: BX debe traer ya la base de un array proj_* (uno de
@@ -477,7 +477,7 @@ dsp_found:
 ; [proj_i]. Usada por dispara/actualiza_proyectil/ray_loop para acceder al
 ; slot "actual" sin repetir la aritmetica de puntero cada vez --------------
 proj_field_addr:
-    LDA CL,[proj_i]
+    MOV CL,[proj_i]
     ADD BX,CL
     RET
 
@@ -487,59 +487,65 @@ proj_field_addr:
 ; este fotograma segun hacia donde mire ahora el jugador --------------------
 actualiza_proyectil:
     MOV AL,#0
-    STA [proj_i],AL
+    MOV [proj_i],AL
 apr_loop:
     MOV BX,#proj_active
     CALL proj_field_addr
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ apr_next
 
     MOV BX,#proj_dx
     CALL proj_field_addr
-    LDA AL,[BX]
-    STA [apr_dx],AL
+    MOV AL,[BX]
+    MOV [apr_dx],AL
     MOV BX,#proj_dy
     CALL proj_field_addr
-    LDA AL,[BX]
-    STA [apr_dy],AL
+    MOV AL,[BX]
+    MOV [apr_dy],AL
 
     MOV BX,#proj_rx
     CALL proj_field_addr
-    LDA AL,[BX]
-    ADD AL,[apr_dx]
-    STA [BX],AL
+    MOV AL,[BX]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[apr_dx]
+    ADD AL,CL
+    POP CL
+    MOV [BX],AL
     MOV BX,#proj_ry
     CALL proj_field_addr
-    LDA AL,[BX]
-    ADD AL,[apr_dy]
-    STA [BX],AL
+    MOV AL,[BX]
+    PUSH CL                  ; (ISA 3: sin ALU con memoria; POP no toca flags)
+    MOV CL,[apr_dy]
+    ADD AL,CL
+    POP CL
+    MOV [BX],AL
 
     MOV BX,#proj_steps
     CALL proj_field_addr
-    LDA AL,[BX]
+    MOV AL,[BX]
     ADD AL,#1
-    STA [BX],AL
-    STA [apr_steps],AL
+    MOV [BX],AL
+    MOV [apr_steps],AL
 
     MOV BX,#proj_rx
     CALL proj_field_addr
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHR AL,#4
-    STA [apr_tx],AL          ; tile x en memoria: proj_field_addr usa CL,
+    MOV [apr_tx],AL          ; tile x en memoria: proj_field_addr usa CL,
                               ; no se puede dejar ahi entre dos llamadas
     MOV BX,#proj_ry
     CALL proj_field_addr
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHR AL,#4
     MOV CH,AL
-    LDA CL,[apr_tx]
+    MOV CL,[apr_tx]
 
 apr_chk_wall:
     CALL es_pared
     CMP AL,#0
     JMPNZ apr_stop
-    LDA AL,[apr_steps]
+    MOV AL,[apr_steps]
     CMP AL,#(MAX_STEPS*4)
     JMPNC apr_stop
     JMP apr_next
@@ -547,10 +553,10 @@ apr_stop:
     MOV AL,#0
     MOV BX,#proj_active
     CALL proj_field_addr
-    STA [BX],AL
+    MOV [BX],AL
     ; golpe grave al chocar: que se oiga DONDE acaba el disparo
     MOV AL,#0
-    STA [snd_timer],AL       ; corta el silbido del disparo si seguia
+    MOV [snd_timer],AL       ; corta el silbido del disparo si seguia
     MOV AL,#8
     OUT (P_SND_DUR),AL
     MOV AL,#36
@@ -558,9 +564,9 @@ apr_stop:
     JMP apr_next
 
 apr_next:
-    LDA AL,[proj_i]
+    MOV AL,[proj_i]
     ADD AL,#1
-    STA [proj_i],AL
+    MOV [proj_i],AL
     CMP AL,#PROJ_COUNT
     JMPNZ apr_loop
     RET
@@ -582,34 +588,34 @@ apr_next:
 ; ray_loop (mas arriba) sepa si dibujarla en cada columna -----------------
 actualiza_dots:
     MOV AL,#0
-    STA [dot_i],AL
+    MOV [dot_i],AL
 ad_loop:
     MOV BX,#dot_active
-    LDA CL,[dot_i]
+    MOV CL,[dot_i]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ad_mark_invis      ; inactiva (ya recogida) -- no se dibuja
 
     MOV BX,#dot_x
-    LDA CL,[dot_i]
+    MOV CL,[dot_i]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_dot_x],AL
+    MOV AL,[BX]
+    MOV [cur_dot_x],AL
     MOV BX,#dot_y
-    LDA CL,[dot_i]
+    MOV CL,[dot_i]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_dot_y],AL
+    MOV AL,[BX]
+    MOV [cur_dot_y],AL
 
     CALL calc_dot_deltas     ; -> dot_adx/dot_ady/dot_xneg/dot_yneg
 
     ; recogida: menos de DOT_TOUCH_DIST px en los DOS ejes (distancia real,
     ; no "misma baldosa" -- igual criterio que usaba el enemigo antes)
-    LDA AL,[dot_adx]
+    MOV AL,[dot_adx]
     CMP AL,#DOT_TOUCH_DIST
     JMPNC ad_no_pick
-    LDA AL,[dot_ady]
+    MOV AL,[dot_ady]
     CMP AL,#DOT_TOUCH_DIST
     JMPNC ad_no_pick
     CALL dot_pickup
@@ -618,9 +624,9 @@ ad_loop:
 ad_no_pick:
 ad_mark_invis:
 ad_next:
-    LDA AL,[dot_i]
+    MOV AL,[dot_i]
     ADD AL,#1
-    STA [dot_i],AL
+    MOV [dot_i],AL
     CMP AL,#DOT_COUNT
     JMPNZ ad_loop
     RET
@@ -632,43 +638,43 @@ ad_next:
 ; mirar el bit alto de una resta) que usaba calc_ska_deltas del enemigo,
 ; necesario porque el mapa mide 256 unidades de lado en cada eje -----------
 calc_dot_deltas:
-    LDA AL,[cur_dot_x]
-    LDA BL,[player_x]
+    MOV AL,[cur_dot_x]
+    MOV BL,[player_x]
     CMP AL,BL
     JMPC cdd_xneg          ; cur_dot_x < player_x
     MOV AL,#0
-    STA [dot_xneg],AL
-    LDA AL,[cur_dot_x]
-    LDA BL,[player_x]
+    MOV [dot_xneg],AL
+    MOV AL,[cur_dot_x]
+    MOV BL,[player_x]
     SUB AL,BL
-    STA [dot_adx],AL
+    MOV [dot_adx],AL
     JMP cdd_y
 cdd_xneg:
     MOV AL,#1
-    STA [dot_xneg],AL
-    LDA AL,[player_x]
-    LDA BL,[cur_dot_x]
+    MOV [dot_xneg],AL
+    MOV AL,[player_x]
+    MOV BL,[cur_dot_x]
     SUB AL,BL
-    STA [dot_adx],AL
+    MOV [dot_adx],AL
 cdd_y:
-    LDA AL,[cur_dot_y]
-    LDA BL,[player_y]
+    MOV AL,[cur_dot_y]
+    MOV BL,[player_y]
     CMP AL,BL
     JMPC cdd_yneg          ; cur_dot_y < player_y
     MOV AL,#0
-    STA [dot_yneg],AL
-    LDA AL,[cur_dot_y]
-    LDA BL,[player_y]
+    MOV [dot_yneg],AL
+    MOV AL,[cur_dot_y]
+    MOV BL,[player_y]
     SUB AL,BL
-    STA [dot_ady],AL
+    MOV [dot_ady],AL
     RET
 cdd_yneg:
     MOV AL,#1
-    STA [dot_yneg],AL
-    LDA AL,[player_y]
-    LDA BL,[cur_dot_y]
+    MOV [dot_yneg],AL
+    MOV AL,[player_y]
+    MOV BL,[cur_dot_y]
     SUB AL,BL
-    STA [dot_ady],AL
+    MOV [dot_ady],AL
     RET
 
 ; --- dot_pickup:; --- dot_pickup: el jugador ha recogido la bolita [dot_i] -- la desactiva,
@@ -677,25 +683,25 @@ cdd_yneg:
 dot_pickup:
     MOV AL,#0
     MOV BX,#dot_active
-    LDA CL,[dot_i]
+    MOV CL,[dot_i]
     ADD BX,CL
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA AL,[dot_remaining]
+    MOV AL,[dot_remaining]
     SUB AL,#1
-    STA [dot_remaining],AL
+    MOV [dot_remaining],AL
 
     ; "ding": una nota aguda corta, bien distinta del silbido descendente
     ; del disparo y del golpe grave del choque
     MOV AL,#0
-    STA [snd_timer],AL
+    MOV [snd_timer],AL
     MOV AL,#12
     OUT (P_SND_DUR),AL
     MOV AL,#88               ; MI6
     OUT (P_SND_NOTE),AL
     CALL show_hud
 
-    LDA AL,[dot_remaining]
+    MOV AL,[dot_remaining]
     CMP AL,#0
     JMPNZ dp_d
     CALL level_passed
@@ -733,13 +739,13 @@ level_passed:
     MOV AL,#0
     OUT (P_SND_NOTE),AL     ; silencio
 
-    LDA AL,[map_idx]
+    MOV AL,[map_idx]
     ADD AL,#1
     CMP AL,#MAP_COUNT
     JMPNZ lp_store
     MOV AL,#0
 lp_store:
-    STA [map_idx],AL
+    MOV [map_idx],AL
     CALL load_level
     CALL clst
     CALL show_hud
@@ -751,52 +757,52 @@ lp_store:
 ; en el punto de partida de ese mapa -- llamada al arrancar y de nuevo al
 ; final de level_passed cuando se agotan las bolitas de un nivel ----------
 load_level:
-    LDA AL,[map_idx]
+    MOV AL,[map_idx]
     SHL AL                  ; offset = map_idx*2 (2 bytes/puntero)
     MOV CL,AL
     MOV BX,#MAP_PTRS
     ADD BX,CL
-    LDA AL,[BX]
-    STA [lvl_lo],AL
+    MOV AL,[BX]
+    MOV [lvl_lo],AL
     INC BX
-    LDA AL,[BX]
-    STA [lvl_hi],AL
+    MOV AL,[BX]
+    MOV [lvl_hi],AL
 
-    LDA BL,[lvl_lo]
-    LDA BH,[lvl_hi]          ; BX = mapa ROM de este nivel (32 bytes)
+    MOV BL,[lvl_lo]
+    MOV BH,[lvl_hi]          ; BX = mapa ROM de este nivel (32 bytes)
     MOV DX,#mapa
     MOV CX,#32
     MOVB                     ; copia los 32 bytes del mapa de una vez
 
-    LDA AL,[map_idx]
+    MOV AL,[map_idx]
     SHL AL
     MOV CL,AL
     MOV BX,#DOT_DATA_PTRS
     ADD BX,CL
-    LDA AL,[BX]
-    STA [lvl_lo],AL
+    MOV AL,[BX]
+    MOV [lvl_lo],AL
     INC BX
-    LDA AL,[BX]
-    STA [lvl_hi],AL
+    MOV AL,[BX]
+    MOV [lvl_hi],AL
 
-    LDA BL,[lvl_lo]
-    LDA BH,[lvl_hi]           ; BX = tabla de bolitas de este nivel (x,y...)
+    MOV BL,[lvl_lo]
+    MOV BH,[lvl_hi]           ; BX = tabla de bolitas de este nivel (x,y...)
     MOV DX,#dot_x
     MOV CX,#dot_y
     MOV AL,#0
-    STA [ll_cnt],AL
+    MOV [ll_cnt],AL
 ll_dot_copy:
-    LDA AL,[BX]              ; x
-    STA [DX],AL
+    MOV AL,[BX]              ; x
+    MOV [DX],AL
     INC BX
-    LDA AL,[BX]              ; y
-    STA [CX],AL
+    MOV AL,[BX]              ; y
+    MOV [CX],AL
     INC BX
     INC DX
     INC CX
-    LDA AL,[ll_cnt]
+    MOV AL,[ll_cnt]
     ADD AL,#1
-    STA [ll_cnt],AL
+    MOV [ll_cnt],AL
     CMP AL,#DOT_COUNT
     JMPNZ ll_dot_copy
 
@@ -804,27 +810,27 @@ ll_dot_copy:
     MOV BX,#dot_active
     MOV CL,#0
 ll_dot_act:
-    STA [BX],AL
+    MOV [BX],AL
     INC BX
     ADD CL,#1
     CMP CL,#DOT_COUNT
     JMPNZ ll_dot_act
 
     MOV AL,#DOT_COUNT
-    STA [dot_remaining],AL
+    MOV [dot_remaining],AL
 
     MOV BX,#MAP_SPAWN_X
-    LDA CL,[map_idx]
+    MOV CL,[map_idx]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [player_x],AL
+    MOV AL,[BX]
+    MOV [player_x],AL
     MOV BX,#MAP_SPAWN_Y
-    LDA CL,[map_idx]
+    MOV CL,[map_idx]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [player_y],AL
+    MOV AL,[BX]
+    MOV [player_y],AL
     MOV AL,#0
-    STA [facing],AL
+    MOV [facing],AL
     RET
 
 
@@ -838,23 +844,23 @@ ll_dot_act:
 ; de angulo) -- las alargadas (B) avanzan mas por paso que las rechonchas
 ; (A), asi que se ven mas rapidas aunque ambas actualicen al mismo ritmo --
 actualiza_nubes:
-    LDA AL,[cloud_drift_cnt]
+    MOV AL,[cloud_drift_cnt]
     CMP AL,#0
     JMPZ an_reset
     SUB AL,#1
-    STA [cloud_drift_cnt],AL
+    MOV [cloud_drift_cnt],AL
     RET
 an_reset:
     MOV AL,#CLOUD_DRIFT_PERIOD
-    STA [cloud_drift_cnt],AL
-    LDA AL,[cloud_drift_a]
+    MOV [cloud_drift_cnt],AL
+    MOV AL,[cloud_drift_a]
     SUB AL,#CLOUD_DRIFT_STEP_A
     AND AL,#0x7F
-    STA [cloud_drift_a],AL
-    LDA AL,[cloud_drift_b]
+    MOV [cloud_drift_a],AL
+    MOV AL,[cloud_drift_b]
     SUB AL,#CLOUD_DRIFT_STEP_B
     AND AL,#0x7F
-    STA [cloud_drift_b],AL
+    MOV [cloud_drift_b],AL
     RET
 
 ; --- dibuja_nubes: recorre las CLOUD_COUNT nubes; para cada una, calcula
@@ -864,30 +870,30 @@ an_reset:
 ; columna: cada nube es mucho mas ancha que una franja de 4 px) ------------
 dibuja_nubes:
     MOV AL,#0
-    STA [cloud_i],AL
+    MOV [cloud_i],AL
 dn_loop:
     ; deriva segun el tipo (par=rechoncha=lenta, impar=alargada=rapida) --
     ; se necesita ANTES de calcular el angulo, no solo para elegir la
     ; forma mas abajo, porque la deriva afecta a la visibilidad misma
-    LDA AL,[cloud_i]
+    MOV AL,[cloud_i]
     AND AL,#1
     CMP AL,#0
     JMPNZ dn_drift_b
-    LDA AL,[cloud_drift_a]
+    MOV AL,[cloud_drift_a]
     JMP dn_drift_have
 dn_drift_b:
-    LDA AL,[cloud_drift_b]
+    MOV AL,[cloud_drift_b]
 dn_drift_have:
-    STA [cloud_drift_cur],AL
+    MOV [cloud_drift_cur],AL
 
-    LDA CL,[cloud_i]
+    MOV CL,[cloud_i]
     MOV BX,#cloud_angle_tbl
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[cloud_drift_cur]
+    MOV AL,[BX]
+    MOV BL,[cloud_drift_cur]
     ADD AL,BL
     AND AL,#0x7F
-    LDA BL,[facing]
+    MOV BL,[facing]
     SUB AL,BL
     AND AL,#0x7F
     CMP AL,#16
@@ -901,44 +907,44 @@ dn_lo:
 dn_hi:
     SUB AL,#112
 dn_have:
-    STA [cloud_ray_i],AL
+    MOV [cloud_ray_i],AL
 
     MOV BX,#y0_tbl
-    LDA CL,[cloud_ray_i]
+    MOV CL,[cloud_ray_i]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#CLOUD_MIN_Y0
     JMPC dn_next            ; la pared de la columna central ya la tapa
 
-    LDA AL,[cloud_ray_i]
+    MOV AL,[cloud_ray_i]
     SHL AL,#2                ; ancla en pixeles: x = ray_i*4
-    STA [cloud_anchor_x],AL
+    MOV [cloud_anchor_x],AL
 
     ; forma segun la paridad del indice: rechoncha (par) / alargada (impar)
-    LDA AL,[cloud_i]
+    MOV AL,[cloud_i]
     AND AL,#1
     CMP AL,#0
     JMPNZ dn_shape_b
     MOV AL,#lo(cloud_shape_a)
-    STA [cloud_shape_lo],AL
+    MOV [cloud_shape_lo],AL
     MOV AL,#hi(cloud_shape_a)
-    STA [cloud_shape_hi],AL
+    MOV [cloud_shape_hi],AL
     MOV AL,#CLOUD_SHAPE_A_LEN
-    STA [cloud_shape_len],AL
+    MOV [cloud_shape_len],AL
     JMP dn_shape_done
 dn_shape_b:
     MOV AL,#lo(cloud_shape_b)
-    STA [cloud_shape_lo],AL
+    MOV [cloud_shape_lo],AL
     MOV AL,#hi(cloud_shape_b)
-    STA [cloud_shape_hi],AL
+    MOV [cloud_shape_hi],AL
     MOV AL,#CLOUD_SHAPE_B_LEN
-    STA [cloud_shape_len],AL
+    MOV [cloud_shape_len],AL
 dn_shape_done:
     CALL dibuja_nube_grande
 dn_next:
-    LDA AL,[cloud_i]
+    MOV AL,[cloud_i]
     ADD AL,#1
-    STA [cloud_i],AL
+    MOV [cloud_i],AL
     CMP AL,#CLOUD_COUNT
     JMPNZ dn_loop
     RET
@@ -951,39 +957,39 @@ dn_next:
 ; salirse si la columna central esta cerca del borde) -----------------------
 dibuja_nube_grande:
     MOV AL,#0
-    STA [cloud_pi],AL
+    MOV [cloud_pi],AL
 dng_l:
-    LDA CL,[cloud_pi]
+    MOV CL,[cloud_pi]
     SHL CL                    ; offset = indice*2 (2 bytes/punto)
-    LDA BL,[cloud_shape_lo]
-    LDA BH,[cloud_shape_hi]
+    MOV BL,[cloud_shape_lo]
+    MOV BH,[cloud_shape_hi]
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cloud_dx],AL
+    MOV AL,[BX]
+    MOV [cloud_dx],AL
     INC BX
-    LDA AL,[BX]
-    STA [cloud_dy],AL
+    MOV AL,[BX]
+    MOV [cloud_dy],AL
 
-    LDA AL,[cloud_anchor_x]
-    LDA BL,[cloud_dx]
+    MOV AL,[cloud_anchor_x]
+    MOV BL,[cloud_dx]
     ADD AL,BL
     CMP AL,#128
     JMPNC dng_next           ; fuera de pantalla por la derecha: saltar
-    STA [px_x],AL
+    MOV [px_x],AL
 
     MOV AL,#CLOUD_TOP_ROW
-    LDA BL,[cloud_dy]
+    MOV BL,[cloud_dy]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
 
     CALL calc_pix
     CALL shadow_set_pix
 dng_next:
-    LDA AL,[cloud_pi]
+    MOV AL,[cloud_pi]
     ADD AL,#1
-    STA [cloud_pi],AL
-    LDA AL,[cloud_pi]
-    LDA BL,[cloud_shape_len]
+    MOV [cloud_pi],AL
+    MOV AL,[cloud_pi]
+    MOV BL,[cloud_shape_len]
     CMP AL,BL
     JMPNZ dng_l
     RET
@@ -993,17 +999,17 @@ dng_next:
 ; en pix_mask la mascara del bit EXACTO (no medio nibble como el proyectil
 ; ni un nibble entero como la pared) -- igual patron que cubo.asm/demo.asm -
 calc_pix:
-    LDA AL,[px_y]
+    MOV AL,[px_y]
     AND AL,#0x0F
     SHL AL,#4
-    LDA BL,[px_x]
+    MOV BL,[px_x]
     SHR BL,#3
     ADD AL,BL
-    STA [pix_lo],AL
-    LDA AL,[px_y]
+    MOV [pix_lo],AL
+    MOV AL,[px_y]
     SHR AL,#4
-    STA [pix_hi],AL
-    LDA BL,[px_x]
+    MOV [pix_hi],AL
+    MOV BL,[px_x]
     AND BL,#0x07
     MOV DH,#0x80
 cpx_m:
@@ -1013,44 +1019,44 @@ cpx_m:
     SUB BL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; --- shadow_set_pix: enciende en `shadow` el bit de pix_lo/pix_hi/pix_mask -
 shadow_set_pix:
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- actualiza_sonido: silbido descendente mientras dura [snd_timer] -----
 actualiza_sonido:
-    LDA AL,[snd_timer]
+    MOV AL,[snd_timer]
     CMP AL,#0
     JMPZ as_d
     SUB AL,#1
-    STA [snd_timer],AL
+    MOV [snd_timer],AL
 
-    LDA AL,[snd_freq_lo]
+    MOV AL,[snd_freq_lo]
     OUT (P_SND_FREQ_LO),AL
-    LDA AL,[snd_freq_hi]
+    MOV AL,[snd_freq_hi]
     OUT (P_SND_FREQ_HI),AL
 
-    LDA AL,[snd_freq_lo]
+    MOV AL,[snd_freq_lo]
     SUB AL,#SND_FREQ_STEP
-    STA [snd_freq_lo],AL
+    MOV [snd_freq_lo],AL
     JMPNC as_freq_ok
-    LDA AL,[snd_freq_hi]
+    MOV AL,[snd_freq_hi]
     SUB AL,#1
-    STA [snd_freq_hi],AL
+    MOV [snd_freq_hi],AL
 as_freq_ok:
-    LDA AL,[snd_timer]
+    MOV AL,[snd_timer]
     CMP AL,#0
     JMPNZ as_d
     MOV AL,#0
@@ -1070,12 +1076,12 @@ es_pared:
     ADD BX,AL
     CMP CL,#8
     JMPNC ep_hi
-    LDA AL,[BX]             ; columna 0-7 -> byte0
+    MOV AL,[BX]             ; columna 0-7 -> byte0
     MOV DL,CL               ; bit = 7-x
     JMP ep_bit
 ep_hi:
     INC BX
-    LDA AL,[BX]             ; columna 8-15 -> byte1
+    MOV AL,[BX]             ; columna 8-15 -> byte1
     MOV DL,CL
     SUB DL,#8               ; bit = 7-(x-8)
 ep_bit:
@@ -1103,53 +1109,53 @@ ep_libre:
 ; --- march_ray: desde (player_x,player_y) en direccion [ray_ang], hasta
 ; chocar con una pared o agotar MAX_STEPS -> [dist] = pasos dados ----------
 march_ray:
-    LDA CL,[ray_ang]
+    MOV CL,[ray_ang]
     SHL CL                  ; offset = ang*2
     MOV BX,#ray_tbl
     ADD BX,CL
-    LDA AL,[BX]
-    STA [rdx],AL
+    MOV AL,[BX]
+    MOV [rdx],AL
     INC BX
-    LDA AL,[BX]
-    STA [rdy],AL
+    MOV AL,[BX]
+    MOV [rdy],AL
 
-    LDA AL,[player_x]
-    STA [rx],AL
-    LDA AL,[player_y]
-    STA [ry],AL
+    MOV AL,[player_x]
+    MOV [rx],AL
+    MOV AL,[player_y]
+    MOV [ry],AL
     MOV AL,#0
-    STA [step_cnt],AL
+    MOV [step_cnt],AL
 mr_loop:
-    LDA AL,[rx]
-    LDA BL,[rdx]
+    MOV AL,[rx]
+    MOV BL,[rdx]
     ADD AL,BL
-    STA [rx],AL
-    LDA AL,[ry]
-    LDA BL,[rdy]
+    MOV [rx],AL
+    MOV AL,[ry]
+    MOV BL,[rdy]
     ADD AL,BL
-    STA [ry],AL
+    MOV [ry],AL
 
-    LDA AL,[step_cnt]
+    MOV AL,[step_cnt]
     ADD AL,#1
-    STA [step_cnt],AL
+    MOV [step_cnt],AL
 
-    LDA AL,[rx]
+    MOV AL,[rx]
     SHR AL,#4
     MOV CL,AL
-    LDA AL,[ry]
+    MOV AL,[ry]
     SHR AL,#4
     MOV CH,AL
     CALL es_pared
     CMP AL,#0
     JMPNZ mr_hit
 
-    LDA AL,[step_cnt]
+    MOV AL,[step_cnt]
     CMP AL,#MAX_STEPS
     JMPNC mr_hit
     JMP mr_loop
 mr_hit:
-    LDA AL,[step_cnt]
-    STA [dist],AL
+    MOV AL,[step_cnt]
+    MOV [dist],AL
     RET
 
 ; ============================================================================
@@ -1158,42 +1164,42 @@ mr_hit:
 
 ; --- render_column: usa [ray_i] y [dist] -> dibuja en `shadow` ------------
 render_column:
-    LDA AL,[ray_i]
+    MOV AL,[ray_i]
     SHR AL
-    STA [byte_col],AL
-    LDA AL,[ray_i]
+    MOV [byte_col],AL
+    MOV AL,[ray_i]
     AND AL,#1
     CMP AL,#0
     JMPZ rc_hi
     MOV AL,#0x0F
-    STA [nibble],AL
+    MOV [nibble],AL
     JMP rc_have
 rc_hi:
     MOV AL,#0xF0
-    STA [nibble],AL
+    MOV [nibble],AL
 rc_have:
-    LDA CL,[dist]
+    MOV CL,[dist]
     MOV BX,#height_tbl
     ADD BX,CL
-    LDA AL,[BX]
-    STA [wall_h],AL
+    MOV AL,[BX]
+    MOV [wall_h],AL
 
-    LDA CL,[dist]
+    MOV CL,[dist]
     MOV BX,#shade_by_dist
     ADD BX,CL
-    LDA AL,[BX]
-    STA [shade_level],AL
+    MOV AL,[BX]
+    MOV [shade_level],AL
 
-    LDA AL,[wall_h]
+    MOV AL,[wall_h]
     SHR AL
     MOV BL,AL
     MOV AL,#32
     SUB AL,BL
-    STA [y0],AL
-    LDA BL,[wall_h]
+    MOV [y0],AL
+    MOV BL,[wall_h]
     ADD AL,BL
     SUB AL,#1
-    STA [y1],AL
+    MOV [y1],AL
 
     CALL wall_row_fill
     RET
@@ -1203,24 +1209,24 @@ rc_have:
 ; blanco completo, ver calc_shade_mask) recortada al lado [nibble] (0xF0
 ; alta / 0x0F baja) de esta columna -----------------------------------------
 wall_row_fill:
-    LDA AL,[y0]
-    STA [rowy],AL
+    MOV AL,[y0]
+    MOV [rowy],AL
 wrf_l:
     CALL calc_shade_mask
     CALL calc_shadow_addr
 
-    LDA AL,[BX]
-    LDA DL,[shade_mask]
+    MOV AL,[BX]
+    MOV DL,[shade_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
 
-    LDA AL,[rowy]
-    LDA BL,[y1]
+    MOV AL,[rowy]
+    MOV BL,[y1]
     CMP AL,BL
     JMPZ wrf_d
-    LDA AL,[rowy]
+    MOV AL,[rowy]
     ADD AL,#1
-    STA [rowy],AL
+    MOV [rowy],AL
     JMP wrf_l
 wrf_d:
     RET
@@ -1228,20 +1234,20 @@ wrf_d:
 ; --- calc_shadow_addr: usando [rowy] y [byte_col], deja en BX el puntero
 ; al byte de `shadow` correspondiente (compartido por paredes y proyectil) -
 calc_shadow_addr:
-    LDA AL,[rowy]
+    MOV AL,[rowy]
     AND AL,#0x0F
     SHL AL,#4
-    LDA BL,[byte_col]
+    MOV BL,[byte_col]
     ADD AL,BL
-    STA [wrf_off],AL
-    LDA AL,[rowy]
+    MOV [wrf_off],AL
+    MOV AL,[rowy]
     SHR AL,#4
-    STA [wrf_pag],AL
+    MOV [wrf_pag],AL
 
     MOV BX,#shadow
-    LDA CL,[wrf_off]
+    MOV CL,[wrf_off]
     ADD BX,CL
-    LDA AL,[wrf_pag]
+    MOV AL,[wrf_pag]
     ADD BH,AL
     RET
 
@@ -1252,22 +1258,22 @@ calc_shadow_addr:
 ; esto es "dithering" ordenado con 4 niveles de densidad entre negro y
 ; blanco) -------------------------------------------------------------------
 calc_shade_mask:
-    LDA AL,[shade_level]
+    MOV AL,[shade_level]
     SHL AL,#2                ; offset = nivel*4
     MOV CL,AL
-    LDA AL,[rowy]
+    MOV AL,[rowy]
     AND AL,#1
     SHL AL                  ; +0 (fila par) o +2 (fila impar)
     ADD CL,AL
-    LDA AL,[nibble]
+    MOV AL,[nibble]
     CMP AL,#0xF0
     JMPZ csm_hi
     ADD CL,#1                ; +1 si es el nibble bajo
 csm_hi:
     MOV BX,#shade_tbl
     ADD BX,CL
-    LDA AL,[BX]
-    STA [shade_mask],AL
+    MOV AL,[BX]
+    MOV [shade_mask],AL
     RET
 
 ; ============================================================================
@@ -1291,7 +1297,7 @@ idx_ptr:
 ; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
     MOV AL,#0
-    STA [shadow],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
@@ -1304,7 +1310,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL
@@ -1331,29 +1337,29 @@ bl_same:
 ; todos los proyectiles en vuelo (a la altura de los ojos) -----------------
 dibuja_objetos:
     MOV AL,#0
-    STA [ob_i],AL
+    MOV [ob_i],AL
 do_dot_l:
     MOV BX,#dot_active
-    LDA CL,[ob_i]
+    MOV CL,[ob_i]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ do_dot_next
     MOV BX,#dot_x
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_dot_x],AL
+    MOV AL,[BX]
+    MOV [cur_dot_x],AL
     MOV BX,#dot_y
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_dot_y],AL
+    MOV AL,[BX]
+    MOV [cur_dot_y],AL
     CALL obj_project
-    LDA AL,[ov_vis]
+    MOV AL,[ov_vis]
     CMP AL,#0
     JMPZ do_dot_next
     ; centro: apoyada en el suelo -- el borde de abajo de la pared a esa
     ; distancia (32 + alto/2 - 1) menos el radio
-    LDA AL,[ov_q]
+    MOV AL,[ov_q]
     SHR AL,#2               ; baldosas
     CMP AL,#21
     JMPC do_dot_d
@@ -1362,48 +1368,48 @@ do_dot_d:
     MOV CL,AL
     MOV BX,#height_tbl
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     SHR AL
     ADD AL,#31
-    LDA BL,[be_r]
+    MOV BL,[be_r]
     SUB AL,BL
-    STA [be_cy],AL
+    MOV [be_cy],AL
     CALL draw_bullseye
 do_dot_next:
-    LDA AL,[ob_i]
+    MOV AL,[ob_i]
     ADD AL,#1
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CMP AL,#DOT_COUNT
     JMPNZ do_dot_l
 
     MOV AL,#0
-    STA [ob_i],AL
+    MOV [ob_i],AL
 do_pr_l:
     MOV BX,#proj_active
-    LDA CL,[ob_i]
+    MOV CL,[ob_i]
     ADD BX,CL
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ do_pr_next
     MOV BX,#proj_rx
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_dot_x],AL
+    MOV AL,[BX]
+    MOV [cur_dot_x],AL
     MOV BX,#proj_ry
     ADD BX,CL
-    LDA AL,[BX]
-    STA [cur_dot_y],AL
+    MOV AL,[BX]
+    MOV [cur_dot_y],AL
     CALL obj_project
-    LDA AL,[ov_vis]
+    MOV AL,[ov_vis]
     CMP AL,#0
     JMPZ do_pr_next
     MOV AL,#PROJ_ROW
-    STA [be_cy],AL
+    MOV [be_cy],AL
     CALL draw_bullseye
 do_pr_next:
-    LDA AL,[ob_i]
+    MOV AL,[ob_i]
     ADD AL,#1
-    STA [ob_i],AL
+    MOV [ob_i],AL
     CMP AL,#PROJ_COUNT
     JMPNZ do_pr_l
     RET
@@ -1417,8 +1423,8 @@ do_pr_next:
 ; el doble de fino que la rejilla de 4 px de los rayos). --------------------
 obj_project:
     CALL calc_dot_deltas     ; -> dot_adx/dot_ady/dot_xneg/dot_yneg
-    LDA AL,[dot_adx]
-    LDA BL,[dot_ady]
+    MOV AL,[dot_adx]
+    MOV BL,[dot_ady]
     MOV AH,#1                ; 1 = domina X
     CMP AL,BL
     JMPNC op_ord
@@ -1427,9 +1433,9 @@ obj_project:
     MOV AL,BL
     MOV BL,CL
 op_ord:
-    STA [ov_mx],AL
-    STA [ov_mn],BL
-    STA [ov_xdom],AH
+    MOV [ov_mx],AL
+    MOV [ov_mn],BL
+    MOV [ov_xdom],AH
     ; distancia ~ mayor + 3/8 menor, en cuartos de baldosa (/4)
     MOV AL,BL
     MOV BL,#3
@@ -1438,12 +1444,12 @@ op_ord:
     SHL AH,#5
     OR  AL,AH                ; (menor*3) >> 3
     SHR AL,#2
-    STA [ov_q],AL
-    LDA AL,[ov_mx]
+    MOV [ov_q],AL
+    MOV AL,[ov_mx]
     SHR AL,#2
-    LDA BL,[ov_q]
+    MOV BL,[ov_q]
     ADD AL,BL
-    STA [ov_q],AL
+    MOV [ov_q],AL
     ; radio segun las medias baldosas de distancia
     SHR AL
     CMP AL,#41
@@ -1453,22 +1459,22 @@ op_rd:
     MOV CL,AL
     MOV BX,#OBJ_R
     ADD BX,CL
-    LDA AL,[BX]
-    STA [be_r],AL
+    MOV AL,[BX]
+    MOV [be_r],AL
     ; angulo dentro del cuadrante (0..64 = 0..90 grados)
-    LDA AL,[ov_mx]
+    MOV AL,[ov_mx]
     CMP AL,#0
     JMPZ op_a0
-    LDA AL,[ov_mn]
+    MOV AL,[ov_mn]
     MOV BL,#32
     MUL BL                   ; AX = menor*32 (<= 8160)
-    LDA BL,[ov_mx]
+    MOV BL,[ov_mx]
     DIV BL                   ; AL = menor*32/mayor, 0..32 (cabe siempre)
     MOV CL,AL
     MOV BX,#ATAN32
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[ov_xdom]
+    MOV AL,[BX]
+    MOV BL,[ov_xdom]
     CMP BL,#0
     JMPNZ op_quad
     MOV BL,AL
@@ -1480,10 +1486,10 @@ op_a0:
 op_quad:
     ; cuadrante: x hacia el este, y hacia el sur (igual que ray_tbl)
     MOV BL,AL
-    LDA AL,[dot_xneg]
+    MOV AL,[dot_xneg]
     CMP AL,#0
     JMPZ op_xpos
-    LDA AL,[dot_yneg]
+    MOV AL,[dot_yneg]
     CMP AL,#0
     JMPNZ op_q3
     MOV AL,#128              ; oeste-sur: 180 - a
@@ -1494,7 +1500,7 @@ op_q3:
     ADD AL,BL
     JMP op_have
 op_xpos:
-    LDA AL,[dot_yneg]
+    MOV AL,[dot_yneg]
     CMP AL,#0
     JMPZ op_q1
     MOV AL,#0                ; este-norte: -a
@@ -1504,21 +1510,21 @@ op_q1:
     MOV AL,BL                ; este-sur: a
 op_have:
     ; relativo a donde mira el jugador ([facing] va en 128 por vuelta)
-    LDA BL,[facing]
+    MOV BL,[facing]
     SHL BL
     SUB AL,BL
     ADD AL,#32               ; -32..31 -> 0..63 si esta dentro de la vista
     CMP AL,#64
     JMPC op_vis
     MOV AL,#0
-    STA [ov_vis],AL
+    MOV [ov_vis],AL
     RET
 op_vis:
     SHL AL
     ADD AL,#1
-    STA [be_cx],AL
+    MOV [be_cx],AL
     MOV AL,#1
-    STA [ov_vis],AL
+    MOV [ov_vis],AL
     RET
 
 ; --- draw_bullseye: diana de radio [be_r] (<= 15, OBJ_R llega a 12) centrada en ([be_cx],
@@ -1526,44 +1532,44 @@ op_vis:
 ; alternos. Solo pinta los pixeles cuya columna tenga la pared MAS LEJOS
 ; que el objeto ([ov_q] < dist4_tbl[x/4]) ---------------------------------
 draw_bullseye:
-    LDA AL,[be_cy]
-    LDA BL,[be_r]
+    MOV AL,[be_cy]
+    MOV BL,[be_r]
     SUB AL,BL
-    STA [be_y],AL
+    MOV [be_y],AL
     MOV AL,BL
     SHL AL
     ADD AL,#1
-    STA [be_n],AL            ; 2r+1 filas (y columnas)
-    STA [be_rows],AL
+    MOV [be_n],AL            ; 2r+1 filas (y columnas)
+    MOV [be_rows],AL
 be_row:
-    LDA AL,[be_y]
+    MOV AL,[be_y]
     CMP AL,#64
     JMPNC be_row_next        ; fuera de pantalla (o "negativa", da la vuelta)
     ; |y - cy|
-    LDA BL,[be_cy]
+    MOV BL,[be_cy]
     SUB AL,BL
     JMPNN be_ady_ok
     NOT AL
     ADD AL,#1
 be_ady_ok:
     SHL AL,#4
-    STA [be_ady16],AL        ; fila de la tabla DIST16
+    MOV [be_ady16],AL        ; fila de la tabla DIST16
     ; base de la fila en shadow: shadow + y*16
-    LDA AL,[be_y]
+    MOV AL,[be_y]
     MOV BL,#16
     MUL BL
-    STA [be_rb_lo],AL
+    MOV [be_rb_lo],AL
     MOV AL,AH
-    STA [be_rb_hi],AL
+    MOV [be_rb_hi],AL
     ; columnas cx-r .. cx+r
-    LDA AL,[be_cx]
-    LDA BL,[be_r]
+    MOV AL,[be_cx]
+    MOV BL,[be_r]
     SUB AL,BL
-    STA [be_x],AL
-    LDA AL,[be_n]
-    STA [be_cols],AL
+    MOV [be_x],AL
+    MOV AL,[be_n]
+    MOV [be_cols],AL
 be_px:
-    LDA AL,[be_x]
+    MOV AL,[be_x]
     CMP AL,#128
     JMPNC be_px_next
     ; recorte contra la pared de esta columna
@@ -1571,71 +1577,71 @@ be_px:
     MOV CL,AL
     MOV BX,#dist4_tbl
     ADD BX,CL
-    LDA BL,[BX]
-    LDA AL,[ov_q]
+    MOV BL,[BX]
+    MOV AL,[ov_q]
     CMP AL,BL
     JMPNC be_px_next         ; la pared esta delante
     ; distancia al centro (tabla) -> dentro del circulo y en que anillo
-    LDA AL,[be_x]
-    LDA BL,[be_cx]
+    MOV AL,[be_x]
+    MOV BL,[be_cx]
     SUB AL,BL
     JMPNN be_adx_ok
     NOT AL
     ADD AL,#1
 be_adx_ok:
-    LDA BL,[be_ady16]
+    MOV BL,[be_ady16]
     ADD AL,BL
     MOV CL,AL
     MOV BX,#DIST16
     ADD BX,CL
-    LDA AL,[BX]
-    LDA BL,[be_r]
+    MOV AL,[BX]
+    MOV BL,[be_r]
     CMP BL,AL
     JMPC be_px_next          ; d > r: fuera del circulo
     SHR AL
     AND AL,#1
-    STA [be_col],AL          ; 0 = anillo encendido, 1 = apagado
+    MOV [be_col],AL          ; 0 = anillo encendido, 1 = apagado
     ; byte y mascara del pixel
     MOV BX,#shadow
-    LDA CL,[be_rb_lo]
+    MOV CL,[be_rb_lo]
     ADD BX,CL
-    LDA CL,[be_rb_hi]
+    MOV CL,[be_rb_hi]
     ADD BH,CL
-    LDA AL,[be_x]
+    MOV AL,[be_x]
     SHR AL,#3
     ADD BX,AL
-    LDA AL,[be_x]
+    MOV AL,[be_x]
     AND AL,#7
     MOV CL,AL
     MOV DX,#MASK8
     ADD DX,CL
-    LDA CL,[DX]
-    LDA AL,[BX]
-    LDA DL,[be_col]
+    MOV CL,[DX]
+    MOV AL,[BX]
+    MOV DL,[be_col]
     CMP DL,#0
     JMPNZ be_off
     OR  AL,CL
-    STA [BX],AL
+    MOV [BX],AL
     JMP be_px_next
 be_off:
     NOT CL
     AND AL,CL
-    STA [BX],AL
+    MOV [BX],AL
 be_px_next:
-    LDA AL,[be_x]
+    MOV AL,[be_x]
     ADD AL,#1
-    STA [be_x],AL
-    LDA AL,[be_cols]
+    MOV [be_x],AL
+    MOV AL,[be_cols]
     SUB AL,#1
-    STA [be_cols],AL
+    MOV [be_cols],AL
     JMPNZ be_px
 be_row_next:
-    LDA AL,[be_y]
+    MOV AL,[be_y]
     ADD AL,#1
-    STA [be_y],AL
-    LDA AL,[be_rows]
+    MOV [be_y],AL
+    MOV AL,[be_rows]
     SUB AL,#1
-    STA [be_rows],AL
+    MOV [be_rows],AL
     JMPNZ be_row
     RET
 
@@ -1644,7 +1650,7 @@ show_hud:
     MOV BX,#h_dots
     MOV CX,#0x0000
     CALL puts
-    LDA AL,[dot_remaining]
+    MOV AL,[dot_remaining]
     MOV AH,#0
     MOV BL,#10
     DIV BL
@@ -1667,7 +1673,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL

@@ -8,7 +8,7 @@
 ; --- txt_puts: BX = cadena asciiz -> en CH/CL; avanza CL --------------------
 ; Altera AL, BX, DX.
 txt_puts:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ txt_puts_d
     CALL txt_putc

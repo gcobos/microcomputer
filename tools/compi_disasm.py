@@ -34,7 +34,7 @@ texto, byte a byte, que ya emite disasm.cpp (por eso casm.py lo entiende sin
 cambios). Las combinaciones de bits que NO tienen un texto que reensamble
 exacto -- familias o sub-operaciones libres, bits fuera del formato, u
 operaciones MOV en las formas de la ALU con inmediato/memoria (casm.py las
-escribiria con la forma corta LDI/LDA, que no ocupa los mismos bytes) -- se
+escribiria con la forma corta (LDI o MOV de memoria), que no ocupa los mismos bytes) -- se
 vuelcan como `.db` con los bytes crudos en vez de inventarse un mnemonico,
 para no perder ni cambiar ni un bit.
 
@@ -48,11 +48,11 @@ import sys
 
 IMAGE_SIZE = 65536
 
-# Familias de opcode (include/isa.h, ISA version 2): opcode = family<<3 | bajo3.
+# Familias de opcode (include/isa.h, ISA version 3): opcode = family<<3 | bajo3.
 (F_SYS, F_LDI, F_LDA, F_STA, F_LDAR, F_STAR, F_IN, F_OUT, F_INR, F_OUTR,
- F_ALURR, F_ALUI, F_ALUM, F_ALUP, F_NOT, F_SHR, F_SHL, F_MUL, F_DIV,
+ F_ALURR, F_ALUI, F_SHX, F_NEG, F_NOT, F_SHR, F_SHL, F_MUL, F_DIV,
  F_INC, F_DEC, F_PUSH, F_POP, F_JMP, F_CALL, F_JX, F_R16, F_R16I,
- F_INCDEC16, F_PUSHPOP16) = range(30)
+ F_INCDEC16, F_PUSHPOP16, F_IMUL, F_X16) = range(32)
 
 REG8 = ["AL", "AH", "BL", "BH", "CL", "CH", "DL", "DH"]
 REG16 = ["AX", "BX", "CX", "DX"]
@@ -60,11 +60,14 @@ COND = ["", "Z", "NZ", "C", "NC", "N", "NN", "V"]
 ALU_NAMES = ["MOV", "ADD", "ADC", "SUB", "SBC", "CMP", "AND", "OR", "XOR"]
 SYS_NAMES = ["NOP", "HALT", "RET", "MOVB", "MOVW", "MOVBR"]
 UNARY = {F_NOT: "NOT", F_MUL: "MUL", F_DIV: "DIV", F_INC: "INC", F_DEC: "DEC",
-         F_PUSH: "PUSH", F_POP: "POP"}
+         F_PUSH: "PUSH", F_POP: "POP", F_NEG: "NEG", F_IMUL: "IMUL"}
+SHX_NAMES = ["SAR", "ROL", "ROR", "RCL", "RCR"]
+X16_NAMES = ["SHL", "SHR", "SAR", "NEG", "MUL", "DIV"]
+JX_NAMES = {0: "JMPNV", 1: "JMPLT", 4: "JMPGE", 5: "JMPLE", 6: "JMPGT"}
 
 # Longitud (bytes) de cada familia -- igual que instrLen() en disasm.cpp.
-_LEN2 = {F_LDI, F_LDAR, F_STAR, F_INR, F_OUTR, F_ALURR, F_ALUP, F_SHR, F_SHL}
-_LEN3 = {F_LDA, F_STA, F_IN, F_OUT, F_ALUI, F_JMP, F_CALL}
+_LEN2 = {F_LDI, F_LDAR, F_STAR, F_INR, F_OUTR, F_ALURR, F_SHX, F_SHR, F_SHL}
+_LEN3 = {F_LDA, F_STA, F_IN, F_OUT, F_ALUI, F_JMP}
 
 
 def instr_len(mem, addr):
@@ -74,10 +77,12 @@ def instr_len(mem, addr):
         return 3
     if fam in _LEN2:
         return 2
-    if fam == F_ALUM:
-        return 4
+    if fam == F_CALL:
+        return 3 if r == 0 else 4 if r == 1 else 2 if r >= 4 else 1
+    if fam == F_X16:
+        return 2 if r < 4 else 1
     if fam == F_JX:
-        return 3 if r <= 1 else 2 if r <= 3 else 1
+        return 2 if r in (2, 3) else 1 if r == 7 else 3
     if fam == F_R16:
         return 2 if r <= 5 else 1
     if fam == F_R16I:
@@ -122,14 +127,14 @@ def decode_one(mem, addr):
     if fam == F_LDI:
         return Instr(addr, 2, f"MOV {REG8[r]},#0x{b1:02X}")
     if fam == F_LDA:
-        return Instr(addr, 3, f"LDA {REG8[r]},[0x{a16:04X}]")
+        return Instr(addr, 3, f"MOV {REG8[r]},[0x{a16:04X}]")
     if fam == F_STA:
-        return Instr(addr, 3, f"STA [0x{a16:04X}],{REG8[r]}")
+        return Instr(addr, 3, f"MOV [0x{a16:04X}],{REG8[r]}")
     if fam in (F_LDAR, F_STAR, F_INR, F_OUTR):
         if b1 & 0xFC:
             return raw()
         p = REG16[b1 & 3]
-        return Instr(addr, 2, {F_LDAR: f"LDA {REG8[r]},[{p}]", F_STAR: f"STA [{p}],{REG8[r]}",
+        return Instr(addr, 2, {F_LDAR: f"MOV {REG8[r]},[{p}]", F_STAR: f"MOV [{p}],{REG8[r]}",
                                F_INR: f"IN {REG8[r]},({p})", F_OUTR: f"OUT ({p}),{REG8[r]}"}[fam])
     if fam == F_IN:
         return Instr(addr, 3, f"IN {REG8[r]},(0x{a16:04X})")
@@ -144,27 +149,37 @@ def decode_one(mem, addr):
         if b1 == 0 or b1 >= len(ALU_NAMES):    # MOV reg,#imm: casm usaria LDI
             return raw()
         return Instr(addr, 3, f"{ALU_NAMES[b1]} {REG8[r]},#0x{b2:02X}")
-    if fam == F_ALUM:
-        if b1 == 0 or b1 >= len(ALU_NAMES):    # MOV reg,[dir]: casm usaria LDA
+    if fam == F_SHX:
+        x = (b1 >> 3) & 7
+        if x >= len(SHX_NAMES) or (b1 & 0xC0):
             return raw()
-        return Instr(addr, 4, f"{ALU_NAMES[b1]} {REG8[r]},[0x{a23:04X}]")
-    if fam == F_ALUP:
-        aop = b1 >> 2
-        if aop == 0 or aop >= len(ALU_NAMES):  # MOV reg,[r16]: casm usaria LDA
+        return Instr(addr, 2, f"{SHX_NAMES[x]} {REG8[r]},#{(b1 & 7) + 1}")
+    if fam == F_X16:
+        x = b1 >> 4
+        if r >= 4 or x >= len(X16_NAMES) or (x >= 3 and b1 & 15):
             return raw()
-        return Instr(addr, 2, f"{ALU_NAMES[aop]} {REG8[r]},[{REG16[b1 & 3]}]")
+        if x <= 2:
+            return Instr(addr, 2, f"{X16_NAMES[x]} {REG16[r]},#{(b1 & 15) + 1}")
+        return Instr(addr, 2, f"{X16_NAMES[x]} {REG16[r]}")
     if fam in UNARY:
         return Instr(addr, 1, f"{UNARY[fam]} {REG8[r]}")
     if fam in (F_SHR, F_SHL):
         if b1 & 0xF8:
             return raw()
         return Instr(addr, 2, f"{'SHR' if fam == F_SHR else 'SHL'} {REG8[r]},#{(b1 & 7) + 1}")
-    if fam in (F_JMP, F_CALL):
-        mnem = "JMP" if fam == F_JMP else "CALL"
-        return Instr(addr, 3, f"{mnem}{COND[r]} 0x{a16:04X}", target=a16)
+    if fam == F_JMP:
+        return Instr(addr, 3, f"JMP{COND[r]} 0x{a16:04X}", target=a16)
+    if fam == F_CALL:
+        if r == 0:
+            return Instr(addr, 3, f"CALL 0x{a16:04X}", target=a16)
+        if r == 1:
+            return Instr(addr, 4, f"MOV [0x{a16:04X}],#0x{b3:02X}")
+        if r >= 4:
+            return Instr(addr, 2, f"MOV [{REG16[r & 3]}],#0x{b1:02X}")
+        return raw()
     if fam == F_JX:
-        if r in (0, 1):
-            return Instr(addr, 3, f"{'JMPNV' if r == 0 else 'CALLNV'} 0x{a16:04X}", target=a16)
+        if r in JX_NAMES:
+            return Instr(addr, 3, f"{JX_NAMES[r]} 0x{a16:04X}", target=a16)
         if r in (2, 3) and not (b1 & 0xFC):
             return Instr(addr, 2, f"{'JMP' if r == 2 else 'CALL'} {REG16[b1 & 3]}")
         return raw()
@@ -188,7 +203,7 @@ def decode_one(mem, addr):
         return Instr(addr, 1, f"{'DEC' if r & 4 else 'INC'} {REG16[r & 3]}")
     if fam == F_PUSHPOP16:
         return Instr(addr, 1, f"{'POP' if r & 4 else 'PUSH'} {REG16[r & 3]}")
-    return raw()                                # familias 30/31: libres
+    return raw()
 
 
 def disassemble(mem):

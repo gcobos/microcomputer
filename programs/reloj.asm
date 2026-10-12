@@ -88,20 +88,20 @@ P_T_HOUR  = 0x0677
 ; ============================================================================
 start:
     MOV AL,#0
-    STA [hh],AL
-    STA [mm],AL
-    STA [ss],AL
+    MOV [hh],AL
+    MOV [mm],AL
+    MOV [ss],AL
 
     IN  AL,(P_DIR_POS)
-    STA [dir_prev],AL
+    MOV [dir_prev],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_prev],AL
+    MOV [dat_prev],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn_prev],AL
+    MOV [dir_btn_prev],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn_prev],AL
+    MOV [dat_btn_prev],AL
 
-    STA [manual],AL         ; (AL = 0)
+    MOV [manual],AL         ; (AL = 0)
     MOV AL,#250
     OUT (P_T2),AL           ; arma el latido de 1 s
     CALL sync_rtc           ; la hora real, si el aparato la tiene
@@ -112,108 +112,108 @@ start:
 
 main_l:
     MOV AL,#0
-    STA [redraw],AL
+    MOV [redraw],AL
 
     ; --- pulsador de cualquiera de los dos encoders -> segundero a 0 -------
     ; flanco de subida (estaba suelto, ahora esta pulsado), no "esta pulsado"
     ; a secas -- si no, mientras se mantiene pulsado lo pondria a 0 sin parar.
     IN  AL,(P_DIR_BTN)
-    LDA BL,[dir_btn_prev]
-    STA [dir_btn_prev],AL
+    MOV BL,[dir_btn_prev]
+    MOV [dir_btn_prev],AL
     CMP AL,#0
     JMPZ dbtn_done
     CMP BL,#0
     JMPNZ dbtn_done          ; ya estaba pulsado -> no es flanco
     MOV AL,#1
-    STA [ss_reset],AL
+    MOV [ss_reset],AL
 dbtn_done:
 
     IN  AL,(P_DAT_BTN)
-    LDA BL,[dat_btn_prev]
-    STA [dat_btn_prev],AL
+    MOV BL,[dat_btn_prev]
+    MOV [dat_btn_prev],AL
     CMP AL,#0
     JMPZ abtn_done
     CMP BL,#0
     JMPNZ abtn_done
     MOV AL,#1
-    STA [ss_reset],AL
+    MOV [ss_reset],AL
 abtn_done:
 
-    LDA AL,[ss_reset]
+    MOV AL,[ss_reset]
     CMP AL,#0
     JMPZ ssr_done
     MOV AL,#0
-    STA [ss_reset],AL
-    STA [ss],AL
+    MOV [ss_reset],AL
+    MOV [ss],AL
     MOV AL,#250
     OUT (P_T2),AL            ; reinicia tambien el latido: el segundo "0" dura
                               ; el segundo entero, no lo que quedara del viejo
     MOV AL,#1
-    STA [redraw],AL
+    MOV [redraw],AL
 ssr_done:
 
     ; --- encoder izquierdo (DIRECCION) -> horas -----------------------------
     IN  AL,(P_DIR_POS)
-    STA [tmp0],AL
-    LDA BL,[dir_prev]
+    MOV [tmp0],AL
+    MOV BL,[dir_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dir_prev],CL
+    MOV CL,[tmp0]
+    MOV [dir_prev],CL
     JMPZ hr_done
     AND AL,#0x80
     JMPZ hr_up
-    LDA AL,[hh]
+    MOV AL,[hh]
     CMP AL,#0
     JMPNZ hr_decok
     MOV AL,#12
 hr_decok:
     SUB AL,#1
-    STA [hh],AL
+    MOV [hh],AL
     JMP hr_mark
 hr_up:
-    LDA AL,[hh]
+    MOV AL,[hh]
     ADD AL,#1
     CMP AL,#12
     JMPNZ hr_upok
     MOV AL,#0
 hr_upok:
-    STA [hh],AL
+    MOV [hh],AL
 hr_mark:
     MOV AL,#1
-    STA [redraw],AL
-    STA [manual],AL
+    MOV [redraw],AL
+    MOV [manual],AL
 hr_done:
 
     ; --- encoder derecho (DATOS) -> minutos ---------------------------------
     IN  AL,(P_DAT_POS)
-    STA [tmp0],AL
-    LDA BL,[dat_prev]
+    MOV [tmp0],AL
+    MOV BL,[dat_prev]
     SUB AL,BL
-    LDA CL,[tmp0]
-    STA [dat_prev],CL
+    MOV CL,[tmp0]
+    MOV [dat_prev],CL
     JMPZ mn_done
     AND AL,#0x80
     JMPZ mn_up
-    LDA AL,[mm]
+    MOV AL,[mm]
     CMP AL,#0
     JMPNZ mn_decok
     MOV AL,#60
 mn_decok:
     SUB AL,#1
-    STA [mm],AL
+    MOV [mm],AL
     JMP mn_mark
 mn_up:
-    LDA AL,[mm]
+    MOV AL,[mm]
     ADD AL,#1
     CMP AL,#60
     JMPNZ mn_upok
     MOV AL,#0
 mn_upok:
-    STA [mm],AL
+    MOV [mm],AL
 mn_mark:
     MOV AL,#1
-    STA [redraw],AL
-    STA [manual],AL
+    MOV [redraw],AL
+    MOV [manual],AL
 mn_done:
 
     ; --- latido de 1 s (T2): avanza el segundero, con acarreo a min/hora ----
@@ -223,36 +223,36 @@ mn_done:
     MOV AL,#250
     OUT (P_T2),AL
 
-    LDA AL,[ss]
+    MOV AL,[ss]
     ADD AL,#1
     CMP AL,#60
     JMPNZ st_ss_ok
     MOV AL,#0
-    LDA BL,[mm]
+    MOV BL,[mm]
     ADD BL,#1
     CMP BL,#60
     JMPNZ st_mm_ok
     MOV BL,#0
-    LDA CL,[hh]
+    MOV CL,[hh]
     ADD CL,#1
     CMP CL,#12
     JMPNZ st_hh_ok
     MOV CL,#0
 st_hh_ok:
-    STA [hh],CL
+    MOV [hh],CL
 st_mm_ok:
-    STA [mm],BL
+    MOV [mm],BL
 st_ss_ok:
-    STA [ss],AL
+    MOV [ss],AL
     MOV AL,#1
-    STA [redraw],AL
-    LDA AL,[ss]
+    MOV [redraw],AL
+    MOV AL,[ss]
     CMP AL,#0
     JMPNZ sec_done
     CALL sync_rtc            ; cada minuto, a la hora real (si no se toco a mano)
 sec_done:
 
-    LDA AL,[redraw]
+    MOV AL,[redraw]
     CMP AL,#0
     JMPZ nr_done
     CALL clsg
@@ -269,7 +269,7 @@ nr_done:
 ;  copia (hora de 12) y reinicia el latido para que el segundo cuadre
 ; ============================================================================
 sync_rtc:
-    LDA AL,[manual]
+    MOV AL,[manual]
     CMP AL,#0
     JMPNZ sr_done
     OUT (P_TIME),AL          ; congela la hora de ahora
@@ -280,15 +280,15 @@ sync_rtc:
     MOV AH,#0
     MOV DL,#12
     DIV DL                   ; AH = hora mod 12
-    STA [hh],AH
+    MOV [hh],AH
     IN  AL,(P_T_MIN)
-    STA [mm],AL
+    MOV [mm],AL
     IN  AL,(P_T_SEC)
-    STA [ss],AL
+    MOV [ss],AL
     MOV AL,#250
     OUT (P_T2),AL
     MOV AL,#1
-    STA [redraw],AL
+    MOV [redraw],AL
 sr_done:
     RET
 
@@ -309,34 +309,34 @@ div12:
 ; ============================================================================
 draw_hands:
     ; hora: indice = HOUR5[hh] + mm/12
-    LDA CL,[hh]
+    MOV CL,[hh]
     MOV BX,#HOUR5
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp_idx],AL
-    LDA AL,[mm]
+    MOV AL,[BX]
+    MOV [tmp_idx],AL
+    MOV AL,[mm]
     CALL div12
-    LDA BL,[tmp_idx]
+    MOV BL,[tmp_idx]
     ADD AL,BL
-    STA [hp_idx],AL
+    MOV [hp_idx],AL
     MOV AL,#LEN_HOUR
-    STA [hp_len],AL
+    MOV [hp_len],AL
     CALL hand_point
     CALL draw_hand_seg
 
     ; minutero: indice = mm
-    LDA AL,[mm]
-    STA [hp_idx],AL
+    MOV AL,[mm]
+    MOV [hp_idx],AL
     MOV AL,#LEN_MIN
-    STA [hp_len],AL
+    MOV [hp_len],AL
     CALL hand_point
     CALL draw_hand_seg
 
     ; segundero: indice = ss
-    LDA AL,[ss]
-    STA [hp_idx],AL
+    MOV AL,[ss]
+    MOV [hp_idx],AL
     MOV AL,#LEN_SEC
-    STA [hp_len],AL
+    MOV [hp_len],AL
     CALL hand_point
     CALL draw_hand_seg
     RET
@@ -344,13 +344,13 @@ draw_hands:
 ; --- draw_hand_seg: traza de (CX,CY) a (hp_x,hp_y) --------------------------
 draw_hand_seg:
     MOV AL,#CX
-    STA [ln_x0],AL
+    MOV [ln_x0],AL
     MOV AL,#CY
-    STA [ln_y0],AL
-    LDA AL,[hp_x]
-    STA [ln_x1],AL
-    LDA AL,[hp_y]
-    STA [ln_y1],AL
+    MOV [ln_y0],AL
+    MOV AL,[hp_x]
+    MOV [ln_x1],AL
+    MOV AL,[hp_y]
+    MOV [ln_y1],AL
     CALL line_draw
     RET
 
@@ -361,41 +361,41 @@ draw_hand_seg:
 ;     hp_y = CY - hp_len*cos(hp_idx)/64      cos(i) = sin((i+15) mod 60)
 ; ============================================================================
 hand_point:
-    LDA AL,[hp_len]
-    STA [sm_a],AL
-    LDA CL,[hp_idx]
+    MOV AL,[hp_len]
+    MOV [sm_a],AL
+    MOV CL,[hp_idx]
     MOV BX,#sine60
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [hp_t1],AL              ; hp_t1 = len*sin(idx)/64
+    MOV [hp_t1],AL              ; hp_t1 = len*sin(idx)/64
 
-    LDA AL,[hp_idx]
+    MOV AL,[hp_idx]
     ADD AL,#15
     CMP AL,#60
     JMPC hp_cos_ok
     SUB AL,#60
 hp_cos_ok:
-    STA [tmp_idx],AL
-    LDA AL,[hp_len]
-    STA [sm_a],AL
-    LDA CL,[tmp_idx]
+    MOV [tmp_idx],AL
+    MOV AL,[hp_len]
+    MOV [sm_a],AL
+    MOV CL,[tmp_idx]
     MOV BX,#sine60
     ADD BX,CL
-    LDA AL,[BX]
-    STA [sm_b],AL
+    MOV AL,[BX]
+    MOV [sm_b],AL
     CALL smul64
-    STA [hp_t2],AL              ; hp_t2 = len*cos(idx)/64
+    MOV [hp_t2],AL              ; hp_t2 = len*cos(idx)/64
 
-    LDA AL,[hp_t1]
+    MOV AL,[hp_t1]
     ADD AL,#CX
-    STA [hp_x],AL
+    MOV [hp_x],AL
 
     MOV AL,#CY
-    LDA BL,[hp_t2]
+    MOV BL,[hp_t2]
     SUB AL,BL
-    STA [hp_y],AL
+    MOV [hp_y],AL
     RET
 
 ; ============================================================================
@@ -403,104 +403,104 @@ hp_cos_ok:
 ; ============================================================================
 draw_numerals:
     MOV AL,#0
-    STA [ni],AL
+    MOV [ni],AL
 dn_l:
     ; centro del numeral = hand_point(NUM_IDX[ni], LEN_NUM)
-    LDA CL,[ni]
+    MOV CL,[ni]
     MOV BX,#NUM_IDX
     ADD BX,CL
-    LDA AL,[BX]
-    STA [hp_idx],AL
+    MOV AL,[BX]
+    MOV [hp_idx],AL
     MOV AL,#LEN_NUM
-    STA [hp_len],AL
+    MOV [hp_len],AL
     CALL hand_point
-    LDA AL,[hp_x]
-    STA [anchor_x],AL
-    LDA AL,[hp_y]
-    STA [anchor_y],AL
+    MOV AL,[hp_x]
+    MOV [anchor_x],AL
+    MOV AL,[hp_y]
+    MOV [anchor_y],AL
 
     ; cuantos segmentos tiene este numeral
-    LDA CL,[ni]
+    MOV CL,[ni]
     MOV BX,#NUM_CNT
     ADD BX,CL
-    LDA AL,[BX]
-    STA [seg_cnt],AL
+    MOV AL,[BX]
+    MOV [seg_cnt],AL
 
     ; puntero al primer segmento: NUM_SEG + NUM_OFF[ni]
-    LDA CL,[ni]
+    MOV CL,[ni]
     MOV BX,#NUM_OFF
     ADD BX,CL
-    LDA AL,[BX]
-    STA [tmp_idx],AL
-    LDA CL,[tmp_idx]
+    MOV AL,[BX]
+    MOV [tmp_idx],AL
+    MOV CL,[tmp_idx]
     MOV BX,#NUM_SEG
     ADD BX,CL
     MOV AL,BL
-    STA [seg_ptr_lo],AL
+    MOV [seg_ptr_lo],AL
     MOV AL,BH
-    STA [seg_ptr_hi],AL
+    MOV [seg_ptr_hi],AL
 
     MOV AL,#0
-    STA [seg_i],AL
+    MOV [seg_i],AL
 dn_seg_l:
-    LDA AL,[seg_i]
-    LDA BL,[seg_cnt]
+    MOV AL,[seg_i]
+    MOV BL,[seg_cnt]
     CMP AL,BL
     JMPNC dn_seg_done        ; seg_i >= seg_cnt -> no quedan segmentos
 
-    LDA BL,[seg_ptr_lo]
-    LDA BH,[seg_ptr_hi]
-    LDA AL,[BX]              ; x0 local
-    LDA CL,[anchor_x]
+    MOV BL,[seg_ptr_lo]
+    MOV BH,[seg_ptr_hi]
+    MOV AL,[BX]              ; x0 local
+    MOV CL,[anchor_x]
     ADD AL,CL
-    STA [ln_x0],AL
+    MOV [ln_x0],AL
 
-    LDA BL,[seg_ptr_lo]
-    LDA BH,[seg_ptr_hi]
+    MOV BL,[seg_ptr_lo]
+    MOV BH,[seg_ptr_hi]
     INC BX
-    LDA AL,[BX]              ; y0 local
-    LDA CL,[anchor_y]
+    MOV AL,[BX]              ; y0 local
+    MOV CL,[anchor_y]
     ADD AL,CL
-    STA [ln_y0],AL
+    MOV [ln_y0],AL
 
-    LDA BL,[seg_ptr_lo]
-    LDA BH,[seg_ptr_hi]
+    MOV BL,[seg_ptr_lo]
+    MOV BH,[seg_ptr_hi]
     MOV CL,#2
     ADD BX,CL
-    LDA AL,[BX]              ; x1 local
-    LDA CL,[anchor_x]
+    MOV AL,[BX]              ; x1 local
+    MOV CL,[anchor_x]
     ADD AL,CL
-    STA [ln_x1],AL
+    MOV [ln_x1],AL
 
-    LDA BL,[seg_ptr_lo]
-    LDA BH,[seg_ptr_hi]
+    MOV BL,[seg_ptr_lo]
+    MOV BH,[seg_ptr_hi]
     MOV CL,#3
     ADD BX,CL
-    LDA AL,[BX]              ; y1 local
-    LDA CL,[anchor_y]
+    MOV AL,[BX]              ; y1 local
+    MOV CL,[anchor_y]
     ADD AL,CL
-    STA [ln_y1],AL
+    MOV [ln_y1],AL
 
     CALL line_draw
 
-    LDA BL,[seg_ptr_lo]
-    LDA BH,[seg_ptr_hi]
+    MOV BL,[seg_ptr_lo]
+    MOV BH,[seg_ptr_hi]
     MOV CL,#4
     ADD BX,CL
     MOV AL,BL
-    STA [seg_ptr_lo],AL
+    MOV [seg_ptr_lo],AL
     MOV AL,BH
-    STA [seg_ptr_hi],AL
+    MOV [seg_ptr_hi],AL
 
-    LDA AL,[seg_i]
+    MOV AL,[seg_i]
     ADD AL,#1
-    STA [seg_i],AL
+    MOV [seg_i],AL
     JMP dn_seg_l
 dn_seg_done:
 
-    LDA AL,[ni]
+    MOV AL,[ni]
     ADD AL,#1
-    STA [ni],AL
+    MOV [ni],AL
     CMP AL,#12
     JMPNZ dn_l
     RET
@@ -511,36 +511,36 @@ dn_seg_done:
 ; ============================================================================
 smul64:
     MOV AL,#0
-    STA [sm_neg],AL
+    MOV [sm_neg],AL
 
-    LDA AL,[sm_a]
+    MOV AL,[sm_a]
     AND AL,#0x80
     JMPZ sm_apos
-    LDA AL,[sm_a]
+    MOV AL,[sm_a]
     NOT AL
     ADD AL,#1
-    STA [sm_a],AL
-    LDA AL,[sm_neg]
+    MOV [sm_a],AL
+    MOV AL,[sm_neg]
     XOR AL,#1
-    STA [sm_neg],AL
+    MOV [sm_neg],AL
 sm_apos:
-    LDA AL,[sm_b]
+    MOV AL,[sm_b]
     AND AL,#0x80
     JMPZ sm_bpos
-    LDA AL,[sm_b]
+    MOV AL,[sm_b]
     NOT AL
     ADD AL,#1
-    STA [sm_b],AL
-    LDA AL,[sm_neg]
+    MOV [sm_b],AL
+    MOV AL,[sm_neg]
     XOR AL,#1
-    STA [sm_neg],AL
+    MOV [sm_neg],AL
 sm_bpos:
     ; Multiplicacion sin signo de verdad: antes un bucle de 8 pasos de
     ; "desplaza y suma condicional"; ahora una sola instruccion hardware --
     ; ver MUL en docs/isa.md SS4d. Mismo cuerpo que cubo.asm (de donde se
     ; copio esta rutina).
-    LDA AL,[sm_a]
-    LDA BL,[sm_b]
+    MOV AL,[sm_a]
+    MOV BL,[sm_b]
     MUL BL
     ; /64 de AX sin bucle: (AX >> 6) & 0xFF = (AL >> 6) | (AH << 2). Antes
     ; eran 6 vueltas desplazando sm_hi/sm_lo bit a bit con acarreo a mano
@@ -548,17 +548,17 @@ sm_bpos:
     SHR AL,#6
     SHL AH,#2
     OR  AL,AH
-    STA [sm_lo],AL
+    MOV [sm_lo],AL
 
-    LDA AL,[sm_neg]
+    MOV AL,[sm_neg]
     CMP AL,#0
     JMPZ sm_done
-    LDA AL,[sm_lo]
+    MOV AL,[sm_lo]
     NOT AL
     ADD AL,#1
-    STA [sm_lo],AL
+    MOV [sm_lo],AL
 sm_done:
-    LDA AL,[sm_lo]
+    MOV AL,[sm_lo]
     RET
 
 ; ============================================================================
@@ -566,118 +566,118 @@ sm_done:
 ;  (identica a la de programs/cubo.asm)
 ; ============================================================================
 line_draw:
-    LDA AL,[ln_x1]
-    LDA BL,[ln_x0]
+    MOV AL,[ln_x1]
+    MOV BL,[ln_x0]
     CMP AL,BL
     JMPC ldx_neg
     SUB AL,BL
-    STA [ln_dx],AL
+    MOV [ln_dx],AL
     MOV AL,#1
-    STA [ln_sx],AL
+    MOV [ln_sx],AL
     JMP ldx_done
 ldx_neg:
     MOV AL,BL
-    LDA BL,[ln_x1]
+    MOV BL,[ln_x1]
     SUB AL,BL
-    STA [ln_dx],AL
+    MOV [ln_dx],AL
     MOV AL,#0xFF
-    STA [ln_sx],AL
+    MOV [ln_sx],AL
 ldx_done:
-    LDA AL,[ln_y1]
-    LDA BL,[ln_y0]
+    MOV AL,[ln_y1]
+    MOV BL,[ln_y0]
     CMP AL,BL
     JMPC ldy_neg
     SUB AL,BL
-    STA [ln_dy],AL
+    MOV [ln_dy],AL
     MOV AL,#1
-    STA [ln_sy],AL
+    MOV [ln_sy],AL
     JMP ldy_done
 ldy_neg:
     MOV AL,BL
-    LDA BL,[ln_y1]
+    MOV BL,[ln_y1]
     SUB AL,BL
-    STA [ln_dy],AL
+    MOV [ln_dy],AL
     MOV AL,#0xFF
-    STA [ln_sy],AL
+    MOV [ln_sy],AL
 ldy_done:
-    LDA AL,[ln_dx]
-    LDA BL,[ln_dy]
+    MOV AL,[ln_dx]
+    MOV BL,[ln_dy]
     CMP AL,BL
     JMPC ln_ymajor_init
-    LDA AL,[ln_dx]
-    STA [ln_n],AL
+    MOV AL,[ln_dx]
+    MOV [ln_n],AL
     SHR AL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     MOV AL,#1
-    STA [ln_xmaj],AL
+    MOV [ln_xmaj],AL
     JMP ln_loop
 ln_ymajor_init:
-    LDA AL,[ln_dy]
-    STA [ln_n],AL
+    MOV AL,[ln_dy]
+    MOV [ln_n],AL
     SHR AL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     MOV AL,#0
-    STA [ln_xmaj],AL
+    MOV [ln_xmaj],AL
 ln_loop:
-    LDA AL,[ln_x0]
-    STA [px_x],AL
-    LDA AL,[ln_y0]
-    STA [px_y],AL
+    MOV AL,[ln_x0]
+    MOV [px_x],AL
+    MOV AL,[ln_y0]
+    MOV [px_y],AL
     CALL pix_on
 
-    LDA AL,[ln_n]
+    MOV AL,[ln_n]
     CMP AL,#0
     JMPZ ln_done
     SUB AL,#1
-    STA [ln_n],AL
+    MOV [ln_n],AL
 
-    LDA AL,[ln_xmaj]
+    MOV AL,[ln_xmaj]
     CMP AL,#0
     JMPZ ln_do_ymajor
 
-    LDA AL,[ln_err]
-    LDA BL,[ln_dy]
+    MOV AL,[ln_err]
+    MOV BL,[ln_dy]
     SUB AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     JMPN ln_xmaj_neg
     JMP ln_xmaj_stepx
 ln_xmaj_neg:
-    LDA AL,[ln_y0]
-    LDA BL,[ln_sy]
+    MOV AL,[ln_y0]
+    MOV BL,[ln_sy]
     ADD AL,BL
-    STA [ln_y0],AL
-    LDA AL,[ln_err]
-    LDA BL,[ln_dx]
+    MOV [ln_y0],AL
+    MOV AL,[ln_err]
+    MOV BL,[ln_dx]
     ADD AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
 ln_xmaj_stepx:
-    LDA AL,[ln_x0]
-    LDA BL,[ln_sx]
+    MOV AL,[ln_x0]
+    MOV BL,[ln_sx]
     ADD AL,BL
-    STA [ln_x0],AL
+    MOV [ln_x0],AL
     JMP ln_loop
 
 ln_do_ymajor:
-    LDA AL,[ln_err]
-    LDA BL,[ln_dx]
+    MOV AL,[ln_err]
+    MOV BL,[ln_dx]
     SUB AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     JMPN ln_ymaj_neg
     JMP ln_ymaj_stepy
 ln_ymaj_neg:
-    LDA AL,[ln_x0]
-    LDA BL,[ln_sx]
+    MOV AL,[ln_x0]
+    MOV BL,[ln_sx]
     ADD AL,BL
-    STA [ln_x0],AL
-    LDA AL,[ln_err]
-    LDA BL,[ln_dy]
+    MOV [ln_x0],AL
+    MOV AL,[ln_err]
+    MOV BL,[ln_dy]
     ADD AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
 ln_ymaj_stepy:
-    LDA AL,[ln_y0]
-    LDA BL,[ln_sy]
+    MOV AL,[ln_y0]
+    MOV BL,[ln_sy]
     ADD AL,BL
-    STA [ln_y0],AL
+    MOV [ln_y0],AL
     JMP ln_loop
 ln_done:
     RET
@@ -696,28 +696,28 @@ idx_ptr:
 ; --- pix_on:  enciende el pixel (px_x,px_y) --------------------------------
 pix_on:
     CALL calc_pix
-    LDA BL,[pix_lo]
-    LDA BH,[pix_hi]
+    MOV BL,[pix_lo]
+    MOV BH,[pix_hi]
     IN  AL,(BX)
-    LDA DL,[pix_mask]
+    MOV DL,[pix_mask]
     OR  AL,DL
     OUT (BX),AL
     RET
 
 ; --- calc_pix:  de (px_x,px_y) saca puerto (pix_lo/pix_hi) + mascara -------
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -728,7 +728,7 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; --- clsg:  apaga el framebuffer completo (0x0000..0x03FF) -----------------

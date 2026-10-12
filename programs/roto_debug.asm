@@ -74,12 +74,12 @@ start:
     ; empieza en 0, un origen arbitrario igual de valido que cualquier otro
     ; para una cifra que solo tiene sentido en relativo.
     IN  AL,(P_DIR_POS)
-    STA [dir_prev_raw],AL
+    MOV [dir_prev_raw],AL
     IN  AL,(P_DAT_POS)
-    STA [dat_prev_raw],AL
+    MOV [dat_prev_raw],AL
     MOV AL,#0
-    STA [dir_pos],AL
-    STA [dat_pos],AL
+    MOV [dir_pos],AL
+    MOV [dat_pos],AL
 
 ; ============================================================================
 ;  BUCLE PRINCIPAL: lee los dos encoders, redibuja los dos circulos+aguja,
@@ -87,100 +87,100 @@ start:
 ; ============================================================================
 main_l:
     IN  AL,(P_DIR_POS)
-    STA [dir_raw],AL
-    LDA BL,[dir_prev_raw]
+    MOV [dir_raw],AL
+    MOV BL,[dir_prev_raw]
     SUB AL,BL                  ; delta con signo desde el ultimo fotograma
-    STA [vad_delta],AL
-    LDA AL,[dir_raw]
-    STA [dir_prev_raw],AL
+    MOV [vad_delta],AL
+    MOV AL,[dir_raw]
+    MOV [dir_prev_raw],AL
     MOV BX,#dir_pos
     CALL vpos_apply_delta
-    LDA AL,[dir_pos]
+    MOV AL,[dir_pos]
     CALL mod20
-    STA [dir_slot],AL
+    MOV [dir_slot],AL
     IN  AL,(P_DIR_BTN)
-    STA [dir_btn],AL
+    MOV [dir_btn],AL
 
     IN  AL,(P_DAT_POS)
-    STA [dat_raw],AL
-    LDA BL,[dat_prev_raw]
+    MOV [dat_raw],AL
+    MOV BL,[dat_prev_raw]
     SUB AL,BL
-    STA [vad_delta],AL
-    LDA AL,[dat_raw]
-    STA [dat_prev_raw],AL
+    MOV [vad_delta],AL
+    MOV AL,[dat_raw]
+    MOV [dat_prev_raw],AL
     MOV BX,#dat_pos
     CALL vpos_apply_delta
-    LDA AL,[dat_pos]
+    MOV AL,[dat_pos]
     CALL mod20
-    STA [dat_slot],AL
+    MOV [dat_slot],AL
     IN  AL,(P_DAT_BTN)
-    STA [dat_btn],AL
+    MOV [dat_btn],AL
 
     CALL clr_shadow
 
     ; --- circulo + aguja: DIRECCION (izquierda) -----------------------------
     MOV AL,#DIR_CX
-    STA [circ_cx],AL
+    MOV [circ_cx],AL
     MOV AL,#CIRC_CY
-    STA [circ_cy],AL
+    MOV [circ_cy],AL
     MOV AL,#CIRC_R
-    STA [circ_r],AL
-    LDA AL,[dir_btn]
-    STA [circ_fill],AL
+    MOV [circ_r],AL
+    MOV AL,[dir_btn]
+    MOV [circ_fill],AL
     CALL circle
 
     MOV AL,#DIR_CX
-    STA [ln_x0],AL
+    MOV [ln_x0],AL
     MOV AL,#CIRC_CY
-    STA [ln_y0],AL
-    LDA AL,[dir_slot]
-    STA [nd_slot],AL
+    MOV [ln_y0],AL
+    MOV AL,[dir_slot]
+    MOV [nd_slot],AL
     CALL needle_lookup
     MOV AL,#DIR_CX
-    LDA BL,[nd_dx]
+    MOV BL,[nd_dx]
     ADD AL,BL
-    STA [ln_x1],AL
+    MOV [ln_x1],AL
     MOV AL,#CIRC_CY
-    LDA BL,[nd_dy]
+    MOV BL,[nd_dy]
     ADD AL,BL
-    STA [ln_y1],AL
+    MOV [ln_y1],AL
     CALL line_draw
 
     ; --- circulo + aguja: DATOS (derecha) -----------------------------------
     MOV AL,#DAT_CX
-    STA [circ_cx],AL
+    MOV [circ_cx],AL
     MOV AL,#CIRC_CY
-    STA [circ_cy],AL
+    MOV [circ_cy],AL
     MOV AL,#CIRC_R
-    STA [circ_r],AL
-    LDA AL,[dat_btn]
-    STA [circ_fill],AL
+    MOV [circ_r],AL
+    MOV AL,[dat_btn]
+    MOV [circ_fill],AL
     CALL circle
 
     MOV AL,#DAT_CX
-    STA [ln_x0],AL
+    MOV [ln_x0],AL
     MOV AL,#CIRC_CY
-    STA [ln_y0],AL
-    LDA AL,[dat_slot]
-    STA [nd_slot],AL
+    MOV [ln_y0],AL
+    MOV AL,[dat_slot]
+    MOV [nd_slot],AL
     CALL needle_lookup
     MOV AL,#DAT_CX
-    LDA BL,[nd_dx]
+    MOV BL,[nd_dx]
     ADD AL,BL
-    STA [ln_x1],AL
+    MOV [ln_x1],AL
     MOV AL,#CIRC_CY
-    LDA BL,[nd_dy]
+    MOV BL,[nd_dy]
     ADD AL,BL
-    STA [ln_y1],AL
+    MOV [ln_y1],AL
     CALL line_draw
 
     CALL blit
 
     ; --- cifras de posicion virtual (0..199), fila 7 ------------------------
-    LDA AL,[dir_pos]
+    MOV AL,[dir_pos]
     MOV CX,#0x0703
     CALL put_dec3
-    LDA AL,[dat_pos]
+    MOV AL,[dat_pos]
     MOV CX,#0x070E
     CALL put_dec3
 
@@ -209,41 +209,41 @@ mod20:
 ;  cabecera sobre por que VPOS_MOD=200 y no los 256 pasos crudos del puerto.
 ; ============================================================================
 vpos_apply_delta:
-    LDA AL,[vad_delta]
+    MOV AL,[vad_delta]
     CMP AL,#0
     JMPZ vad_done
     JMPN vad_neg
 
-    STA [vad_cnt],AL           ; delta positivo: avanza [BX] esas veces
+    MOV [vad_cnt],AL           ; delta positivo: avanza [BX] esas veces
 vad_pos_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     ADD AL,#1
     CMP AL,#VPOS_MOD
     JMPNZ vad_pos_store
     MOV AL,#0
 vad_pos_store:
-    STA [BX],AL
-    LDA AL,[vad_cnt]
+    MOV [BX],AL
+    MOV AL,[vad_cnt]
     SUB AL,#1
-    STA [vad_cnt],AL
+    MOV [vad_cnt],AL
     JMPNZ vad_pos_l
     JMP vad_done
 
 vad_neg:
     NOT AL
     ADD AL,#1                  ; magnitud = |delta| (complemento a 2)
-    STA [vad_cnt],AL
+    MOV [vad_cnt],AL
 vad_neg_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPNZ vad_neg_dec
     MOV AL,#VPOS_MOD
 vad_neg_dec:
     SUB AL,#1
-    STA [BX],AL
-    LDA AL,[vad_cnt]
+    MOV [BX],AL
+    MOV AL,[vad_cnt]
     SUB AL,#1
-    STA [vad_cnt],AL
+    MOV [vad_cnt],AL
     JMPNZ vad_neg_l
 vad_done:
     RET
@@ -252,15 +252,15 @@ vad_done:
 ;  needle_lookup:  [nd_slot] (0..19) -> [nd_dx],[nd_dy] desde needle_off
 ; ============================================================================
 needle_lookup:
-    LDA CL,[nd_slot]
+    MOV CL,[nd_slot]
     SHL CL                     ; offset en bytes = slot*2
     MOV BX,#needle_off
     ADD BX,CL   ; BX = needle_off + slot*2 (con acarreo)
-    LDA AL,[BX]
-    STA [nd_dx],AL
+    MOV AL,[BX]
+    MOV [nd_dx],AL
     INC BX
-    LDA AL,[BX]
-    STA [nd_dy],AL
+    MOV AL,[BX]
+    MOV [nd_dy],AL
     RET
 
 ; ============================================================================
@@ -276,54 +276,54 @@ needle_lookup:
 ;  Verificado en Python antes de escribirlo (ver el historial de esta sesion).
 ; ============================================================================
 circle:
-    LDA AL,[circ_r]
-    STA [cir_x],AL
+    MOV AL,[circ_r]
+    MOV [cir_x],AL
     MOV AL,#0
-    STA [cir_y],AL
-    STA [cir_err],AL
+    MOV [cir_y],AL
+    MOV [cir_err],AL
 circ_loop:
-    LDA AL,[cir_x]
-    LDA BL,[cir_y]
+    MOV AL,[cir_x]
+    MOV BL,[cir_y]
     CMP AL,BL
     JMPC circ_done              ; x < y (acarreo/prestamo) -> fin
 
     CALL circ_plot8
 
-    LDA AL,[circ_fill]
+    MOV AL,[circ_fill]
     CMP AL,#0
     JMPZ circ_nofill
     CALL circ_fillspans
 circ_nofill:
 
-    LDA AL,[cir_y]
+    MOV AL,[cir_y]
     ADD AL,#1
-    STA [cir_y],AL
+    MOV [cir_y],AL
 
-    LDA AL,[cir_err]
+    MOV AL,[cir_err]
     CMP AL,#0
     JMPZ circ_le0
     JMPN circ_le0
     JMP circ_gt0
 circ_le0:
-    LDA AL,[cir_y]
+    MOV AL,[cir_y]
     SHL AL
     ADD AL,#1
-    LDA BL,[cir_err]
+    MOV BL,[cir_err]
     ADD BL,AL
-    STA [cir_err],BL
+    MOV [cir_err],BL
     JMP circ_loop
 circ_gt0:
-    LDA AL,[cir_x]
+    MOV AL,[cir_x]
     SUB AL,#1
-    STA [cir_x],AL
-    LDA AL,[cir_y]
-    LDA BL,[cir_x]
+    MOV [cir_x],AL
+    MOV AL,[cir_y]
+    MOV BL,[cir_x]
     SUB AL,BL
     SHL AL
     ADD AL,#1
-    LDA BL,[cir_err]
+    MOV BL,[cir_err]
     ADD BL,AL
-    STA [cir_err],BL
+    MOV [cir_err],BL
     JMP circ_loop
 circ_done:
     RET
@@ -335,132 +335,132 @@ circ_done:
 ; DL/DH -- el mismo tipo de fallo que ya se dio varias veces esta sesion en
 ; fzero.asm.
 circ_plot8:
-    LDA AL,[circ_cx]
-    LDA BL,[cir_x]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_x]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[circ_cy]
-    LDA BL,[cir_y]
+    MOV [px_x],AL
+    MOV AL,[circ_cy]
+    MOV BL,[cir_y]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[circ_cx]
-    LDA BL,[cir_x]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_x]
     SUB AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL shadow_set_px
 
-    LDA AL,[circ_cx]
-    LDA BL,[cir_x]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_x]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[circ_cy]
-    LDA BL,[cir_y]
+    MOV [px_x],AL
+    MOV AL,[circ_cy]
+    MOV BL,[cir_y]
     SUB AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[circ_cx]
-    LDA BL,[cir_x]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_x]
     SUB AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL shadow_set_px
 
-    LDA AL,[circ_cx]
-    LDA BL,[cir_y]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_y]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[circ_cy]
-    LDA BL,[cir_x]
+    MOV [px_x],AL
+    MOV AL,[circ_cy]
+    MOV BL,[cir_x]
     ADD AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[circ_cx]
-    LDA BL,[cir_y]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_y]
     SUB AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL shadow_set_px
 
-    LDA AL,[circ_cx]
-    LDA BL,[cir_y]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_y]
     ADD AL,BL
-    STA [px_x],AL
-    LDA AL,[circ_cy]
-    LDA BL,[cir_x]
+    MOV [px_x],AL
+    MOV AL,[circ_cy]
+    MOV BL,[cir_x]
     SUB AL,BL
-    STA [px_y],AL
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[circ_cx]
-    LDA BL,[cir_y]
+    MOV AL,[circ_cx]
+    MOV BL,[cir_y]
     SUB AL,BL
-    STA [px_x],AL
+    MOV [px_x],AL
     CALL shadow_set_px
     RET
 
 ; --- circ_fillspans: 4 franjas horizontales del paso actual (cir_x,cir_y) --
 circ_fillspans:
-    LDA AL,[circ_cy]
-    LDA BL,[cir_y]
+    MOV AL,[circ_cy]
+    MOV BL,[cir_y]
     ADD AL,BL
-    STA [hl_y],AL
-    LDA AL,[circ_cx]
-    LDA BL,[cir_x]
+    MOV [hl_y],AL
+    MOV AL,[circ_cx]
+    MOV BL,[cir_x]
     SUB AL,BL
-    STA [hl_x1],AL
-    LDA AL,[circ_cx]
-    LDA BL,[cir_x]
+    MOV [hl_x1],AL
+    MOV AL,[circ_cx]
+    MOV BL,[cir_x]
     ADD AL,BL
-    STA [hl_x2],AL
+    MOV [hl_x2],AL
     CALL hline_shadow
 
-    LDA AL,[circ_cy]
-    LDA BL,[cir_y]
+    MOV AL,[circ_cy]
+    MOV BL,[cir_y]
     SUB AL,BL
-    STA [hl_y],AL
+    MOV [hl_y],AL
     CALL hline_shadow
 
-    LDA AL,[circ_cy]
-    LDA BL,[cir_x]
+    MOV AL,[circ_cy]
+    MOV BL,[cir_x]
     ADD AL,BL
-    STA [hl_y],AL
-    LDA AL,[circ_cx]
-    LDA BL,[cir_y]
+    MOV [hl_y],AL
+    MOV AL,[circ_cx]
+    MOV BL,[cir_y]
     SUB AL,BL
-    STA [hl_x1],AL
-    LDA AL,[circ_cx]
-    LDA BL,[cir_y]
+    MOV [hl_x1],AL
+    MOV AL,[circ_cx]
+    MOV BL,[cir_y]
     ADD AL,BL
-    STA [hl_x2],AL
+    MOV [hl_x2],AL
     CALL hline_shadow
 
-    LDA AL,[circ_cy]
-    LDA BL,[cir_x]
+    MOV AL,[circ_cy]
+    MOV BL,[cir_x]
     SUB AL,BL
-    STA [hl_y],AL
+    MOV [hl_y],AL
     CALL hline_shadow
     RET
 
 ; --- hline_shadow: rellena en `shadow` la fila [hl_y] desde [hl_x1] hasta
 ; [hl_x2] (pixel a pixel; [hl_x1] <= [hl_x2] siempre, por construccion) -----
 hline_shadow:
-    LDA AL,[hl_y]
-    STA [px_y],AL
-    LDA AL,[hl_x1]
-    STA [hl_cur],AL
+    MOV AL,[hl_y]
+    MOV [px_y],AL
+    MOV AL,[hl_x1]
+    MOV [hl_cur],AL
 hls_l:
-    LDA AL,[hl_cur]
-    STA [px_x],AL
+    MOV AL,[hl_cur]
+    MOV [px_x],AL
     CALL shadow_set_px
-    LDA AL,[hl_cur]
-    LDA BL,[hl_x2]
+    MOV AL,[hl_cur]
+    MOV BL,[hl_x2]
     CMP AL,BL
     JMPZ hls_d
-    LDA AL,[hl_cur]
+    MOV AL,[hl_cur]
     ADD AL,#1
-    STA [hl_cur],AL
+    MOV [hl_cur],AL
     JMP hls_l
 hls_d:
     RET
@@ -469,118 +469,118 @@ hls_d:
 ;  LINEA (Bresenham general, igual algoritmo que cubo.asm/reloj.asm) --------
 ; ============================================================================
 line_draw:
-    LDA AL,[ln_x1]
-    LDA BL,[ln_x0]
+    MOV AL,[ln_x1]
+    MOV BL,[ln_x0]
     CMP AL,BL
     JMPC ldx_neg
     SUB AL,BL
-    STA [ln_dx],AL
+    MOV [ln_dx],AL
     MOV AL,#1
-    STA [ln_sx],AL
+    MOV [ln_sx],AL
     JMP ldx_done
 ldx_neg:
     MOV AL,BL
-    LDA BL,[ln_x1]
+    MOV BL,[ln_x1]
     SUB AL,BL
-    STA [ln_dx],AL
+    MOV [ln_dx],AL
     MOV AL,#0xFF
-    STA [ln_sx],AL
+    MOV [ln_sx],AL
 ldx_done:
-    LDA AL,[ln_y1]
-    LDA BL,[ln_y0]
+    MOV AL,[ln_y1]
+    MOV BL,[ln_y0]
     CMP AL,BL
     JMPC ldy_neg
     SUB AL,BL
-    STA [ln_dy],AL
+    MOV [ln_dy],AL
     MOV AL,#1
-    STA [ln_sy],AL
+    MOV [ln_sy],AL
     JMP ldy_done
 ldy_neg:
     MOV AL,BL
-    LDA BL,[ln_y1]
+    MOV BL,[ln_y1]
     SUB AL,BL
-    STA [ln_dy],AL
+    MOV [ln_dy],AL
     MOV AL,#0xFF
-    STA [ln_sy],AL
+    MOV [ln_sy],AL
 ldy_done:
-    LDA AL,[ln_dx]
-    LDA BL,[ln_dy]
+    MOV AL,[ln_dx]
+    MOV BL,[ln_dy]
     CMP AL,BL
     JMPC ln_ymajor_init
-    LDA AL,[ln_dx]
-    STA [ln_n],AL
+    MOV AL,[ln_dx]
+    MOV [ln_n],AL
     SHR AL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     MOV AL,#1
-    STA [ln_xmaj],AL
+    MOV [ln_xmaj],AL
     JMP ln_loop
 ln_ymajor_init:
-    LDA AL,[ln_dy]
-    STA [ln_n],AL
+    MOV AL,[ln_dy]
+    MOV [ln_n],AL
     SHR AL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     MOV AL,#0
-    STA [ln_xmaj],AL
+    MOV [ln_xmaj],AL
 ln_loop:
-    LDA AL,[ln_x0]
-    STA [px_x],AL
-    LDA AL,[ln_y0]
-    STA [px_y],AL
+    MOV AL,[ln_x0]
+    MOV [px_x],AL
+    MOV AL,[ln_y0]
+    MOV [px_y],AL
     CALL shadow_set_px
 
-    LDA AL,[ln_n]
+    MOV AL,[ln_n]
     CMP AL,#0
     JMPZ ln_done
     SUB AL,#1
-    STA [ln_n],AL
+    MOV [ln_n],AL
 
-    LDA AL,[ln_xmaj]
+    MOV AL,[ln_xmaj]
     CMP AL,#0
     JMPZ ln_do_ymajor
 
-    LDA AL,[ln_err]
-    LDA BL,[ln_dy]
+    MOV AL,[ln_err]
+    MOV BL,[ln_dy]
     SUB AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     JMPN ln_xmaj_neg
     JMP ln_xmaj_stepx
 ln_xmaj_neg:
-    LDA AL,[ln_y0]
-    LDA BL,[ln_sy]
+    MOV AL,[ln_y0]
+    MOV BL,[ln_sy]
     ADD AL,BL
-    STA [ln_y0],AL
-    LDA AL,[ln_err]
-    LDA BL,[ln_dx]
+    MOV [ln_y0],AL
+    MOV AL,[ln_err]
+    MOV BL,[ln_dx]
     ADD AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
 ln_xmaj_stepx:
-    LDA AL,[ln_x0]
-    LDA BL,[ln_sx]
+    MOV AL,[ln_x0]
+    MOV BL,[ln_sx]
     ADD AL,BL
-    STA [ln_x0],AL
+    MOV [ln_x0],AL
     JMP ln_loop
 
 ln_do_ymajor:
-    LDA AL,[ln_err]
-    LDA BL,[ln_dx]
+    MOV AL,[ln_err]
+    MOV BL,[ln_dx]
     SUB AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
     JMPN ln_ymaj_neg
     JMP ln_ymaj_stepy
 ln_ymaj_neg:
-    LDA AL,[ln_x0]
-    LDA BL,[ln_sx]
+    MOV AL,[ln_x0]
+    MOV BL,[ln_sx]
     ADD AL,BL
-    STA [ln_x0],AL
-    LDA AL,[ln_err]
-    LDA BL,[ln_dy]
+    MOV [ln_x0],AL
+    MOV AL,[ln_err]
+    MOV BL,[ln_dy]
     ADD AL,BL
-    STA [ln_err],AL
+    MOV [ln_err],AL
 ln_ymaj_stepy:
-    LDA AL,[ln_y0]
-    LDA BL,[ln_sy]
+    MOV AL,[ln_y0]
+    MOV BL,[ln_sy]
     ADD AL,BL
-    STA [ln_y0],AL
+    MOV [ln_y0],AL
     JMP ln_loop
 ln_done:
     RET
@@ -601,18 +601,18 @@ idx_ptr:
 
 ; --- calc_pix:  de (px_x,px_y) saca puerto (pix_lo/pix_hi) + mascara -------
 calc_pix:
-    LDA CH,[px_y]
-    LDA CL,[px_x]
+    MOV CH,[px_y]
+    MOV CL,[px_x]
     MOV AL,CH
     AND AL,#0x0F
     SHL AL,#4
     MOV DL,CL
     SHR DL,#3
     OR  AL,DL
-    STA [pix_lo],AL
+    MOV [pix_lo],AL
     MOV AL,CH
     SHR AL,#4
-    STA [pix_hi],AL
+    MOV [pix_hi],AL
     MOV DL,CL
     AND DL,#0x07
     MOV DH,#0x80
@@ -623,21 +623,21 @@ cpx_m:
     SUB DL,#1
     JMP cpx_m
 cpx_d:
-    STA [pix_mask],DH
+    MOV [pix_mask],DH
     RET
 
 ; --- shadow_set_px:  enciende el pixel (px_x,px_y) en `shadow` -------------
 shadow_set_px:
     CALL calc_pix
     MOV BX,#shadow
-    LDA CL,[pix_lo]
+    MOV CL,[pix_lo]
     ADD BX,CL
-    LDA AL,[pix_hi]
+    MOV AL,[pix_hi]
     ADD BH,AL
-    LDA AL,[BX]
-    LDA DL,[pix_mask]
+    MOV AL,[BX]
+    MOV DL,[pix_mask]
     OR  AL,DL
-    STA [BX],AL
+    MOV [BX],AL
     RET
 
 ; --- clr_shadow:  pone a 0 los 1024 bytes de `shadow` (contador de 16 bits
@@ -651,7 +651,7 @@ shadow_set_px:
 ; solapados, y aqui es EXACTAMENTE eso lo que se aprovecha a proposito).
 clr_shadow:
     MOV AL,#0
-    STA [shadow],AL
+    MOV [shadow],AL
     MOV BX,#shadow
     MOV DX,#shadow+1
     MOV CX,#0x03FF ; CX = 1023 (el resto del buffer de 1024)
@@ -664,7 +664,7 @@ blit:
     MOV DX,#shadow
 bl_l:
     IN  AL,(BX)
-    LDA CL,[DX]
+    MOV CL,[DX]
     CMP AL,CL
     JMPZ bl_same
     MOV AL,CL
@@ -690,7 +690,7 @@ puts:
     MOV DL,AL
     MOV DH,#0x04
 ps_l:
-    LDA AL,[BX]
+    MOV AL,[BX]
     CMP AL,#0
     JMPZ ps_d
     OUT (DX),AL
@@ -702,38 +702,38 @@ ps_d:
 
 ; --- put_dec3:  AL = valor (0..255), CL = col, CH = fila -> 3 digitos ------
 put_dec3:
-    STA [pd_v],AL
+    MOV [pd_v],AL
     MOV AL,CH
     SHL AL,#5
     ADD AL,CL
     MOV DL,AL
     MOV DH,#0x04
 
-    LDA AL,[pd_v]
+    MOV AL,[pd_v]
     PUSH AH
     MOV AH,#0
     MOV BL,#100
     DIV BL                  ; AL = cociente, resto -> [pd_v] y BL
-    STA [pd_v],AH
+    MOV [pd_v],AH
     MOV BL,AH
     POP AH
 pd3_hd:
     ADD AL,#0x30
     OUT (DX),AL
     INC DX
-    LDA AL,[pd_v]
+    MOV AL,[pd_v]
     PUSH AH
     MOV AH,#0
     MOV BL,#10
     DIV BL                  ; AL = cociente, resto -> [pd_v] y BL
-    STA [pd_v],AH
+    MOV [pd_v],AH
     MOV BL,AH
     POP AH
 pd3_td:
     ADD AL,#0x30
     OUT (DX),AL
     INC DX
-    LDA AL,[pd_v]
+    MOV AL,[pd_v]
     ADD AL,#0x30
     OUT (DX),AL
     RET
