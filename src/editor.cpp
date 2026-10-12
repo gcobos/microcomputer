@@ -371,8 +371,10 @@ uint8_t assemble(uint8_t* mem, uint32_t memLen, uint16_t addr, const ComposeStat
         }
         case FK_JCC: {
             // NV y las de signo no caben en el campo de 3 bits: van en OP_JX
-            static const uint8_t kJx[5] = {JX_JMPNV, JX_JMPLT, JX_JMPGE, JX_JMPLE, JX_JMPGT};
-            if (st.cond >= 8 && st.cond < COND_COUNT)
+            static const uint8_t kJx[6] = {JX_JMPNV, JX_JMPLT, JX_JMPGE, JX_JMPLE, JX_JMPGT, JX_JMPA};
+            if (st.cond == 14)
+                b[0] = makeOpcode(OP_CALL, CALL_JMPBE);
+            else if (st.cond >= 8 && st.cond < 14)
                 b[0] = makeOpcode(OP_JX, kJx[st.cond - 8]);
             else
                 b[0] = makeOpcode(OP_JMP, (uint8_t)(st.cond & 7));
@@ -474,6 +476,7 @@ ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
         case OP_CALL:
             if (r == CALL_ADDR)      { set(V_CALL, FK_CALL); st.addr16 = a12; }
             else if (r == CALL_STI)  { set(V_MOV, FK_STI);  st.addr16 = a12; st.imm = b3; }
+            else if (r == CALL_JMPBE) { set(V_JMP, FK_JCC); st.cond = 14; st.addr16 = a12; }
             else if (r >= CALL_STIR) { set(V_MOV, FK_STIR); st.ptr = (uint8_t)(r & 3); st.imm = b1; }
             else st.verb = V_NOP;
             break;
@@ -484,6 +487,7 @@ ComposeState decodeAt(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
                 case JX_JMPGE:  set(V_JMP, FK_JCC);  st.cond = 10; st.addr16 = a12; break;
                 case JX_JMPLE:  set(V_JMP, FK_JCC);  st.cond = 11; st.addr16 = a12; break;
                 case JX_JMPGT:  set(V_JMP, FK_JCC);  st.cond = 12; st.addr16 = a12; break;
+                case JX_JMPA:   set(V_JMP, FK_JCC);  st.cond = 13; st.addr16 = a12; break;
                 case JX_JMPR:   set(V_JMP, FK_JR);   st.ptr = (uint8_t)(b1 & 3); break;
                 case JX_CALLR:  set(V_CALL, FK_JR);  st.ptr = (uint8_t)(b1 & 3); break;
                 default:        st.verb = V_NOP; break;

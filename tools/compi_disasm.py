@@ -63,7 +63,7 @@ UNARY = {F_NOT: "NOT", F_MUL: "MUL", F_DIV: "DIV", F_INC: "INC", F_DEC: "DEC",
          F_PUSH: "PUSH", F_POP: "POP", F_NEG: "NEG", F_IMUL: "IMUL"}
 SHX_NAMES = ["SAR", "ROL", "ROR", "RCL", "RCR"]
 X16_NAMES = ["SHL", "SHR", "SAR", "NEG", "MUL", "DIV"]
-JX_NAMES = {0: "JMPNV", 1: "JMPLT", 4: "JMPGE", 5: "JMPLE", 6: "JMPGT"}
+JX_NAMES = {0: "JMPNV", 1: "JMPLT", 4: "JMPGE", 5: "JMPLE", 6: "JMPGT", 7: "JMPA"}
 
 # Longitud (bytes) de cada familia -- igual que instrLen() en disasm.cpp.
 _LEN2 = {F_LDI, F_LDAR, F_STAR, F_INR, F_OUTR, F_ALURR, F_SHX, F_SHR, F_SHL}
@@ -78,11 +78,11 @@ def instr_len(mem, addr):
     if fam in _LEN2:
         return 2
     if fam == F_CALL:
-        return 3 if r == 0 else 4 if r == 1 else 2 if r >= 4 else 1
+        return 3 if r in (0, 2) else 4 if r == 1 else 2 if r >= 4 else 1
     if fam == F_X16:
         return 2 if r < 4 else 1
     if fam == F_JX:
-        return 2 if r in (2, 3) else 1 if r == 7 else 3
+        return 2 if r in (2, 3) else 3
     if fam == F_R16:
         return 2 if r <= 5 else 1
     if fam == F_R16I:
@@ -174,6 +174,8 @@ def decode_one(mem, addr):
             return Instr(addr, 3, f"CALL 0x{a16:04X}", target=a16)
         if r == 1:
             return Instr(addr, 4, f"MOV [0x{a16:04X}],#0x{b3:02X}")
+        if r == 2:
+            return Instr(addr, 3, f"JMPBE 0x{a16:04X}", target=a16)
         if r >= 4:
             return Instr(addr, 2, f"MOV [{REG16[r & 3]}],#0x{b1:02X}")
         return raw()

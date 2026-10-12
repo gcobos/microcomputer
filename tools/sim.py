@@ -649,15 +649,20 @@ class Cpu:
             elif r == 1:                     # MOV [addr16],#imm8
                 addr = self._f16()
                 self.m[addr] = self._f8()
+            elif r == 2:                     # JMPBE: menor o igual sin signo
+                addr = self._f16()
+                if self.flags & (FLAG_C | FLAG_Z):
+                    self.pc = addr
             elif r >= 4:                     # MOV [r16],#imm8
                 self.m[self._get16(r & 3)] = self._f8()
         elif fam == F_JX:
-            if r in (0, 1, 4, 5, 6):         # JMPNV / JMPLT / JMPGE / JMPLE / JMPGT
+            if r in (0, 1, 4, 5, 6, 7):      # JMPNV / JMPLT / JMPGE / JMPLE / JMPGT / JMPA
                 addr = self._f16()
                 f = self.flags
                 z = bool(f & FLAG_Z)
                 lt = bool(f & FLAG_N) != bool(f & FLAG_V)
-                ok = {0: not (f & FLAG_V), 1: lt, 4: not lt, 5: z or lt, 6: not z and not lt}[r]
+                ok = {0: not (f & FLAG_V), 1: lt, 4: not lt, 5: z or lt, 6: not z and not lt,
+                      7: not (f & (FLAG_C | FLAG_Z))}[r]
                 if ok:
                     self.pc = addr
             elif r == 2:                     # JMP reg16

@@ -2,9 +2,9 @@
 ;  isa_ext_test.asm  -  prueba de MUL, DIV, INC/DEC, ADD/SUB de 16 bits,
 ;  MOVB/MOVW, JMPV/JMPNV y MOV reg16,#imm16; de la ISA 2: ADC/SBC, INC/DEC
 ;  de 8 bits, MOV/ADD/SUB/CMP de 16 bits, PUSH/POP reg16, MOVBR y JMP/CALL
-;  por registro; y de la ISA 3 (casos 22, 27, 28 y 39-64): MOV [mem],#imm,
-;  SAR/ROL/ROR/RCL/RCR, NEG, IMUL, saltos con signo y SHL/SHR/SAR/NEG/MUL/
-;  DIV de 16 bits (compi)
+;  por registro; y de la ISA 3 (casos 22, 27, 28 y 39-68): MOV [mem],#imm,
+;  SAR/ROL/ROR/RCL/RCR, NEG, IMUL, saltos con signo, JMPA/JMPBE (sin signo)
+;  y SHL/SHR/SAR/NEG/MUL/DIV de 16 bits (compi)
 ;
 ;  Ejercita cada instruccion nueva del ISA con los mismos casos limite ya
 ;  verificados aparte contra el nucleo de cpu.cpp (g++ standalone) y contra
@@ -572,6 +572,40 @@ t55:
     MOV AL,#0xFF
     MOV BL,#0xFF
     CALL check16                 ; caso 64: DIV que no cabe satura en 0xFFFF
+
+    ; --- saltos sin signo JMPA / JMPBE (tras CMP) ------------------------------
+    MOV AL,#0xFE                 ; 254 sin signo
+    CMP AL,#3
+    MOV AL,#0
+    JMPA t65
+    MOV AL,#1
+t65:
+    MOV BL,#0
+    CALL check8                  ; caso 65: 254 > 3 sin signo: JMPA salta
+    MOV AL,#5
+    CMP AL,#5
+    MOV AL,#0
+    JMPA t66
+    MOV AL,#1
+t66:
+    MOV BL,#1
+    CALL check8                  ; caso 66: 5 > 5 es falso: JMPA no salta
+    MOV AL,#5
+    CMP AL,#5
+    MOV AL,#0
+    JMPBE t67
+    MOV AL,#1
+t67:
+    MOV BL,#0
+    CALL check8                  ; caso 67: 5 <= 5: JMPBE salta
+    MOV AL,#0xFE
+    CMP AL,#3
+    MOV AL,#0
+    JMPBE t68
+    MOV AL,#1
+t68:
+    MOV BL,#1
+    CALL check8                  ; caso 68: 254 <= 3 es falso: JMPBE no salta
 
     ; --- resumen: PASS n/N, y FAIL #k si hubo algun fallo ------------------
     CALL show_summary

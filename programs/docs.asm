@@ -490,7 +490,7 @@ t3p3: .asciiz "ALU: 2 FORMS\nop reg,reg     (2B)\nop reg,#imm8   (3B)\nop: MOV A
 t3p4: .asciiz "ADC / SBC\nADC: a=a+b+C\nSBC: a=a-b-C\nCarry/borrow from\nthe previous op, to\nadd/sub numbers of\nseveral bytes"
 t3p5: .asciiz "NOT/NEG/SHIFT/MUL\nNOT NEG reg (1B)\nSHR/SHL reg,#N (2B)\nN=1..8. MUL reg:\nAX=AL*reg. DIV reg:\nAL=AX/r AH=rem\nINC/DEC reg8: C kept"
 t3p6: .asciiz "16-BIT (AX..DX)\nMOV/ADD/SUB/CMP\nr16,r16 (2B); ADD/\nSUB r16,reg8 or #8\nCMP/MOV r16,#16(4B)\nINC/DEC/PUSH/POP r16\n(1B). CMP16: flags"
-t3p7: .asciiz "STACK, JUMPS, COPY\nPUSH/POP reg (1B)\nJMP<cc> addr (3B)\nCALL addr; JMP/CALL\nr16 (2B). cc:Z NZ C\nNC N NN V NV LT GE\nLE GT. MOVB/W/BR"
+t3p7: .asciiz "STACK, JUMPS, COPY\nPUSH/POP reg (1B)\nJMP<cc> addr (3B)\nCALL addr; JMP/CALL\nr16 (2B). cc:Z NZ C\nNC N NN V NV LT GE\nLE GT A BE. MOVB.."
 t3p8: .asciiz "FLAGS SUMMARY\nZ=result 0, N=bit7\nADD/ADC: C=carry\nSUB/SBC/CMP: C =\nborrow. Logic: C=V=0\nINC/DEC 8-bit keep C\nLT/GE..: signed CMP"
 t3pa: .asciiz "SIGNED & ROTATE\nSAR reg,#N: keeps\nthe sign. ROL/ROR:\nrotate. RCL/RCR:\nrotate through C\nIMUL reg: AX=AL*reg\nsigned (-128..127)"
 t3pb: .asciiz "16-BIT MATH\nSHL/SHR/SAR r16,#N\n(N=1..16), NEG r16\nMUL r16: DX:AX =\nAX*r16. DIV r16:\nAX=DX:AX/r16 and\nDX = remainder"

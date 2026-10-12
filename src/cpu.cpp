@@ -476,10 +476,13 @@ bool Cpu::step() {
             } else if (r == CALL_STI) {
                 uint16_t addr = fetch16();
                 memory_[maskAddr(addr)] = fetch8();
+            } else if (r == CALL_JMPBE) {
+                uint16_t addr = fetch16();
+                if (flags_ & (FLAG_C | FLAG_Z)) pc_ = addr;
             } else if (r >= CALL_STIR) {
                 uint8_t imm = fetch8();
                 memory_[maskAddr(regs_.get16((uint8_t)(r & 0x03)))] = imm;
-            }                                      // 2, 3: libres (NOP)
+            }                                      // 3: libre (NOP)
             break;
         case OP_JX:
             switch (r) {
@@ -496,6 +499,11 @@ bool Cpu::step() {
                     if (testSigned(r)) pc_ = addr;
                     break;
                 }
+                case JX_JMPA: {
+                    uint16_t addr = fetch16();
+                    if (!(flags_ & (FLAG_C | FLAG_Z))) pc_ = addr;
+                    break;
+                }
                 case JX_JMPR:
                     pc_ = regs_.get16(fetch8());
                     break;
@@ -509,6 +517,7 @@ bool Cpu::step() {
             }
             break;
         case OP_R16: {
+            if (r > R16_SUB8) break;               // 6, 7: libres (NOP de 1 byte)
             uint8_t operand = fetch8();
             uint8_t dst = (uint8_t)((operand >> 3) & 0x03);
             uint8_t src = (uint8_t)(operand & 0x07);
@@ -525,6 +534,7 @@ bool Cpu::step() {
             break;
         }
         case OP_R16I: {
+            if (r > R16I_CMP) break;               // 4..7: libres (NOP de 1 byte)
             uint8_t pair = (uint8_t)(fetch8() & 0x03);
             uint16_t d = regs_.get16(pair);
             switch (r) {

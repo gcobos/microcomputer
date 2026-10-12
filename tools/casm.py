@@ -41,6 +41,7 @@ Instrucciones (ISA version 3; reg = AL AH BL BH CL CH DL DH, r16 = AX BX CX DX):
     IN  reg,(port)   OUT (port),reg     (o (r16): indirecto por registro)
     JMP/JMPZ/JMPNZ/JMPC/JMPNC/JMPN/JMPNN/JMPV/JMPNV   addr
     JMPLT/JMPGE/JMPLE/JMPGT addr   (con signo, tras CMP)     JMP r16
+    JMPA/JMPBE addr   (mayor / menor o igual SIN signo, tras CMP)
     CALL addr   CALL r16
 
 Expresiones: + - * / % , << >> & | ^ ~ , parentesis, 0x.. 0b.. decimal,
@@ -85,9 +86,10 @@ ALU_OP = {"MOV": 0, "ADD": 1, "ADC": 2, "SUB": 3, "SBC": 4, "CMP": 5,
 UNARY = {"NOT": F_NOT, "MUL": F_MUL, "DIV": F_DIV, "NEG": F_NEG, "IMUL": F_IMUL}
 # condiciones de JMP (3 bits bajos); NV y las de signo van aparte, en F_JX
 COND = {"": 0, "Z": 1, "NZ": 2, "C": 3, "NC": 4, "N": 5, "NN": 6, "V": 7}
-JX_JMPNV, JX_JMPLT, JX_JMPR, JX_CALLR, JX_JMPGE, JX_JMPLE, JX_JMPGT = 0, 1, 2, 3, 4, 5, 6
-JX_COND = {"NV": JX_JMPNV, "LT": JX_JMPLT, "GE": JX_JMPGE, "LE": JX_JMPLE, "GT": JX_JMPGT}
-CALL_ADDR, CALL_STI, CALL_STIR = 0, 1, 4
+JX_JMPNV, JX_JMPLT, JX_JMPR, JX_CALLR, JX_JMPGE, JX_JMPLE, JX_JMPGT, JX_JMPA = 0, 1, 2, 3, 4, 5, 6, 7
+JX_COND = {"NV": JX_JMPNV, "LT": JX_JMPLT, "GE": JX_JMPGE, "LE": JX_JMPLE, "GT": JX_JMPGT,
+           "A": JX_JMPA}
+CALL_ADDR, CALL_STI, CALL_JMPBE, CALL_STIR = 0, 1, 2, 4
 # F_SHX (operando shx<<3 | N-1) y F_X16 (operando x16<<4 | N-1)
 SHX_OP = {"SAR": 0, "ROL": 1, "ROR": 2, "RCL": 3, "RCR": 4}
 X16_OP = {"SHL": 0, "SHR": 1, "SAR": 2, "NEG": 3, "MUL": 4, "DIV": 5}
@@ -598,6 +600,8 @@ class Assembler:
                 return [opcode(F_CALL, CALL_ADDR), lo, hi]
             if suffix in JX_COND:
                 return [opcode(F_JX, JX_COND[suffix]), lo, hi]
+            if suffix == "BE":                     # (en un hueco de la familia CALL)
+                return [opcode(F_CALL, CALL_JMPBE), lo, hi]
             need(suffix in COND, f"condicion desconocida: {mnem}")
             return [opcode(F_JMP, COND[suffix]), lo, hi]
 

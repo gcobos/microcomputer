@@ -220,8 +220,10 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi;
                       0 CALL addr16       LEN 3   push(pc_hi); push(pc_lo);
                                                   pc = addr16
                       1 MOV [addr16],#imm LEN 4   [op][lo][hi][imm]
+                      2 JMPBE addr16      LEN 3   menor o igual SIN signo
+                                                  (C o Z); no cabia en JX
                       4..7 MOV [r16],#imm LEN 2   [op][imm], r16 = bajo3 & 3
-                      2, 3: libres (NOP de 1 byte)
+                      3: libre (NOP de 1 byte)
   25 JX     bajo3 = sub-op:
                       0 JMPNV addr16   LEN 3   salta si V=0
                       1 JMPLT addr16   LEN 3   con signo: N != V
@@ -230,7 +232,7 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi;
                       6 JMPGT addr16   LEN 3   no Z y N == V
                       2 JMP r16        LEN 2   [op][r16]   pc = r16
                       3 CALL r16       LEN 2   (tablas de saltos)
-                      7: libre (NOP de 1 byte)
+                      7 JMPA addr16    LEN 3   mayor SIN signo (no C y no Z)
   26 R16    LEN 2   bajo3 = sub-op, operando [dst16<<3 | src]:
                       0 MOV r16,r16    1 ADD r16,r16    2 SUB r16,r16
                       3 CMP r16,r16    (flags de la resta de 16 bits)
@@ -270,8 +272,9 @@ FAMILIAS Y FORMATO  (LEN = longitud en bytes; addr16 = little-endian: lo, hi;
 
 CONDICIONES (bajo3 de JMP)
   0 ALWAYS   1 Z    2 NZ    3 C    4 NC    5 N    6 NN   7 V
-  NV (salta si V=0) y las de signo LT/GE/LE/GT no caben en 3 bits: van en
-  la familia 25 (JX). CALL no lleva condicion.
+  NV (salta si V=0), las de signo LT/GE/LE/GT y A (mayor sin signo) no
+  caben en 3 bits: van en la familia 25 (JX); BE (menor o igual sin signo),
+  en un hueco de la 24. CALL no lleva condicion.
 
 OPERACIONES DE LA ALU (AluOp, en el byte de operando de las familias 10 y 11)
   0 MOV   dst = src               (NO toca flags)
@@ -1154,7 +1157,7 @@ BUCLE
      tiene varias formas (tabla kVerbs de editor.cpp; p. ej. MOV: reg,reg |
      reg,#imm | reg,[dir] | reg,[r16] | [dir],reg | [r16],reg | [dir],#imm |
      [r16],#imm | r16,r16 | r16,#imm16 ; ver docs/isa.md §1) -> operandos
-     (condición -- JMP: 0..7, NV, LT, GE, LE, GT --, registro(s), inmediato,
+     (condición -- JMP: 0..7, NV, LT, GE, LE, GT, A, BE --, registro(s), inmediato,
      dirección/puerto bajo y alto por separado, el par puntero PTR, el
      segundo par SRC16, o la cuenta de desplazamiento).
      ComposeState (verb, mode, reg, dst, src, cond, imm, addr16, ptr, ptr2,

@@ -33,9 +33,10 @@ enum Verb : uint8_t {
     V_PUSH, V_POP, V_JMP, V_CALL,
 };
 constexpr uint8_t VERB_COUNT = 35;
-// Condiciones de JMP: 0..7 = JumpCond (isa.h); 8 = NV y 9..12 = LT, GE, LE,
-// GT (con signo), que se codifican en OP_JX
-constexpr uint8_t COND_COUNT = 13;
+// Condiciones de JMP: 0..7 = JumpCond (isa.h); 8 = NV, 9..12 = LT, GE, LE,
+// GT (con signo) y 13 = A (mayor sin signo), que se codifican en OP_JX; 14 =
+// BE (menor o igual sin signo), en un hueco de OP_CALL
+constexpr uint8_t COND_COUNT = 15;
 
 // Campo que se está editando ahora mismo dentro de la instrucción.
 enum class EField : uint8_t { Verb, Mode, Cond, Reg, Dst, Src, Imm, Lo, Hi, Ptr, Shift, Ptr2, Done };
@@ -51,7 +52,7 @@ struct ComposeState {
                                //   registro (o el de reg,#imm / reg,[...])
     uint8_t  dst    = 0;      // forma reg,reg
     uint8_t  src    = 0;      // forma reg,reg
-    uint8_t  cond   = 0;      // JMP: 0..7 = JumpCond, 8 = NV, 9..12 = LT GE LE GT
+    uint8_t  cond   = 0;      // JMP: 0..7 = JumpCond, 8 = NV, 9..12 = LT GE LE GT, 13 = A, 14 = BE
     uint8_t  imm    = 0;      // inmediato de 8 bits
     uint16_t addr16 = 0;      // direccion/puerto de 16 bits, o inmediato de 16
     uint8_t  ptr    = 0;      // par de 16 bits (AX/BX/CX/DX): puntero, o

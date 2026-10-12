@@ -110,7 +110,8 @@ opcode `11×8 + 2 = 0x5A`, luego la operación (`ADD` = 1) y el inmediato:
 `5A 01 05`.
 
 `0x00` es `NOP`: una RAM a cero es un programa vacío. Los huecos que quedan
-(p. ej. `C2`, `C3`, `CF`) se ejecutan como `NOP` de 1 byte.
+(`06`, `07`, `C3`, `D6`, `D7`, `DC`–`DF`, `FC`–`FF`) se ejecutan como `NOP` de
+1 byte.
 
 > **Versión 3 (octubre 2026).** Salieron las formas que no usaba ningún
 > programa (la ALU con memoria `ADD AL,[dir]`… y los `CALL` con condición) y
@@ -156,9 +157,11 @@ bytes (bajo, alto). `r` = registro de 8 bits del opcode; `r16` = par
 | 23 | `B8`+cc | `JMP<cc> addr16` | 3 | `op lo hi` | si se cumple `cc`: `PC = addr` (sección 5) |
 | 24 | `C0` | `CALL addr16` | 3 | `op lo hi` | apila PC, `PC = addr` |
 | 24 | `C1` | `MOV [addr16],#imm8` | 4 | `op lo hi imm` | `mem[addr] = imm` |
+| 24 | `C2` | `JMPBE addr16` | 3 | `op lo hi` | menor o igual sin signo (sección 5) |
 | 24 | `C4`+r16 | `MOV [r16],#imm8` | 2 | `op imm` | `mem[r16] = imm` |
 | 25 | `C8` | `JMPNV addr16` | 3 | `op lo hi` | si V = 0 |
 | 25 | `C9` `CC` `CD` `CE` | `JMPLT`/`JMPGE`/`JMPLE`/`JMPGT addr16` | 3 | `op lo hi` | con signo (sección 5) |
+| 25 | `CF` | `JMPA addr16` | 3 | `op lo hi` | mayor sin signo (sección 5) |
 | 25 | `CA` `CB` | `JMP r16` / `CALL r16` | 2 | `op r16` | salta/llama a la dirección que hay en el par |
 | 26 | `D0`–`D3` | `MOV`/`ADD`/`SUB`/`CMP r16,r16` | 2 | `op d16<<3\|s16` | 16 bits (sección 4b) |
 | 26 | `D4` `D5` | `ADD`/`SUB r16,r8` | 2 | `op d16<<3\|r8` | `r16 ±= r8` sin signo |
@@ -274,8 +277,9 @@ antes era `MOV AL,#0` + `STA [x],AL`).
 
 ## 5. Condiciones de `JMP`
 
-`JMP<cc>` es `B8` más el número de condición; `NV` y las cuatro con signo no
-caben en los 3 bits y van en la familia 25. `CALL` no lleva condición (para
+`JMP<cc>` es `B8` más el número de condición; `NV`, las cuatro con signo y
+`A` no caben en los 3 bits y van en la familia 25 (y `BE`, en un hueco de la
+24). `CALL` no lleva condición (para
 llamar solo si algo se cumple, se salta por encima con un `JMP` condicional).
 
 | cc | Opcode | salta si… |
@@ -293,6 +297,18 @@ llamar solo si algo se cumple, se salta por encima con un `JMP` condicional).
 | GE  | `CC` | N = V: a ≥ b con signo |
 | LE  | `CD` | Z = 1 o N ≠ V: a ≤ b con signo |
 | GT  | `CE` | Z = 0 y N = V: a > b con signo |
+| A   | `CF` | C = 0 y Z = 0: a > b **sin signo** (*above*) |
+| BE  | `C2` | C = 1 o Z = 1: a ≤ b sin signo (*below or equal*) |
+
+Resumen tras `CMP a,b`:
+
+| | sin signo | con signo |
+|---|---|---|
+| a < b | `JMPC` | `JMPLT` |
+| a ≤ b | `JMPBE` | `JMPLE` |
+| a > b | `JMPA` | `JMPGT` |
+| a ≥ b | `JMPNC` | `JMPGE` |
+| a = b / a ≠ b | `JMPZ` / `JMPNZ` | `JMPZ` / `JMPNZ` |
 
 Con signo, `0xFE` es −2: tras `CMP AL,#3` con `AL = 0xFE`, `JMPLT` salta
 (−2 < 3) y `JMPC` no (254 > 3). Funcionan igual tras un `CMP` de 16 bits.

@@ -92,7 +92,9 @@ enum ShxOp : uint8_t {
 enum CallOp : uint8_t {
     CALL_ADDR  = 0,  // CALL addr16
     CALL_STI   = 1,  // MOV [addr16],#imm8       [op][lo][hi][imm]  LEN 4
-    // 2, 3: libres (NOP de 1 byte)
+    CALL_JMPBE = 2,  // JMPBE addr16: menor o igual SIN signo (C o Z) LEN 3
+                     //   (no cabia en OP_JX; aqui habia sitio)
+    // 3: libre (NOP de 1 byte)
     CALL_STIR  = 4,  // 4..7 = MOV [reg16],#imm8 (r16 = bajo3 & 3) [op][imm] LEN 2
 };
 
@@ -127,7 +129,7 @@ enum JxOp : uint8_t {
     JX_JMPGE  = 4,   // JMPGE addr16  mayor o igual con signo (N == V)
     JX_JMPLE  = 5,   // JMPLE addr16  menor o igual con signo (Z o N != V)
     JX_JMPGT  = 6,   // JMPGT addr16  mayor con signo (no Z y N == V)
-    // 7: libre (NOP de 1 byte)
+    JX_JMPA   = 7,   // JMPA addr16   mayor SIN signo (no C y no Z)
 };
 
 // Familia OP_R16 (operando: dst16<<3 | src)

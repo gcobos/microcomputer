@@ -51,14 +51,13 @@ uint8_t instrLen(const uint8_t* mem, uint32_t memLen, uint16_t addr) {
         case OP_ALUI: case OP_JMP:
             return 3;
         case OP_CALL:
-            if (r == CALL_ADDR) return 3;
+            if (r == CALL_ADDR || r == CALL_JMPBE) return 3;
             if (r == CALL_STI) return 4;
             if (r >= CALL_STIR) return 2;
             return 1;
         case OP_JX:
             if (r == JX_JMPR || r == JX_CALLR) return 2;
-            if (r == 7) return 1;
-            return 3;                      // JMPNV y saltos con signo
+            return 3;                      // JMPNV, saltos con signo y JMPA
         case OP_X16:
             return (r < 4) ? 2 : 1;
         case OP_R16:
@@ -124,6 +123,7 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
         case OP_JMP:  snprintf(out, n, "JMP%s 0x%04X",  condSuffix(r), a16); return 3;
         case OP_CALL:
             if (r == CALL_ADDR) { snprintf(out, n, "CALL 0x%04X", a16); return 3; }
+            if (r == CALL_JMPBE) { snprintf(out, n, "JMPBE 0x%04X", a16); return 3; }
             // compacta (hexadecimal sin 0x, como la columna de direcciones):
             // en el listado del panel caben 15 caracteres y la forma larga
             // "MOV [0x2000],#0x5A" (18) se cortaria
@@ -137,6 +137,7 @@ uint8_t disassemble(const uint8_t* mem, uint32_t memLen, uint16_t addr,
                 case JX_JMPGE:  snprintf(out, n, "JMPGE 0x%04X", a16);  return 3;
                 case JX_JMPLE:  snprintf(out, n, "JMPLE 0x%04X", a16);  return 3;
                 case JX_JMPGT:  snprintf(out, n, "JMPGT 0x%04X", a16);  return 3;
+                case JX_JMPA:   snprintf(out, n, "JMPA 0x%04X", a16);   return 3;
                 case JX_JMPR:   snprintf(out, n, "JMP %s", regName16(b1));  return 2;
                 case JX_CALLR:  snprintf(out, n, "CALL %s", regName16(b1)); return 2;
                 default: snprintf(out, n, "DB 0x%02X", op); return 1;

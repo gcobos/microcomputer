@@ -149,6 +149,10 @@ CASES = [
         JMPLE 0x0040
         JMPGT 0x0040
     """, "C9 40 00 CC 40 00 CD 40 00 CE 40 00"),
+    ("saltos sin signo JMPA/JMPBE", """
+        JMPA 0x0040
+        JMPBE 0x0040
+    """, "CF 40 00 C2 40 00"),
     ("16 bits", """
         MOV BX,DX
         ADD BX,CL
